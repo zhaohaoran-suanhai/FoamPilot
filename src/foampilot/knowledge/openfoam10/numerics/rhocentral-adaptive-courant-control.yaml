@@ -1,0 +1,39 @@
+schema_version: 1.0.0
+id: of10.numerics.rhocentral-adaptive-courant
+title: rhoCentralFoam adaptive Courant time-step control
+fork: foundation
+version: "10"
+knowledge_type: numerics
+solvers: [rhoCentralFoam]
+models: [compressible, transient, central-upwind]
+tags: [rhocentralfoam, timestep, courant, shock]
+applicability:
+  conditions:
+    - A Foundation v10 compressible transient solver uses adjustTimeStep and maxCo.
+    - Wave propagation or another time-accuracy requirement must be verified from public physics.
+  not_applicable:
+    - A steady solver uses the controlDict index only as iteration bookkeeping.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 adaptive time-step implementation
+  locator: OpenFOAM-10/src/finiteVolume/cfdTools/general/include/setDeltaT.H
+  sha256: d2b0a73fa57bb77d510bfc3edcd0da369094005a81f11ef01d7b1a6bfd5fc580
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation adaptive stepping computes a Courant-limited next step and then caps it by maxDeltaT, so maxDeltaT can prevent an otherwise requested increase.
+  rules:
+    - Treat deltaT as the initial step and maxDeltaT as the adaptive upper bound.
+    - When growth is required, require maxDeltaT strictly greater than the initial deltaT.
+    - Inspect the actual Courant history because declarations alone do not prove the requested target is active.
+    - Check transient accuracy against a public analytical or convergence criterion rather than maximizing the time step.
+  failure_signals:
+    - maxDeltaT equals deltaT while adjustTimeStep is enabled.
+    - Observed maximum Courant remains far below maxCo because the cap is active.
+    - Solver completion and conservation pass but wave propagation is inaccurate.
+  validation:
+    - Record deltaT, maxDeltaT, maxCo, and observed maximum Courant.
+    - For an ideal-gas Riemann problem, compare rarefaction, contact, and shock positions with the exact public solution.

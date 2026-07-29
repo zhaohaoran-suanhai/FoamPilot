@@ -1,0 +1,37 @@
+schema_version: 1.0.0
+id: of10.mesh.two-dimensional-empty-extrusion
+title: One-cell empty extrusion for two-dimensional meshes
+fork: foundation
+version: "10"
+knowledge_type: mesh_pattern
+solvers: [blockMesh]
+models: [two-dimensional]
+tags: [blockmesh, empty, two-dimensional, mesh]
+applicability:
+  conditions:
+    - The physical solution is two-dimensional and the mesh is a thin extrusion.
+    - The two front/back planes are normal to the suppressed solution direction.
+  not_applicable:
+    - Three-dimensional gradients or out-of-plane physics must be resolved.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 empty finite-volume patch field
+  locator: OpenFOAM-10/src/finiteVolume/fields/fvPatchFields/constraint/empty/emptyFvPatchField.H
+  sha256: 4030eedcabdaa2caef801e5d383c172257515efdf9d967d8e90a0e320d47615c
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: A two-dimensional finite-volume case uses one cell through the suppressed direction and empty mesh and field patches on both bounding planes.
+  rules:
+    - Use exactly one cell through the suppressed direction.
+    - Assign mesh type empty to both bounding planes.
+    - Assign field type empty on the same patch for every volume field.
+  failure_signals:
+    - Mesh and field patch types disagree.
+    - More than one solution cell exists through the suppressed direction.
+  validation:
+    - checkMesh reports two geometric and two solution directions.
+    - Every field covers the empty patch with type empty.

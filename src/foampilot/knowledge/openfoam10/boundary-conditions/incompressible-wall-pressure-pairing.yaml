@@ -1,0 +1,37 @@
+schema_version: 1.0.0
+id: of10.boundary.incompressible-wall-pressure-pairing
+title: Velocity and pressure conditions on impermeable walls
+fork: foundation
+version: "10"
+knowledge_type: boundary_condition
+solvers: [icoFoam]
+models: [incompressible, wall]
+tags: [boundary, pressure, velocity, wall]
+applicability:
+  conditions:
+    - The patch is an impermeable stationary or moving wall in an incompressible case.
+    - Pressure is kinematic pressure and no fixed pressure value is prescribed at the wall.
+  not_applicable:
+    - The patch is an inlet, outlet, free surface, coupled interface, or compressible boundary.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 zero-gradient finite-volume patch field
+  locator: OpenFOAM-10/src/finiteVolume/fields/fvPatchFields/basic/zeroGradient/zeroGradientFvPatchField.H
+  sha256: 5488561945e23ae3f3fc0a891d002a27774b3e8800a3426705bb7340d8bff7a8
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Impermeable walls constrain velocity while kinematic pressure normally uses a zero normal gradient; the exact velocity value depends on stationary versus moving wall intent.
+  rules:
+    - Use noSlip or a fixed wall velocity for U according to physical motion.
+    - Use zeroGradient for p when no pressure value anchors that wall.
+    - Cover every mesh patch in both U and p boundaryField dictionaries.
+  failure_signals:
+    - A wall patch is missing from one field.
+    - Moving-wall velocity contradicts the requested motion.
+  validation:
+    - Compare every field patch set with the mesh patch set.
+    - Review velocity magnitude and direction against the physical request.

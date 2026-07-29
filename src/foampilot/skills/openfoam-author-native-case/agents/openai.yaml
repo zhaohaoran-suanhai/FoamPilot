@@ -1,0 +1,4 @@
+interface:
+  display_name: "Author Native OpenFOAM Case"
+  short_description: "Author and verify native Foundation v10 cases"
+  default_prompt: "Use $openfoam-author-native-case to plan, author, run, and publicly validate a native OpenFOAM case."

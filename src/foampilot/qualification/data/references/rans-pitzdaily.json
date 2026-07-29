@@ -1,0 +1,143 @@
+{
+  "case_id": "rans-pitzdaily",
+  "created_at": "2026-07-28T11:47:38.518252Z",
+  "metrics": [
+    {
+      "category": "completion",
+      "comparison_mode": "lower_bound",
+      "engineering_floor": 0.0,
+      "field": "log.time",
+      "final_tolerance": 0.0,
+      "formula": "solver reaches residual-based steady convergence or the 2000-iteration cap without fatal or non-finite values",
+      "name": "final_iteration",
+      "observed_repeat_spread": 0.0,
+      "reference": 287.0,
+      "required": true,
+      "sample_coordinates": [
+        [
+          0.1,
+          0.0,
+          0.0
+        ]
+      ],
+      "sampling_error_allowance": 0.0,
+      "tolerance_source": "Exact task run target frozen before pilot-v1 formal attempts.",
+      "unit": "iteration"
+    },
+    {
+      "category": "conservation",
+      "comparison_mode": "absolute_upper_bound",
+      "engineering_floor": 0.02,
+      "field": "phi",
+      "final_tolerance": 0.02,
+      "formula": "abs(inlet_flux + outlet_flux) / max(abs(inlet_flux), 1e-12)",
+      "name": "inlet_outlet_flow_balance",
+      "observed_repeat_spread": 0.0,
+      "reference": 0.00398461517496097,
+      "required": true,
+      "sample_coordinates": [
+        [
+          -0.0206,
+          0.0127,
+          0.0
+        ],
+        [
+          0.29,
+          0.0,
+          0.0
+        ]
+      ],
+      "sampling_error_allowance": 0.0,
+      "tolerance_source": "Pilot-v1 steady RANS balance cap; must exceed official-baseline spread.",
+      "unit": "1"
+    },
+    {
+      "category": "physics_golden",
+      "comparison_mode": "relative_absolute",
+      "engineering_floor": 0.1,
+      "field": "p",
+      "final_tolerance": 0.1,
+      "formula": "Relative error in area-mean inlet minus outlet kinematic pressure",
+      "name": "pressure_change",
+      "observed_repeat_spread": 0.0,
+      "reference": -6.994733375310898,
+      "required": true,
+      "sample_coordinates": [
+        [
+          -0.0206,
+          0.0127,
+          0.0
+        ],
+        [
+          0.29,
+          0.0,
+          0.0
+        ]
+      ],
+      "sampling_error_allowance": 0.0,
+      "tolerance_source": "Official-source golden pressure change with pilot-v1 RANS allowance.",
+      "unit": "m2/s2"
+    },
+    {
+      "category": "physics_golden",
+      "comparison_mode": "relative_l2",
+      "engineering_floor": 0.15,
+      "field": "U",
+      "final_tolerance": 0.15,
+      "formula": "Relative L2 error of streamwise velocity profiles at x=0.1 m and x=0.206 m",
+      "name": "downstream_velocity_profile",
+      "observed_repeat_spread": 0.0,
+      "reference": [
+        -1.546937346458435,
+        -0.12009657919406891,
+        3.094358271351567e-22,
+        6.584729194641113,
+        -0.5219805836677551,
+        -4.161996006667855e-21,
+        9.56125545501709,
+        -0.16404345631599426,
+        -4.460387276258938e-20,
+        1.7600724697113037,
+        -0.09477878361940384,
+        -3.743132504765672e-20,
+        6.507800579071045,
+        -0.3490050733089447,
+        1.4676050392947784e-18
+      ],
+      "required": true,
+      "sample_coordinates": [
+        [
+          0.1,
+          -0.02,
+          0.0
+        ],
+        [
+          0.1,
+          0.0,
+          0.0
+        ],
+        [
+          0.1,
+          0.02,
+          0.0
+        ],
+        [
+          0.206,
+          -0.02,
+          0.0
+        ],
+        [
+          0.206,
+          0.02,
+          0.0
+        ]
+      ],
+      "sampling_error_allowance": 0.0,
+      "tolerance_source": "Official-source golden profiles; tolerance fixed before formal attempts.",
+      "unit": "m/s"
+    }
+  ],
+  "openfoam_version": "10",
+  "schema_version": 1,
+  "source_sha256": "b4070addcd3f1d6ace9941bcbd75441c1114ae2bfd62b83991ff7ba571f590c5"
+}

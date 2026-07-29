@@ -1,0 +1,65 @@
+schema_version: 1
+task_id: laminar-cavity
+title: Transient laminar flow in a lid-driven square enclosure
+prompt: >-
+  Starting from an empty case directory, build and solve a two-dimensional
+  transient incompressible enclosure flow. Use a square fluid region 0.1 m by
+  0.1 m, extruded by 0.01 m with one empty spanwise cell. Use a uniform 20 by
+  20 by 1 structured mesh with a moving top wall, three stationary walls, and
+  two empty spanwise faces. The fluid is Newtonian with kinematic viscosity
+  0.01 m2/s. Initialize velocity to (0 0 0) m/s and kinematic pressure to
+  0 m2/s2. Move the top wall at (1 0 0) m/s, apply no slip on the other
+  in-plane walls, use zero normal pressure gradient with a consistent pressure
+  reference, and make the spanwise faces empty. Integrate from 0 to 0.5 s with
+  fixed time step 0.005 s and write every 0.1 s. Run serially. Generate every
+  native Foundation OpenFOAM v10 file yourself, check the mesh before solving,
+  and preserve velocity and kinematic-pressure fields. Do not read or copy a
+  pre-existing case.
+openfoam_target:
+  distribution: foundation
+  version: "10"
+resource_budget:
+  max_attempts: 2
+  max_wall_seconds: 600
+  max_mpi_ranks: 1
+  memory_mib: 2048
+required_outputs:
+  - mesh quality log
+  - completed transient solver log through 0.5 s
+  - velocity and kinematic-pressure fields at 0.5 s
+  - centerline velocity profiles and kinetic-energy history for evaluator sampling
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - the solver reaches 0.5 s and ends normally
+  - required fields remain finite
+  - cumulative continuity error remains within 1.0e-5
+  - the evaluator can sample the requested velocity and energy observables
+public_checks:
+  - name: mesh-quality
+    kind: mesh_ok
+    parameters: {}
+  - name: normal-completion
+    kind: completion
+    parameters: {}
+  - name: final-time
+    kind: final_time
+    parameters:
+      minimum: 0.5
+  - name: finite-fields
+    kind: finite_fields
+    parameters: {}
+  - name: continuity
+    kind: continuity
+    parameters:
+      max_abs_cumulative: 1.0e-5
+  - name: final-velocity
+    kind: requested_output
+    parameters:
+      path: 0.5/U
+  - name: final-pressure
+    kind: requested_output
+    parameters:
+      path: 0.5/p
+public_assets: []
+protected_paths:
+  - /home/edwin/workplace/OpenFOAM-10/tutorials

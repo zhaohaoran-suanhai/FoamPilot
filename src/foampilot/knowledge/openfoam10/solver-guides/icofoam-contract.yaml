@@ -1,0 +1,39 @@
+schema_version: 1.0.0
+id: of10.solver.icofoam-contract
+title: icoFoam transient incompressible laminar contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [icoFoam]
+models: [incompressible, laminar, transient]
+tags: [icofoam, transient, incompressible, laminar]
+applicability:
+  conditions:
+    - The fluid is incompressible, laminar, isothermal, and transient.
+    - Velocity U and kinematic pressure p are defined on every mesh patch.
+  not_applicable:
+    - Compressible, turbulent, multiphase, buoyant, or steady-state physics is required.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 icoFoam application
+  locator: OpenFOAM-10/applications/solvers/incompressible/icoFoam/icoFoam.C
+  sha256: 96538945ea4170a24ef356863904a745fa68b586e489b33ac0b6cbd8f8954641
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: icoFoam advances laminar incompressible velocity and kinematic pressure in time with PISO coupling.
+  rules:
+    - Use a transient controlDict and a positive deltaT.
+    - Provide physicalProperties, U, p, fvSchemes, fvSolution, and a valid mesh.
+    - When the selected PISO corrector sequence requests a final pressure solve, define a compatible pFinal solver entry as well as p.
+    - Reject the contract when requested physics requires another solver family.
+  failure_signals:
+    - Required field U or p cannot be read.
+    - The solver requests pFinal but fvSolution defines only p.
+    - The requested physics is not incompressible laminar transient flow.
+  validation:
+    - Verify that the authored application and dictionaries match Foundation v10 icoFoam semantics.
+    - Require normal solver completion and the requested final time.

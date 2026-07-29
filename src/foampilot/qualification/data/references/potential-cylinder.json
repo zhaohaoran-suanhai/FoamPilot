@@ -1,0 +1,100 @@
+{
+  "case_id": "potential-cylinder",
+  "created_at": "2026-07-28T11:47:25.941942Z",
+  "metrics": [
+    {
+      "category": "completion",
+      "comparison_mode": "lower_bound",
+      "engineering_floor": 0.0,
+      "field": "log.time",
+      "final_tolerance": 0.0,
+      "formula": "latest_written_time >= 1 and solver exits without fatal or non-finite values",
+      "name": "final_state",
+      "observed_repeat_spread": 0.0,
+      "reference": 0.0,
+      "required": true,
+      "sample_coordinates": [
+        [
+          0.0,
+          1.0,
+          0.0
+        ]
+      ],
+      "sampling_error_allowance": 0.0,
+      "tolerance_source": "Exact task run target frozen before pilot-v1 formal attempts.",
+      "unit": "s"
+    },
+    {
+      "category": "conservation",
+      "comparison_mode": "absolute_upper_bound",
+      "engineering_floor": 0.01,
+      "field": "phi",
+      "final_tolerance": 0.01,
+      "formula": "abs(inlet_flux + outlet_flux) / max(abs(inlet_flux), 1e-12)",
+      "name": "boundary_flux_balance",
+      "observed_repeat_spread": 0.0,
+      "reference": 0.00013448838195295743,
+      "required": true,
+      "sample_coordinates": [
+        [
+          -2.0,
+          1.0,
+          0.0
+        ],
+        [
+          2.0,
+          1.0,
+          0.0
+        ]
+      ],
+      "sampling_error_allowance": 0.0,
+      "tolerance_source": "Pilot-v1 engineering cap; must also exceed three-run official-baseline spread.",
+      "unit": "1"
+    },
+    {
+      "category": "physics_golden",
+      "comparison_mode": "relative_l2",
+      "engineering_floor": 0.08,
+      "field": "U",
+      "final_tolerance": 0.08,
+      "formula": "Relative L2 error against Ux=1-(a/r)^2*cos(2theta), Uy=-(a/r)^2*sin(2theta), a=0.5 m",
+      "name": "analytical_velocity_profile",
+      "observed_repeat_spread": 0.0,
+      "reference": [
+        0.9305149912834167,
+        0.1690063625574112,
+        -2.3784794954202373e-20,
+        1.3255150318145752,
+        0.0020596999675035477,
+        -4.630837373439579e-21,
+        0.9219259023666382,
+        -0.16006802022457123,
+        2.374479301676719e-20
+      ],
+      "required": true,
+      "sample_coordinates": [
+        [
+          -1.0,
+          0.5,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          0.5,
+          0.0
+        ]
+      ],
+      "sampling_error_allowance": 0.0,
+      "tolerance_source": "Analytical solution with pilot-v1 discretization allowance fixed before formal attempts.",
+      "unit": "m/s"
+    }
+  ],
+  "openfoam_version": "10",
+  "schema_version": 1,
+  "source_sha256": "fa46c52459743ed2d5be3696eefa349ac4c807bf435c29d1fc813d421939fcac"
+}

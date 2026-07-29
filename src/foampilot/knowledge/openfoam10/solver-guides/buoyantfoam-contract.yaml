@@ -1,0 +1,42 @@
+schema_version: 1.0.0
+id: of10.solver.buoyantfoam-contract
+title: buoyantFoam compressible natural-convection contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [buoyantFoam]
+models: [compressible, buoyant, turbulent, steady, PIMPLE]
+tags: [buoyantfoam, natural-convection, p_rgh, komega-sst, wall-heat]
+applicability:
+  conditions:
+    - Compressible buoyancy, gravity, heat transfer, and thermodynamic density coupling are required.
+    - The task uses steady or transient PIMPLE bookkeeping supported by buoyantFoam.
+  not_applicable:
+    - Density is constant and temperature does not couple to momentum.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 buoyantFoam application
+  locator: OpenFOAM-10/applications/solvers/heatTransfer/buoyantFoam/buoyantFoam.C
+  sha256: a7d25af08426ae465a69bc95d607d2189744ef06f480232d35e577f93b5cc778
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: buoyantFoam couples compressible thermodynamics, gravity, U, enthalpy, p_rgh, turbulence, and thermophysical transport through a PIMPLE loop that may use steady pseudo-time bookkeeping.
+  rules:
+    - Provide physicalProperties, momentumTransport, g, any required pressure-reference data, U, p, p_rgh, T, turbulence and thermal-diffusivity fields, fvSchemes, fvSolution, and controlDict.
+    - Keep thermodynamic p, hydrostatic-reduced p_rgh, gravity head, operating pressure, pRefCell, and pRefValue mutually consistent.
+    - For a steady task use steadyState discretization and interpret controlDict time as iterations; omit residualControl unless explicitly needed, and when present give Foundation v10 PIMPLE residualControl fields as single scalar values rather than tolerance dictionaries.
+    - Provide every divergence scheme used by the energy and momentum equations, including div(phi,K) for the kinetic-energy transport term.
+    - Use one coherent Foundation v10 turbulence wall-function set, including compressible alphat with the declared turbulent Prandtl number.
+    - For a large three-dimensional case, decompose, execute the solver with typed mpi_ranks, and reconstruct the accepted state.
+  failure_signals:
+    - Perfect-gas p is initialized near zero or p and p_rgh encode incompatible hydrostatics.
+    - k, omega, nut, or alphat wall functions are missing or mutually inconsistent.
+    - The iteration cap is reached with poor residual or local-continuity evidence.
+    - Molecular-only wall gradients disagree with transport-model integrated wall heat flow.
+  validation:
+    - Require Mesh OK, normal completion, finite reconstructed fields, decreasing terminal residuals, and acceptable local and cumulative continuity.
+    - Use Foundation wallHeatFlux integrated Q on a temporary copy and check closed-domain hot/cold balance.

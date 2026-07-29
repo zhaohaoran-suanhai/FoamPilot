@@ -1,0 +1,44 @@
+case_id: multiphase-dam-break
+source_sha256: caf30bdbf1f7765bdfece2e973def41a41186206503f6d0d4f5b24f9ab3e96da
+golden_sha256: 61e466cd67b3047397710c4b9c12b6ff4aa90a7f940f63623f0195c1a2502f55
+expected_application: interFoam
+expected_end_time: 1.0
+metrics:
+  - name: final_time
+    category: completion
+    formula: latest_written_time >= 1 and solver exits without fatal or non-finite values
+    field: log.time
+    unit: s
+    sample_coordinates: [[0.3, 0.3, 0.0073]]
+    comparison_mode: lower_bound
+    tolerance: 0.0
+    tolerance_source: Exact task run target frozen before pilot-v1 formal attempts.
+  - name: water_volume
+    category: conservation
+    formula: abs(integral(alpha.water)_final-integral(alpha.water)_initial)/integral(alpha.water)_initial
+    field: alpha.water
+    unit: "1"
+    sample_coordinates: [[0.07305, 0.146, 0.0073]]
+    comparison_mode: absolute_upper_bound
+    tolerance: 0.02
+    tolerance_source: Pilot-v1 phase-volume cap; must exceed three-run official-baseline spread.
+  - name: free_surface_profiles
+    category: physics_golden
+    formula: Mean absolute vertical error of the alpha.water=0.5 contour at written times
+    field: alpha.water
+    unit: m
+    sample_coordinates: [[0.1, 0.0, 0.0073], [0.2, 0.0, 0.0073], [0.3, 0.0, 0.0073], [0.4, 0.0, 0.0073], [0.5, 0.0, 0.0073]]
+    comparison_mode: absolute_mean
+    tolerance: 0.03
+    tolerance_source: Official-source golden interface contours with two-cell allowance.
+  - name: leading_front_position
+    category: physics_golden
+    formula: Maximum absolute error in the leading x position where alpha.water >= 0.5 over written times
+    field: alpha.water
+    unit: m
+    sample_coordinates: [[0.0, 0.01, 0.0073], [0.584, 0.01, 0.0073]]
+    comparison_mode: absolute_max
+    tolerance: 0.03
+    tolerance_source: Official-source golden front history with two-cell allowance.
+notes:
+  - Interface metrics use alpha.water=0.5 and the case mid-plane.

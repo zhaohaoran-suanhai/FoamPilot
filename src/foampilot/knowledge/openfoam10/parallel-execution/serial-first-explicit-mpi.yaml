@@ -1,0 +1,37 @@
+schema_version: 1.0.0
+id: of10.parallel.serial-first-explicit-mpi
+title: Qualify serial execution before explicit local MPI
+fork: foundation
+version: "10"
+knowledge_type: parallel_execution
+solvers: []
+models: [local-mpi]
+tags: [mpi, serial, ranks, decomposition]
+applicability:
+  conditions:
+    - A solver contract explicitly supports parallel execution.
+    - The case is large enough that measured MPI scaling may offset overhead.
+  not_applicable:
+    - The contract is serial-only or the case is too small to benefit.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 decomposePar application
+  locator: OpenFOAM-10/applications/utilities/parallelProcessing/decomposePar/decomposePar.C
+  sha256: e1622875dba925dcdc0343872ecd9f9aa307c6c2b11e9d6df39e408941c711ab
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Establish a correct serial baseline before local MPI; parallel execution requires an explicit decomposition, bounded rank count, parallel solver flag, and reconstruction policy.
+  rules:
+    - Do not infer MPI support from solver availability alone.
+    - Declare a positive rank count no greater than the measured physical-core limit.
+    - Use the approved Runner and preserve requested, eligible, and observed ranks separately.
+  failure_signals:
+    - MPI is launched without -parallel or without an explicit rank count.
+    - Parallel results disagree with the qualified serial baseline.
+  validation:
+    - The serial case passes before the MPI variant is accepted.
+    - Measure wall time and result parity rather than assuming more ranks are faster.

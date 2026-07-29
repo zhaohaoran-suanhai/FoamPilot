@@ -1,0 +1,36 @@
+schema_version: 1.0.0
+id: of10.error.missing-pressure-reference
+title: Repair an unresolved pressure reference
+fork: foundation
+version: "10"
+knowledge_type: error_playbook
+solvers: [icoFoam]
+models: [PISO, closed-domain]
+tags: [fatal-io, pressure, repair, fvsolution]
+applicability:
+  conditions:
+    - The log explicitly reports that no reference cell can be set for p.
+    - Pressure boundary review confirms that no fixed-value pressure anchor exists.
+  not_applicable:
+    - The log names another field or the domain already has a deliberate pressure anchor.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 pressure reference selection
+  locator: OpenFOAM-10/src/finiteVolume/cfdTools/general/findRefCell/findRefCell.C
+  sha256: 35b61c874b77a23862a372729da793175e1f4d4b6e89f3f76e65d05d3b406a7f
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Classify the exact fatal message, confirm the pressure nullspace, then make one minimal fvSolution repair in a new attempt.
+  rules:
+    - Preserve the failed log and case before changing anything.
+    - Add one valid pRefCell and pRefValue under PISO.
+    - Re-run lint and the full approved pipeline in a new immutable attempt.
+  failure_signals:
+    - Unable to set reference cell for field p.
+  validation:
+    - The new attempt no longer has the reference-cell fatal error.
+    - Completion, final-time, and continuity checks still pass.

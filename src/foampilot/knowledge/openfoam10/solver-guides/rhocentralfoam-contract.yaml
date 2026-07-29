@@ -1,0 +1,40 @@
+schema_version: 1.0.0
+id: of10.solver.rhocentralfoam-contract
+title: rhoCentralFoam compressible central-upwind contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [rhoCentralFoam]
+models: [compressible, transient, central-upwind, perfect-gas]
+tags: [rhocentralfoam, compressible, shock, thermodynamics, courant]
+applicability:
+  conditions:
+    - A transient compressible flow contains strong density, pressure, or wave propagation.
+    - A central-upwind density-based scheme is appropriate and the thermodynamic state is fully specified.
+  not_applicable:
+    - The requested problem is incompressible or steady without compressible wave dynamics.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 rhoCentralFoam application
+  locator: OpenFOAM-10/applications/solvers/compressible/rhoCentralFoam/rhoCentralFoam.C
+  sha256: f0c3fa3b1af2d689818ae442dc561723a521543df064403d7d36f252ca7ef8a0
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: rhoCentralFoam advances density, momentum, and energy with central-upwind fluxes derived from the compressible thermodynamic state and acoustic wave speeds.
+  rules:
+    - Provide physicalProperties with a coherent psi thermodynamics model and energy variable, momentumTransport, U, p, T, fvSchemes, fvSolution, controlDict, and a valid mesh.
+    - Use zero viscosity only when the public task is explicitly inviscid and keep the laminar momentum model consistent with that assumption.
+    - Align discontinuities with mesh faces and use empty transverse patches for a geometrically one-dimensional case.
+    - Use adjustTimeStep and a positive maxCo for Courant control; deltaT is the initial step and maxDeltaT must exceed it when adaptive growth is intended.
+    - Use timeFormat general when startTime is zero so the initial directory named 0 remains readable; preserve enough timePrecision to identify short adaptive output times.
+  failure_signals:
+    - The thermodynamic package, energy field, density, or transport model is inconsistent or unreadable.
+    - maxDeltaT equals deltaT and prevents requested adaptive growth.
+    - The run ends normally but mass, actual Courant history, or public wave propagation is inaccurate.
+  validation:
+    - Require Mesh OK, successful discontinuity initialization, normal completion, requested final time, finite thermodynamic fields, and mass conservation.
+    - Compare transient wave locations with public analytical or refinement evidence rather than a target-case coordinate.

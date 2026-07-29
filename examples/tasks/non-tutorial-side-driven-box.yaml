@@ -1,0 +1,64 @@
+schema_version: 1
+task_id: non-tutorial-side-driven-box
+title: Non-tutorial side-driven laminar enclosure
+prompt: >-
+  Starting from an empty case directory, solve a two-dimensional transient
+  laminar incompressible flow in a rectangular enclosure 0.10 m wide and
+  0.06 m high, extruded 0.001 m through the suppressed direction. Use a
+  uniform 40 by 24 by 1 hexahedral mesh. The left vertical wall moves upward
+  at (0 0.05 0) m/s; the right, top, and bottom walls are stationary no-slip
+  walls; the two thin front/back planes are empty. Initially velocity and
+  kinematic pressure are zero. The kinematic viscosity is 1.0e-4 m2/s.
+  Advance from 0 to 1.0 s with a fixed 0.002 s time step and write every
+  0.2 s. Run serially. Generate all native Foundation OpenFOAM v10
+  dictionaries yourself, check the mesh before solving, and preserve final
+  velocity and pressure fields. Public evidence must show Mesh OK, normal
+  completion, final time at least 1.0 s, finite fields, and absolute
+  cumulative continuity error no greater than 1.0e-5.
+openfoam_target:
+  distribution: foundation
+  version: "10"
+resource_budget:
+  max_attempts: 2
+  max_wall_seconds: 300
+  max_mpi_ranks: 1
+  memory_mib: 2048
+required_outputs:
+  - mesh quality report
+  - final velocity field
+  - final pressure field
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - solver reports normal End
+  - latest solver time is at least 1.0 s
+  - required fields remain finite
+  - absolute cumulative continuity error is no greater than 1.0e-5
+public_checks:
+  - name: mesh-quality
+    kind: mesh_ok
+    parameters: {}
+  - name: normal-completion
+    kind: completion
+    parameters: {}
+  - name: final-time
+    kind: final_time
+    parameters:
+      minimum: 1.0
+  - name: finite-fields
+    kind: finite_fields
+    parameters: {}
+  - name: continuity
+    kind: continuity
+    parameters:
+      max_abs_cumulative: 1.0e-5
+  - name: final-velocity
+    kind: requested_output
+    parameters:
+      path: 1/U
+  - name: final-pressure
+    kind: requested_output
+    parameters:
+      path: 1/p
+public_assets: []
+protected_paths:
+  - /home/edwin/workplace/OpenFOAM-10/tutorials

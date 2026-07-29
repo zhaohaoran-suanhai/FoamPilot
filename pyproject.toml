@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "foampilot"
+version = "0.1.0"
+description = "A native OpenFOAM case-authoring, execution, repair, and qualification agent"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "numpy>=1.26",
+  "pydantic>=2.0",
+  "pyvista>=0.44",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+codex = ["requests>=2.31"]
+test = ["pytest>=8"]
+
+[project.scripts]
+foampilot = "foampilot.cli.main:entrypoint"
+
+[project.urls]
+Repository = "https://github.com/zhaohaoran-suanhai/FoamPilot"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+foampilot = [
+  "knowledge/knowledge-manifest.json",
+  "knowledge/openfoam10/**/*.yaml",
+  "skills/*.yaml",
+  "skills/**/*.md",
+  "skills/**/*.yaml",
+  "qualification/data/**/*.yaml",
+  "qualification/data/**/*.json",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

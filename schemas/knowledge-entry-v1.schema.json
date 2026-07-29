@@ -1,0 +1,247 @@
+{
+  "$defs": {
+    "KnowledgeApplicability": {
+      "additionalProperties": false,
+      "properties": {
+        "conditions": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Conditions",
+          "type": "array"
+        },
+        "not_applicable": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Not Applicable",
+          "type": "array"
+        }
+      },
+      "required": [
+        "conditions",
+        "not_applicable"
+      ],
+      "title": "KnowledgeApplicability",
+      "type": "object"
+    },
+    "KnowledgeContent": {
+      "additionalProperties": false,
+      "properties": {
+        "failure_signals": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Failure Signals",
+          "type": "array"
+        },
+        "rules": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Rules",
+          "type": "array"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "validation": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Validation",
+          "type": "array"
+        }
+      },
+      "required": [
+        "summary",
+        "rules",
+        "validation"
+      ],
+      "title": "KnowledgeContent",
+      "type": "object"
+    },
+    "KnowledgeLeakage": {
+      "additionalProperties": false,
+      "properties": {
+        "contains_target_case_solution": {
+          "const": false,
+          "title": "Contains Target Case Solution",
+          "type": "boolean"
+        },
+        "families": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Families",
+          "type": "array"
+        },
+        "visibility": {
+          "enum": [
+            "public",
+            "development_only"
+          ],
+          "title": "Visibility",
+          "type": "string"
+        }
+      },
+      "required": [
+        "visibility",
+        "contains_target_case_solution"
+      ],
+      "title": "KnowledgeLeakage",
+      "type": "object"
+    },
+    "KnowledgeSource": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "official_source",
+            "official_documentation",
+            "reviewed_engineering",
+            "pilot_derived"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "license_spdx": {
+          "minLength": 1,
+          "title": "License Spdx",
+          "type": "string"
+        },
+        "locator": {
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "title",
+        "locator",
+        "sha256",
+        "license_spdx"
+      ],
+      "title": "KnowledgeSource",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One focused, provenance-bearing Foundation v10 knowledge topic.",
+  "properties": {
+    "applicability": {
+      "$ref": "#/$defs/KnowledgeApplicability"
+    },
+    "content": {
+      "$ref": "#/$defs/KnowledgeContent"
+    },
+    "fork": {
+      "const": "foundation",
+      "title": "Fork",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^of10\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "knowledge_type": {
+      "enum": [
+        "solver_guide",
+        "mesh_pattern",
+        "boundary_condition",
+        "physics_model",
+        "numerics",
+        "error_playbook",
+        "parallel_execution",
+        "validation_pattern"
+      ],
+      "title": "Knowledge Type",
+      "type": "string"
+    },
+    "leakage": {
+      "$ref": "#/$defs/KnowledgeLeakage"
+    },
+    "models": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Models",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "solvers": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Solvers",
+      "type": "array"
+    },
+    "source": {
+      "$ref": "#/$defs/KnowledgeSource"
+    },
+    "tags": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Tags",
+      "type": "array"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "version": {
+      "const": "10",
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "title",
+    "fork",
+    "version",
+    "knowledge_type",
+    "tags",
+    "applicability",
+    "source",
+    "leakage",
+    "content"
+  ],
+  "title": "KnowledgeEntry",
+  "type": "object"
+}

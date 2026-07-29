@@ -1,0 +1,140 @@
+{
+  "case_id": "laminar-cavity",
+  "created_at": "2026-07-28T11:47:26.616909Z",
+  "metrics": [
+    {
+      "category": "completion",
+      "comparison_mode": "lower_bound",
+      "engineering_floor": 0.0,
+      "field": "log.time",
+      "final_tolerance": 0.0,
+      "formula": "latest_written_time >= 0.5 and solver exits without fatal or non-finite values",
+      "name": "final_time",
+      "observed_repeat_spread": 0.0,
+      "reference": 0.5,
+      "required": true,
+      "sample_coordinates": [
+        [
+          0.05,
+          0.05,
+          0.005
+        ]
+      ],
+      "sampling_error_allowance": 0.0,
+      "tolerance_source": "Exact task run target frozen before pilot-v1 formal attempts.",
+      "unit": "s"
+    },
+    {
+      "category": "conservation",
+      "comparison_mode": "absolute_upper_bound",
+      "engineering_floor": 0.005,
+      "field": "phi",
+      "final_tolerance": 0.005,
+      "formula": "abs(sum of boundary volumetric fluxes) / max(lid_speed*width, 1e-12)",
+      "name": "closed_domain_flux",
+      "observed_repeat_spread": 0.0,
+      "reference": 0.0,
+      "required": true,
+      "sample_coordinates": [
+        [
+          0.05,
+          0.1,
+          0.005
+        ]
+      ],
+      "sampling_error_allowance": 0.0,
+      "tolerance_source": "Pilot-v1 engineering cap; must also exceed three-run official-baseline spread.",
+      "unit": "1"
+    },
+    {
+      "category": "physics_golden",
+      "comparison_mode": "relative_l2",
+      "engineering_floor": 0.12,
+      "field": "U",
+      "final_tolerance": 0.12,
+      "formula": "Mean relative L2 error of Ux on x=0.05 m and Uy on y=0.05 m at t=0.5 s",
+      "name": "centerline_velocity_profiles",
+      "observed_repeat_spread": 0.0,
+      "reference": [
+        -0.058219149708747864,
+        0.00012147671077400446,
+        0.0,
+        -0.19986750185489655,
+        0.00677788071334362,
+        0.0,
+        0.46463435888290405,
+        0.0054937731474637985,
+        0.0,
+        -0.03252492472529411,
+        0.13123302161693573,
+        0.0,
+        -0.037094421684741974,
+        -0.13850925862789154,
+        0.0
+      ],
+      "required": true,
+      "sample_coordinates": [
+        [
+          0.05,
+          0.01,
+          0.005
+        ],
+        [
+          0.05,
+          0.05,
+          0.005
+        ],
+        [
+          0.05,
+          0.09,
+          0.005
+        ],
+        [
+          0.01,
+          0.05,
+          0.005
+        ],
+        [
+          0.09,
+          0.05,
+          0.005
+        ]
+      ],
+      "sampling_error_allowance": 0.0,
+      "tolerance_source": "Official-source golden profile plus pilot-v1 mesh interpolation allowance.",
+      "unit": "m/s"
+    },
+    {
+      "category": "physics_golden",
+      "comparison_mode": "relative_l2",
+      "engineering_floor": 0.12,
+      "field": "U",
+      "final_tolerance": 0.12,
+      "formula": "Relative L2 error of volume-mean 0.5*mag(U)^2 at each written time",
+      "name": "kinetic_energy_history",
+      "observed_repeat_spread": 0.0,
+      "reference": [
+        0.0,
+        0.03149896238924337,
+        0.031611398355074656,
+        0.031613542406259035,
+        0.03161418722836146,
+        0.03161440749914512
+      ],
+      "required": true,
+      "sample_coordinates": [
+        [
+          0.05,
+          0.05,
+          0.005
+        ]
+      ],
+      "sampling_error_allowance": 0.0,
+      "tolerance_source": "Official-source golden time history; threshold fixed before formal attempts.",
+      "unit": "m2/s2"
+    }
+  ],
+  "openfoam_version": "10",
+  "schema_version": 1,
+  "source_sha256": "7fef318e30263480d8c4e3266b14936d0a16950d4b4b7a15228391bc1c7dc904"
+}

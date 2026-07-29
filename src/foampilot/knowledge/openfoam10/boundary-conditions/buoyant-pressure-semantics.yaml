@@ -1,0 +1,39 @@
+schema_version: 1.0.0
+id: of10.boundary.buoyant-pressure-semantics
+title: buoyantFoam thermodynamic and reduced-pressure semantics
+fork: foundation
+version: "10"
+knowledge_type: boundary_condition
+solvers: [buoyantFoam]
+models: [compressible, buoyant, p_rgh]
+tags: [buoyantfoam, pressure, p_rgh, reference]
+applicability:
+  conditions:
+    - A Foundation v10 compressible buoyant solver uses p and p_rgh.
+    - Gravity and a thermodynamic operating pressure are present.
+  not_applicable:
+    - The solver uses only incompressible kinematic pressure.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 buoyantFoam pressure equation
+  locator: OpenFOAM-10/applications/solvers/heatTransfer/buoyantFoam/pEqn.H
+  sha256: 92de947badaa0be280ebfefbd066a72361049ab934acdb9678afec674aaf03ee
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: buoyantFoam solves the hydrostatic-reduced pressure p_rgh and reconstructs thermodynamic p from p_rgh, density, gravitational head, and the pressure reference.
+  rules:
+    - Keep p as thermodynamic pressure for the compressible equation of state.
+    - Keep p_rgh consistent with p minus hydrostatic head and the chosen pressure reference.
+    - Treat pRefCell and pRefValue as the reduced-pressure gauge anchor, not as a replacement for operating pressure.
+    - Use pressure boundary conditions that match the velocity flux and the closed or open nature of each patch.
+  failure_signals:
+    - p is initialized near zero for a perfect-gas operating-pressure case.
+    - p and p_rgh encode incompatible hydrostatic states.
+    - A pRefValue meaning is copied from an unrelated pressure formulation.
+  validation:
+    - Inventory p, p_rgh, gravity datum, operating pressure, pRefCell, and pRefValue together.
+    - Verify reconstructed thermodynamic pressure stays finite, positive, and physically plausible.

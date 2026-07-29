@@ -1,0 +1,46 @@
+schema_version: 1.0.0
+id: of10.solver.interfoam-vof-contract
+title: interFoam incompressible two-fluid VOF contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [interFoam]
+models: [incompressible, isothermal, immiscible, vof, transient]
+tags: [interfoam, multiphase, vof, free-surface]
+applicability:
+  conditions:
+    - Two incompressible isothermal immiscible fluids require transient interface capture.
+    - A phase-fraction field, velocity, and reduced pressure are defined on every patch.
+  not_applicable:
+    - The fluids are miscible, compressible, or require resolved phase change.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 interFoam application
+  locator: OpenFOAM-10/applications/solvers/multiphase/interFoam/interFoam.C
+  sha256: 32d19e0e3ed6df86812d80d77675aa6017e0482f0010567077fa832fb04ebeac
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: interFoam advances two incompressible immiscible fluids with a VOF phase fraction, PIMPLE pressure-velocity coupling, interface compression, and gravity.
+  rules:
+    - In Foundation v10, provide constant/phaseProperties with the phase names and sigma, plus one constant/physicalProperties.<phase> dictionary per declared phase; each phase dictionary supplies viscosityModel, nu, and rho. Do not replace these grouped files with one aggregate constant/physicalProperties dictionary.
+    - Provide momentumTransport, g, U, p_rgh, and the named phase-fraction field.
+    - Use pressure dimensions [1 -1 -2 0 0 0 0] for p_rgh in Foundation v10 interFoam; use prghTotalPressure rather than totalPressure on an atmosphere patch.
+    - In system/fvSolution, provide phase-fraction controls and linear-solver settings for pcorr, pcorrFinal, p_rgh, p_rghFinal, and U. The final entries may inherit their base entries, for example pcorrFinal from $pcorr.
+    - When divSchemes uses default none, explicitly provide div(rhoPhi,U), div(phi,alpha), div(phirb,alpha), and the Foundation v10 laminar viscous-stress key div(((rho*nuEff)*dev2(T(grad(U))))). A missing exact key is a startup dictionary error, not a stability failure.
+    - Use positive transient time controls and limit both the flow and phase Courant numbers.
+    - Make the pressure reference and every phase, velocity, and pressure boundary condition consistent with the mesh patches.
+    - Use a declared initialization utility before the solver when the initial interface is regional.
+  failure_signals:
+    - The phase-fraction field, a physicalProperties.<phase> dictionary, or either phase model cannot be read.
+    - fvSolution reports pcorr, pcorrFinal, p_rgh, p_rghFinal, U, or the phase-fraction solver as undefined.
+    - fvSchemes reports div(((rho*nuEff)*dev2(T(grad(U))))) as undefined.
+    - The initial region is absent, empty, or outside the mesh.
+    - Phase fraction becomes non-finite or materially leaves the interval from zero to one.
+  validation:
+    - Require normal completion, requested final time, and finite required fields.
+    - Derive phase-fraction minima, maxima, and volume-integral history from written fields after the solve.
+    - Check phase-volume conservation independently of process completion.

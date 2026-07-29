@@ -1,0 +1,4 @@
+interface:
+  display_name: "Author OpenFOAM Benchmark"
+  short_description: "Build leakage-safe auditable OpenFOAM benchmarks"
+  default_prompt: "Use $openfoam-author-benchmark to define a leakage-safe OpenFOAM Agent benchmark with public tasks, private evaluators, frozen inputs, and immutable evidence."

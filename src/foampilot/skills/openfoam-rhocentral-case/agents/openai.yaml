@@ -1,0 +1,4 @@
+interface:
+  display_name: "rhoCentralFoam Case"
+  short_description: "Author and verify compressible central-flow cases"
+  default_prompt: "Use $openfoam-rhocentral-case to author or repair a Foundation v10 rhoCentralFoam case."

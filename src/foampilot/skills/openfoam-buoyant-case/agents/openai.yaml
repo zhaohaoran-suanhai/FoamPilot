@@ -1,0 +1,4 @@
+interface:
+  display_name: "buoyantFoam Case"
+  short_description: "Author and verify steady buoyant heat-transfer cases"
+  default_prompt: "Use $openfoam-buoyant-case to author or repair a Foundation v10 buoyantFoam case."

@@ -1,0 +1,41 @@
+schema_version: 1.0.0
+id: of10.solver.potentialfoam-contract
+title: potentialFoam incompressible velocity-potential contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [potentialFoam]
+models: [incompressible, inviscid, potential-flow, steady]
+tags: [potentialfoam, potential, phi, velocity, pressure]
+applicability:
+  conditions:
+    - The requested flow is incompressible, irrotational, and adequately represented by a velocity potential.
+    - A mesh and consistent velocity and pressure boundary conditions define the flux problem.
+  not_applicable:
+    - Viscous separation, turbulence, compressibility, or time-resolved physics is required.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 potentialFoam application
+  locator: OpenFOAM-10/applications/solvers/basic/potentialFoam/potentialFoam.C
+  sha256: 85f7aad507cdd3ea50332f8d3e1617b90bc1e7f70aeaadcda2c9691a48e9d1ce
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: potentialFoam solves a velocity-potential equation, corrects flux, reconstructs U, and can optionally write the potential and an approximate pressure field without a time loop.
+  rules:
+    - Provide U, p, fvSchemes, fvSolution with a potentialFlow non-orthogonal corrector dictionary, controlDict, and a valid mesh.
+    - Use a reference for the velocity potential and, when pressure is requested, a consistent pressure reference.
+    - Request -writePhi when the potential is needed and -writep when the pressure field is a required output.
+    - When using -writep with divSchemes default none, provide both div(phi,U) and div(div(phi,U)); Foundation v10 constructs the approximate pressure from nested divergence operations.
+    - Treat the written result as a single steady state; do not invent transient convergence semantics.
+    - Use slip or symmetry on inviscid solid boundaries and keep inlet/outlet U and p conditions flux-compatible.
+  failure_signals:
+    - Phi or its reference cannot be created.
+    - U is reconstructed but required p or Phi output is absent because the corresponding option was omitted.
+    - The result completes but inlet/outlet flux or an analytical potential-flow invariant fails.
+  validation:
+    - Require Mesh OK, normal End, finite U and p, and the requested written fields.
+    - Check flux balance and compare sampled velocity with an analytical invariant when one is public.

@@ -1,0 +1,44 @@
+case_id: compressible-shock-tube
+source_sha256: f415cfee56b9a0296d1c02fd64fc6c54e4d93008c07268f9d612599ec158d0ea
+golden_sha256: 80cc1be074b0731ab437773b88c045227dc257c2e332e756de2343ae8a2168e6
+expected_application: rhoCentralFoam
+expected_end_time: 0.007
+metrics:
+  - name: final_time
+    category: completion
+    formula: latest_written_time >= 0.007 and solver exits without fatal or non-finite values
+    field: log.time
+    unit: s
+    sample_coordinates: [[0.0, 0.0, 0.0]]
+    comparison_mode: lower_bound
+    tolerance: 0.0
+    tolerance_source: Exact task run target frozen before pilot-v1 formal attempts.
+  - name: total_mass
+    category: conservation
+    formula: abs(integral(rho)_final-integral(rho)_initial)/integral(rho)_initial
+    field: rho
+    unit: "1"
+    sample_coordinates: [[-4.995, 0.0, 0.0], [4.995, 0.0, 0.0]]
+    comparison_mode: absolute_upper_bound
+    tolerance: 0.01
+    tolerance_source: Pilot-v1 closed-domain conservation cap; must exceed official-baseline spread.
+  - name: primitive_profiles
+    category: physics_golden
+    formula: Maximum relative L1 error across pressure, temperature, density, and streamwise velocity centerline profiles
+    field: p,T,rho,U
+    unit: mixed_SI
+    sample_coordinates: [[-4.995, 0.0, 0.0], [-2.5, 0.0, 0.0], [0.0, 0.0, 0.0], [2.5, 0.0, 0.0], [4.995, 0.0, 0.0]]
+    comparison_mode: relative_l1
+    tolerance: 0.06
+    tolerance_source: Official-source 1000-point golden profiles; threshold fixed before formal attempts.
+  - name: wave_positions
+    category: physics_golden
+    formula: Maximum absolute error in detected rarefaction head, contact, and shock x positions
+    field: p,rho,U
+    unit: m
+    sample_coordinates: [[-5.0, 0.0, 0.0], [0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]
+    comparison_mode: absolute_max
+    tolerance: 0.05
+    tolerance_source: Official-source wave locations with two-cell detection allowance.
+notes:
+  - Density is derived from the solved thermodynamic state if not explicitly written.

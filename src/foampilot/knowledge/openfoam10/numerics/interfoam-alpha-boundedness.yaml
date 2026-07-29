@@ -1,0 +1,45 @@
+schema_version: 1.0.0
+id: of10.numerics.interfoam-alpha-boundedness
+title: interFoam VOF alpha boundedness and Courant control
+fork: foundation
+version: "10"
+knowledge_type: numerics
+solvers: [interFoam]
+models: [incompressible, isothermal, immiscible, vof, transient, mules]
+tags: [interfoam, vof, mules, boundedness, courant, phase-fraction]
+applicability:
+  conditions:
+    - A Foundation v10 interFoam case must keep a phase-fraction field within a stated finite tolerance over the full transient interval.
+    - The case uses adaptive or fixed global time stepping and algebraic VOF interface capture.
+  not_applicable:
+    - The task uses a geometric interface-capturing method with different control semantics.
+    - A phase fraction intentionally represents an unbounded transported scalar.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 VoF alpha-equation and time-step source set
+  locator: OpenFOAM-10/src/twoPhaseModels/twoPhaseMixture/VoF ordered sources alphaEqn.H, alphaEqnSubCycle.H, alphaControls.H, setDeltaT.H, alphaCourantNo.H
+  sha256: 458fedd9d54bda5f6f045bb08cbb715d3c52e4b81b0aa254322623419805bcde
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 interFoam couples MULES phase-fraction correction, alpha correctors and sub-cycles, and flow/interface Courant limits; strict boundedness requires conservative controls plus all-time evidence, not only successful completion.
+  rules:
+    - Treat maxCo and maxAlphaCo as safety ceilings, not accuracy targets. When strict phase-fraction bounds are required, configure them strictly below the public ceilings instead of copying the allowed maxima, and cap maxDeltaT consistently with the mesh and interface motion.
+    - Declare nAlphaCorr and nAlphaSubCycles explicitly. MULESCorr and nLimiterIter control the bounded correction process, but their presence alone is not proof that the requested tolerance is met.
+    - Record all-time extrema and phase-volume history with native function objects on every time step. Do not infer boundedness from the final field or normal End marker.
+    - If a completed finite run violates a bound, keep geometry, material properties, boundary conditions, and initialization fixed. First test a smaller time-step/interface-Courant family; only if the overshoot persists, test one alpha correction, sub-cycling, or limiter family.
+    - Change one causal family per repair and rerun the full requested interval. Do not weaken a public tolerance to turn an observed overshoot into a pass.
+    - Accept the numerical repair only when all-time lower and upper bounds and phase-volume conservation pass together.
+  failure_signals:
+    - The solver reaches End but an all-time phase-fraction extremum exceeds the public tolerance.
+    - The reported interface Courant number repeatedly approaches its configured ceiling while extrema deteriorate.
+    - Tightening the time-step family changes the overshoot materially, indicating temporal/interface-transport sensitivity.
+    - Bounds improve but phase-volume drift worsens, so the repair is not physically acceptable.
+  validation:
+    - Parse every recorded minimum and maximum, including intermediate MULES-corrected states when exposed by the selected evidence contract.
+    - Compare the worst all-time extrema with the public tolerance and reject final-time-only evidence.
+    - Compare the first and last recorded phase-volume integrals after successful regional initialization.
+    - Preserve the failed run, the one-family repair decision, the rerun logs, and the unchanged-control statement.

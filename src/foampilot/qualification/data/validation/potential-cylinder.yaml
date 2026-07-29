@@ -1,0 +1,35 @@
+case_id: potential-cylinder
+source_sha256: fa46c52459743ed2d5be3696eefa349ac4c807bf435c29d1fc813d421939fcac
+golden_sha256: d0987409812b4d5288f972f5446047adc1597f97e9e3077d455e3f0da64020f8
+expected_application: potentialFoam
+expected_end_time: 1.0
+metrics:
+  - name: final_state
+    category: completion
+    formula: latest_written_time >= 1 and solver exits without fatal or non-finite values
+    field: log.time
+    unit: s
+    sample_coordinates: [[0.0, 1.0, 0.0]]
+    comparison_mode: lower_bound
+    tolerance: 0.0
+    tolerance_source: Exact task run target frozen before pilot-v1 formal attempts.
+  - name: boundary_flux_balance
+    category: conservation
+    formula: abs(inlet_flux + outlet_flux) / max(abs(inlet_flux), 1e-12)
+    field: phi
+    unit: "1"
+    sample_coordinates: [[-2.0, 1.0, 0.0], [2.0, 1.0, 0.0]]
+    comparison_mode: absolute_upper_bound
+    tolerance: 0.01
+    tolerance_source: Pilot-v1 engineering cap; must also exceed three-run official-baseline spread.
+  - name: analytical_velocity_profile
+    category: physics_golden
+    formula: Relative L2 error against Ux=1-(a/r)^2*cos(2theta), Uy=-(a/r)^2*sin(2theta), a=0.5 m
+    field: U
+    unit: m/s
+    sample_coordinates: [[-1.0, 0.5, 0.0], [0.0, 1.0, 0.0], [1.0, 0.5, 0.0]]
+    comparison_mode: relative_l2
+    tolerance: 0.08
+    tolerance_source: Analytical solution with pilot-v1 discretization allowance fixed before formal attempts.
+notes:
+  - The official source is used only by the golden builder and evaluator.

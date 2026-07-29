@@ -1,0 +1,39 @@
+schema_version: 1.0.0
+id: of10.validation.transport-wall-heat-balance
+title: Transport-model wall heat-flow balance
+fork: foundation
+version: "10"
+knowledge_type: validation_pattern
+solvers: [buoyantFoam]
+models: [thermophysical-transport, turbulent-heat-transfer]
+tags: [wallheatflux, energy, convergence, turbulence]
+applicability:
+  conditions:
+    - A completed fluid or solid heat-transfer result needs integrated wall heat-flow evidence.
+    - The active thermophysical transport model may include turbulent or radiative heat flux.
+  not_applicable:
+    - No wall heat-transfer quantity is part of the physical acceptance criteria.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 wallHeatFlux function object
+  locator: OpenFOAM-10/src/functionObjects/field/wallHeatFlux/wallHeatFlux.C
+  sha256: 9045c814bd0cd1810a9bdbc49476ecb009ac6cf422084b7ee2f0854e629fc76e
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation wallHeatFlux obtains heat flux from the active thermophysical transport model, includes configured radiation when present, and integrates Q over each wall patch.
+  rules:
+    - Use integrated wallHeatFlux Q rather than reconstructing turbulent heat flow from molecular conductivity alone.
+    - Run post-processing on a temporary copy when the completed attempt is immutable.
+    - Pair energy balance with equation-residual and continuity trends because a normal End line is not a convergence proof.
+    - Normalize closed-domain hot/cold imbalance by the larger absolute integrated heat flow.
+  failure_signals:
+    - Wall heat rate is inferred only from first-cell temperature and molecular conductivity in a turbulent case.
+    - Hot and cold integrated heat flows have the same sign or a large normalized imbalance.
+    - Residual or local continuity evidence is absent at the accepted iteration.
+  validation:
+    - Record patch names, integrated Q, mean q, audit time, and normalized imbalance.
+    - Preserve separate completion, convergence, continuity, and energy-balance verdicts.

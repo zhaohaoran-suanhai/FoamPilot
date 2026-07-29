@@ -1,0 +1,44 @@
+case_id: laminar-cavity
+source_sha256: 7fef318e30263480d8c4e3266b14936d0a16950d4b4b7a15228391bc1c7dc904
+golden_sha256: 51af52b61b4239a4006f9d82c3a415f20450e93c7f72f1cfcbbf58a40f380626
+expected_application: icoFoam
+expected_end_time: 0.5
+metrics:
+  - name: final_time
+    category: completion
+    formula: latest_written_time >= 0.5 and solver exits without fatal or non-finite values
+    field: log.time
+    unit: s
+    sample_coordinates: [[0.05, 0.05, 0.005]]
+    comparison_mode: lower_bound
+    tolerance: 0.0
+    tolerance_source: Exact task run target frozen before pilot-v1 formal attempts.
+  - name: closed_domain_flux
+    category: conservation
+    formula: abs(sum of boundary volumetric fluxes) / max(lid_speed*width, 1e-12)
+    field: phi
+    unit: "1"
+    sample_coordinates: [[0.05, 0.1, 0.005]]
+    comparison_mode: absolute_upper_bound
+    tolerance: 0.005
+    tolerance_source: Pilot-v1 engineering cap; must also exceed three-run official-baseline spread.
+  - name: centerline_velocity_profiles
+    category: physics_golden
+    formula: Mean relative L2 error of Ux on x=0.05 m and Uy on y=0.05 m at t=0.5 s
+    field: U
+    unit: m/s
+    sample_coordinates: [[0.05, 0.01, 0.005], [0.05, 0.05, 0.005], [0.05, 0.09, 0.005], [0.01, 0.05, 0.005], [0.09, 0.05, 0.005]]
+    comparison_mode: relative_l2
+    tolerance: 0.12
+    tolerance_source: Official-source golden profile plus pilot-v1 mesh interpolation allowance.
+  - name: kinetic_energy_history
+    category: physics_golden
+    formula: Relative L2 error of volume-mean 0.5*mag(U)^2 at each written time
+    field: U
+    unit: m2/s2
+    sample_coordinates: [[0.05, 0.05, 0.005]]
+    comparison_mode: relative_l2
+    tolerance: 0.12
+    tolerance_source: Official-source golden time history; threshold fixed before formal attempts.
+notes:
+  - Pressure is compared only after removal of its arbitrary constant reference.

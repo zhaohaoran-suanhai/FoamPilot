@@ -1,0 +1,44 @@
+case_id: buoyant-cavity
+source_sha256: 8fe982c018b47e1e7b7ea08cd0e88c16e4ba6f7d3e37cd13670266c8cb128abe
+golden_sha256: 11811377bd9291d83e54a00cf21d14a74403af714ed796c340c7ddea59864c12
+expected_application: buoyantFoam
+expected_end_time: 1000.0
+metrics:
+  - name: final_time
+    category: completion
+    formula: latest_written_time >= 1000 and solver exits without fatal or non-finite values
+    field: log.time
+    unit: s
+    sample_coordinates: [[0.038, 1.09, 0.0]]
+    comparison_mode: lower_bound
+    tolerance: 0.0
+    tolerance_source: Exact task run target frozen before pilot-v1 formal attempts.
+  - name: wall_heat_balance
+    category: conservation
+    formula: Ratio of area-mean hot-wall to cold-wall heat-rate magnitudes at 1000 s
+    field: T
+    unit: "1"
+    sample_coordinates: [[0.0, 1.09, 0.0], [0.076, 1.09, 0.0]]
+    comparison_mode: relative_absolute
+    tolerance: 0.1
+    tolerance_source: Official-source transient hot/cold heat-rate ratio; threshold fixed before formal attempts.
+  - name: temperature_velocity_profiles
+    category: physics_golden
+    formula: Mean normalized L2 error of T and vertical U across the width at seven height fractions
+    field: T,U
+    unit: K_and_m/s
+    sample_coordinates: [[0.038, 0.218, 0.0], [0.038, 0.654, 0.0], [0.038, 0.872, 0.0], [0.038, 1.09, 0.0], [0.038, 1.308, 0.0], [0.038, 1.526, 0.0], [0.038, 1.962, 0.0]]
+    comparison_mode: normalized_l2
+    tolerance: 0.15
+    tolerance_source: Official-source golden profiles and bundled experimental profile locations.
+  - name: mean_nusselt
+    category: physics_golden
+    formula: Relative error of area-mean hot-wall heat transfer normalized by conductive scale
+    field: T
+    unit: "1"
+    sample_coordinates: [[0.076, 1.09, 0.0]]
+    comparison_mode: relative_absolute
+    tolerance: 0.15
+    tolerance_source: Official-source golden mean Nusselt number; threshold fixed before formal attempts.
+notes:
+  - Profile comparison uses y/H values 0.1, 0.3, 0.4, 0.5, 0.6, 0.7, and 0.9.

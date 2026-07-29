@@ -1,0 +1,40 @@
+schema_version: 1.0.0
+id: of10.physics.regional-field-initialization
+title: Native regional volume-field initialization
+fork: foundation
+version: "10"
+knowledge_type: physics_model
+solvers: [setFields]
+models: [initialization, cell-region, volume-field]
+tags: [setfields, initialization, region, field]
+applicability:
+  conditions:
+    - A volume field must have a nonuniform regional initial state on an existing mesh.
+    - The selected region can be expressed by a native cell-selection source.
+  not_applicable:
+    - The requested initial state is uniform or requires an external mapped dataset.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 setFields utility
+  locator: OpenFOAM-10/applications/utilities/preProcessing/setFields/setFields.C
+  sha256: 7db94bc4a1675dfad2f6baccfb9e3091baf830c04655bc15f5e610fe88335177
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: setFields reads an existing volume field, selects mesh cells or patch faces from a dictionary, assigns typed values, updates boundaries from patch-internal values, and writes the field.
+  rules:
+    - Create the mesh before regional initialization.
+    - Provide a valid default field value and one or more explicit region selections.
+    - Use a typed scalar or vector assignment whose field already exists in the initial-time directory.
+    - Execute initialization after mesh quality checks and before the solver.
+  failure_signals:
+    - The named field cannot be found at the current or constant time.
+    - The selected region contains no cells or lies outside the mesh.
+    - Solver execution begins before the regional field is written.
+  validation:
+    - Capture initialization return code and log.
+    - Confirm a nonzero intended region through the initial field integral.
+    - Preserve the initialization dictionary and resulting initial field in the run artifact.

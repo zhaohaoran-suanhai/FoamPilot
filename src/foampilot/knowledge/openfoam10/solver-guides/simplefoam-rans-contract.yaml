@@ -1,0 +1,40 @@
+schema_version: 1.0.0
+id: of10.solver.simplefoam-rans-contract
+title: simpleFoam steady incompressible RANS contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [simpleFoam]
+models: [incompressible, turbulent, steady, RANS, SIMPLE]
+tags: [simplefoam, simple, rans, kepsilon, wall-functions]
+applicability:
+  conditions:
+    - The requested flow is steady, incompressible, and turbulent.
+    - A RANS closure and its inlet and wall boundary conditions are specified.
+  not_applicable:
+    - Compressibility, multiphase flow, or required transient behavior is present.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 simpleFoam application
+  locator: OpenFOAM-10/applications/solvers/incompressible/simpleFoam/simpleFoam.C
+  sha256: 6cc5a9270140e22c3168f9da18b9cc9061ee2ffe00b0567cf863a8aefe1bb55a
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: simpleFoam iterates the steady incompressible momentum and pressure equations with SIMPLE coupling and updates the selected viscosity and momentum-transport models.
+  rules:
+    - Provide physicalProperties, momentumTransport, U, p, every turbulence field required by the selected RANS model, fvSchemes, fvSolution, controlDict, and a valid mesh.
+    - Use steadyState time discretization and a SIMPLE dictionary with a valid pressure reference when pressure has no fixed-value anchor.
+    - Use one coherent wall-function set for the selected high- or low-Reynolds-number closure; do not mix k, epsilon or omega, and nut conditions from unrelated models.
+    - Configure relaxation for stable convergence and keep enough iteration and write budget to preserve a final state; add residualControl only when early stopping is explicitly needed.
+    - When MPI is used, decompose before solving, use executable simpleFoam with mpi_ranks on that typed command, and reconstruct before evaluator sampling; never embed mpirun or orterun because the Runner owns the launcher.
+  failure_signals:
+    - A turbulence field or model coefficient dictionary is missing.
+    - A wall function is incompatible with the selected RANS closure or patch type.
+    - End is reached only because the iteration cap is exhausted while residuals, continuity, or flow balance remain poor.
+  validation:
+    - Require Mesh OK, normal solver completion, finite fields, and a reconstructed latest state.
+    - Check residual trends, continuity, inlet/outlet flow balance, and requested pressure or velocity observables independently.

@@ -1,0 +1,37 @@
+schema_version: 1.0.0
+id: of10.physics.kinematic-viscosity-physical-properties
+title: Kinematic viscosity in Foundation v10 physicalProperties
+fork: foundation
+version: "10"
+knowledge_type: physics_model
+solvers: [icoFoam]
+models: [constant-viscosity, incompressible]
+tags: [viscosity, physicalproperties, dimensions, laminar]
+applicability:
+  conditions:
+    - The solver reads a constant incompressible kinematic viscosity.
+    - The supplied material property is nu in square metres per second.
+  not_applicable:
+    - Dynamic viscosity, non-Newtonian transport, or thermophysical properties are required.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 icoFoam field creation
+  locator: OpenFOAM-10/applications/solvers/incompressible/icoFoam/createFields.H
+  sha256: 6a00e54e585a3cf9407e21f924b8c13068275a357516accb7eba6a4af3cc39f6
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 icoFoam reads constant kinematic viscosity nu from constant/physicalProperties with dimensions of length squared per time.
+  rules:
+    - Store nu with dimensions [0 2 -1 0 0 0 0].
+    - Convert material data to square metres per second before authoring.
+    - Keep dynamic and kinematic viscosity distinct.
+  failure_signals:
+    - physicalProperties or nu cannot be read.
+    - Reynolds number is inconsistent by a density or unit factor.
+  validation:
+    - Recompute Reynolds number from the authored length, velocity, and nu.
+    - Inspect the resolved physicalProperties value and dimensions.

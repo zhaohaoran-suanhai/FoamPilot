@@ -1,0 +1,37 @@
+schema_version: 1.0.0
+id: of10.numerics.piso-closed-pressure-reference
+title: Pressure reference for a closed PISO domain
+fork: foundation
+version: "10"
+knowledge_type: numerics
+solvers: [icoFoam]
+models: [PISO, closed-domain]
+tags: [piso, pressure, reference, nullspace]
+applicability:
+  conditions:
+    - All pressure boundaries are Neumann-like and pressure is defined only up to a constant.
+    - The PISO algorithm requires a unique pressure level.
+  not_applicable:
+    - A fixed pressure boundary or another model already anchors the pressure level.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 pressure reference selection
+  locator: OpenFOAM-10/src/finiteVolume/cfdTools/general/findRefCell/findRefCell.C
+  sha256: 35b61c874b77a23862a372729da793175e1f4d4b6e89f3f76e65d05d3b406a7f
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: A closed incompressible domain with only pressure-gradient conditions has a constant pressure nullspace and needs one PISO pressure reference.
+  rules:
+    - Declare pRefCell and pRefValue in the PISO dictionary.
+    - Choose a valid cell index and a consistent reference value.
+    - Do not add a second physical pressure constraint merely to silence the error.
+  failure_signals:
+    - Unable to set reference cell for field p.
+    - The solver exits after reading U, p, and phi but before time stepping.
+  validation:
+    - The selected pRefCell exists in the generated mesh.
+    - icoFoam enters time stepping without a pressure-reference fatal error.

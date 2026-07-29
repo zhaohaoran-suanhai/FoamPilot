@@ -1,0 +1,37 @@
+schema_version: 1.0.0
+id: of10.validation.completion-conservation-physics
+title: Layered solver and physics validation
+fork: foundation
+version: "10"
+knowledge_type: validation_pattern
+solvers: []
+models: [public-validation]
+tags: [completion, conservation, physics, verdict]
+applicability:
+  conditions:
+    - An OpenFOAM run needs an evidence-backed technical verdict.
+    - Public checks must remain separate from benchmark-private golden checks.
+  not_applicable:
+    - No solver execution or physical output is under review.
+source:
+  kind: reviewed_engineering
+  title: FoamPilot native public validation
+  locator: src/foampilot/validation/native.py
+  sha256: 7bea01e0fca6bf0c57bca36266646275f05e0e06d8ad5789da91fb2b7f493942
+  license_spdx: MIT
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: A zero return code is only one gate; completion, final time, finite values, conservation, problem-specific physics, and artifact integrity form separate evidence layers.
+  rules:
+    - Require return code, timeout, fatal-marker, normal-End, and final-time checks.
+    - Evaluate conservation and public physics independently of shell success.
+    - Keep private golden values and validators outside the Agent-visible context.
+  failure_signals:
+    - The verdict is PASS solely because the shell returned zero.
+    - Missing or non-finite physics evidence is treated as success.
+  validation:
+    - Record every check with observed value, criterion, and pass/fail result.
+    - Verify the artifact manifest before reporting the run.

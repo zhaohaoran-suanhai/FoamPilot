@@ -1,0 +1,84 @@
+schema_version: 1
+task_id: buoyant-cavity
+title: Turbulent natural convection in a tall heated enclosure
+prompt: >-
+  Starting from an empty case directory, build and solve a three-dimensional
+  steady perfect-gas natural-convection case in a closed enclosure 0.076 m
+  wide, 2.18 m high, and 0.52 m deep. The x=0.076 m wall is hot and x=0 m
+  wall is cold. Use a uniform 35 by 150 by 15 structured mesh and preserve
+  hot, cold, top-and-bottom, and front-and-back wall patches. Use a pure
+  perfect gas with molecular weight 28.96 kg/kmol, Cp=1004.4 J/(kg K),
+  dynamic viscosity 1.831e-5 Pa s, Prandtl number 0.705, sensible enthalpy,
+  reference pressure 100000 Pa, and gravity (0 -9.81 0) m/s2. Use a turbulent
+  k-omega SST RANS model with turbulent Prandtl number 0.85. Initialize
+  T=293 K, U=(0 0 0) m/s, thermodynamic p=100000 Pa,
+  k=3.75e-4 m2/s2, and omega=0.12 1/s. Keep p and p_rgh hydrostatically and
+  dimensionally consistent with a valid reduced-pressure reference. Fix the
+  hot wall at 307.75 K and cold wall at 288.15 K; make remaining walls
+  adiabatic; apply no slip and coherent Foundation v10 k, omega, nut, and
+  alphat wall functions. Solve the steady equations through iteration 1000
+  with unit pseudo-time bookkeeping and write every 50 iterations. Configure
+  residual controls but retain complete residual and continuity logs for
+  evaluator checks. Use local MPI with up to 16 ranks, including typed
+  decomposition, parallel solve, and reconstruction commands. Preserve T, U,
+  p, p_rgh, k, omega, nut, and alphat at iteration 1000 for profile and wall
+  heat evaluation. Generate all Foundation OpenFOAM v10 files yourself, check
+  the mesh, and do not read or copy a pre-existing case.
+openfoam_target:
+  distribution: foundation
+  version: "10"
+resource_budget:
+  max_attempts: 2
+  max_wall_seconds: 3600
+  max_mpi_ranks: 16
+  memory_mib: 8192
+required_outputs:
+  - mesh quality log
+  - completed steady buoyant solver log through iteration 1000
+  - reconstructed temperature, velocity, pressure, and turbulence fields
+  - residual and continuity histories
+  - fields suitable for wallHeatFlux and profile evaluation
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - buoyantFoam reaches iteration 1000 and ends normally
+  - required fields remain finite and reconstructed fields are present
+  - p, p_rgh, operating pressure, gravity, and pressure reference are consistent
+  - terminal p_rgh, h, k, and omega residuals and local continuity satisfy the public convergence policy
+  - integrated hot and cold transport-model wall heat flows balance within 0.1
+public_checks:
+  - name: mesh-quality
+    kind: mesh_ok
+    parameters: {}
+  - name: buoyant-solver
+    kind: command_executed
+    parameters:
+      executable: buoyantFoam
+  - name: normal-completion
+    kind: completion
+    parameters: {}
+  - name: final-iteration
+    kind: final_time
+    parameters:
+      minimum: 1000
+  - name: finite-fields
+    kind: finite_fields
+    parameters: {}
+  - name: cumulative-continuity
+    kind: continuity
+    parameters:
+      max_abs_cumulative: 1.0
+  - name: final-temperature
+    kind: requested_output
+    parameters:
+      path: 1000/T
+  - name: final-velocity
+    kind: requested_output
+    parameters:
+      path: 1000/U
+  - name: final-reduced-pressure
+    kind: requested_output
+    parameters:
+      path: 1000/p_rgh
+public_assets: []
+protected_paths:
+  - /home/edwin/workplace/OpenFOAM-10/tutorials

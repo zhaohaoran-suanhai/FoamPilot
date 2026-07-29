@@ -1,0 +1,59 @@
+schema_version: 1
+task_id: rans-pitzdaily
+title: Steady turbulent flow through a sudden-expansion channel
+prompt: >-
+  Starting from an empty case directory, build and solve a two-dimensional
+  steady RANS flow through a backward-facing step and tapered outlet. The
+  inlet is at x=-0.0206 m with 0 <= y <= 0.0254 m. At x=0 introduce a lower
+  wall expansion to y=-0.0254 m while the upper wall stays at y=0.0254 m.
+  Continue to x=0.206 m, then taper both walls to y=+/-0.0166 m at outlet
+  x=0.290 m. Extrude one empty spanwise cell over 0.001 m. Use five connected
+  structured blocks with counts 18 by 30, 180 by 27, 180 by 30, 25 by 27, and
+  25 by 30, each with one spanwise cell, and grade toward the step and walls.
+  Use an incompressible Newtonian fluid with nu=1e-5 m2/s and a steady
+  standard high-Reynolds-number k-epsilon model with wall functions.
+  Initialize U and p to zero, k=0.375 m2/s2, and epsilon=14.855 m2/s3. At the
+  inlet impose U=(10 0 0) m/s and the stated turbulence values. At the outlet
+  fix p=0 and use zero gradients for transported fields. Apply no slip and
+  coherent high-Re wall functions on both walls; make spanwise patches empty.
+  Run to at most 2000 steady iterations, permit a residual-based earlier stop,
+  and write every 100 iterations. Use up to four local MPI ranks when useful,
+  including decomposition and reconstruction as typed commands. Generate all
+  Foundation OpenFOAM v10 files yourself, check the mesh, and do not read or
+  copy a pre-existing case.
+openfoam_target:
+  distribution: foundation
+  version: "10"
+resource_budget:
+  max_attempts: 2
+  max_wall_seconds: 1800
+  max_mpi_ranks: 4
+  memory_mib: 4096
+required_outputs:
+  - mesh quality log
+  - completed steady solver log
+  - reconstructed velocity, pressure, k, epsilon, and turbulent-viscosity fields
+  - inlet-outlet flow balance, pressure change, and downstream profile fields
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - simpleFoam reaches residual convergence or the 2000-iteration cap
+  - required fields remain finite
+  - reconstructed fields are available when MPI is used
+  - evaluator flow balance, pressure change, and downstream profiles pass
+public_checks:
+  - name: mesh-quality
+    kind: mesh_ok
+    parameters: {}
+  - name: rans-solver
+    kind: command_executed
+    parameters:
+      executable: simpleFoam
+  - name: normal-completion
+    kind: completion
+    parameters: {}
+  - name: finite-fields
+    kind: finite_fields
+    parameters: {}
+public_assets: []
+protected_paths:
+  - /home/edwin/workplace/OpenFOAM-10/tutorials
