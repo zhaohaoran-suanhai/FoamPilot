@@ -1,0 +1,41 @@
+schema_version: 1.0.0
+id: of10.solver.solidequilibriumdisplacementfoam-contract
+title: solidEquilibriumDisplacementFoam steady linear-elastic contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [solidEquilibriumDisplacementFoam]
+models: [solid, linear-elastic, small-strain, displacement, planeStress]
+tags: [solidequilibriumdisplacementfoam, solid-mechanics, displacement, traction, stress]
+applicability:
+  conditions:
+    - Foundation v10 solidEquilibriumDisplacementFoam solves steady small-strain linear elasticity with displacement corrections.
+    - Material behavior is supported by solidDisplacementThermo.
+  not_applicable:
+    - The task requires transient inertia, plasticity, contact, finite strain, or nonlinear material behavior.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 solidEquilibriumDisplacementFoam application source
+  locator: OpenFOAM-10/applications/solvers/stressAnalysis/solidDisplacementFoam/solidEquilibriumDisplacementFoam/solidEquilibriumDisplacementFoam.C
+  sha256: 923764db5346b81a9c886195aea5661cd690ffe813507631a02905fcaac57f64
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 solidEquilibriumDisplacementFoam iterates D and Dcorr with an explicit combined stress divergence and solver-specific stressAnalysis controls.
+  rules:
+    - Provide D, T, physicalProperties, fvSchemes, fvSolution, and controlDict. Material properties rho, E, nu, Cp, kappa, and alphav use the subdictionary form expected by solidDisplacementThermo.
+    - Use tractionDisplacement with traction, pressure, and value on loaded or free faces, fixedValue on constrained faces, and coherent empty or symmetry conditions.
+    - For the steady equilibrium solver define d2dt2Schemes/default steadyState, exact laplacianSchemes entries for laplacian(DD,D) and laplacian(DD,Dcorr) unless a valid default covers both, and the exact explicit divergence key div((sigmaExp+sigmaD)).
+    - Configure solvers for D and Dcorr and a stressAnalysis dictionary containing the convergence tolerance D, nCorrectors when needed, and accelerationFactor compatible with the material Poisson ratio.
+    - Do not reuse solidDisplacementFoam-only scheme names such as div(sigmaD) when the selected executable requests the combined equilibrium operator.
+  failure_signals:
+    - fvSchemes reports div((sigmaExp+sigmaD)) as undefined.
+    - fvSchemes reports laplacian(DD,D) or laplacian(DD,Dcorr) as undefined.
+    - fvSolution cannot find Dcorr or required stressAnalysis controls.
+    - Traction boundaries cannot construct because traction, pressure, or value is missing.
+  validation:
+    - Require Mesh OK, normal completion, finite D and stress fields, and task-derived constraint and traction behavior.
+    - Check displacement or stress against a public physical relation without copying a target-case solution.

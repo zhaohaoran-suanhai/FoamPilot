@@ -76,6 +76,60 @@ def _successful(step: PlanStepResult) -> bool:
     return step.return_code == 0 and not step.timed_out
 
 
+def _nonempty_file(path: Path, root: Path) -> bool:
+    return (
+        path.is_relative_to(root)
+        and path.is_file()
+        and path.stat().st_size > 0
+    )
+
+
+def _requested_output_path(
+    case_root: Path,
+    relative: str,
+) -> Path | None:
+    parsed = PurePosixPath(relative)
+    safe = (
+        bool(relative)
+        and not parsed.is_absolute()
+        and ".." not in parsed.parts
+    )
+    if not safe:
+        return None
+    exact = (case_root / relative).resolve()
+    if _nonempty_file(exact, case_root):
+        return exact
+    if len(parsed.parts) < 2:
+        return None
+    try:
+        requested_time = float(parsed.parts[0])
+    except ValueError:
+        return None
+    candidates: list[tuple[float, Path]] = []
+    for time_dir in case_root.iterdir():
+        if not time_dir.is_dir():
+            continue
+        try:
+            observed_time = float(time_dir.name)
+        except ValueError:
+            continue
+        if not math.isclose(
+            observed_time,
+            requested_time,
+            rel_tol=1e-9,
+            abs_tol=1e-12,
+        ):
+            continue
+        candidate = time_dir.joinpath(*parsed.parts[1:]).resolve()
+        if _nonempty_file(candidate, case_root):
+            candidates.append(
+                (abs(observed_time - requested_time), candidate)
+            )
+    if not candidates:
+        return None
+    return min(candidates, key=lambda item: item[0])[1]
+
+
 def _check_mesh_diagnostics(
     steps: list[PlanStepResult],
     texts: list[str],
@@ -280,7 +334,15 @@ def _check(
         passed = (
             minimum is not None
             and latest is not None
-            and latest + 1e-12 >= minimum
+            and (
+                latest >= minimum
+                or math.isclose(
+                    latest,
+                    minimum,
+                    rel_tol=1e-9,
+                    abs_tol=1e-12,
+                )
+            )
         )
         return PublicValidationCheck(
             name=expectation.name,
@@ -342,19 +404,8 @@ def _check(
     if kind == "requested_output":
         configured = parameters.get("path")
         relative = str(configured) if isinstance(configured, str) else ""
-        parsed = PurePosixPath(relative)
-        safe = (
-            bool(relative)
-            and not parsed.is_absolute()
-            and ".." not in parsed.parts
-        )
-        output = (case_root / relative).resolve() if safe else case_root
-        present = (
-            safe
-            and output.is_relative_to(case_root)
-            and output.is_file()
-            and output.stat().st_size > 0
-        )
+        output = _requested_output_path(case_root, relative)
+        present = output is not None
         return PublicValidationCheck(
             name=expectation.name,
             passed=present,
@@ -363,7 +414,15 @@ def _check(
                 if present
                 else "Requested case-relative output is missing or empty."
             ),
-            observed={"path": relative, "present": present},
+            observed={
+                "path": relative,
+                "present": present,
+                "resolved_path": (
+                    output.relative_to(case_root).as_posix()
+                    if output is not None
+                    else None
+                ),
+            },
         )
 
     payload = _payload(parameters, case_root)

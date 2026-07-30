@@ -94,6 +94,18 @@ def _stream_output_text(response: object) -> str:
             if isinstance(final, dict):
                 completed = _output_text(final) or completed
         elif event_type in {"error", "response.failed"}:
+            detail = event.get("error")
+            if not isinstance(detail, dict):
+                response_detail = event.get("response")
+                if isinstance(response_detail, dict):
+                    detail = response_detail.get("error")
+            if isinstance(detail, dict):
+                code = detail.get("code") or detail.get("type")
+                message = detail.get("message")
+                if isinstance(code, str) and isinstance(message, str):
+                    raise TransportError(
+                        f"Codex stream error {code}: {message}"
+                    )
             raise TransportError(
                 f"Codex stream ended with event {event_type}"
             )

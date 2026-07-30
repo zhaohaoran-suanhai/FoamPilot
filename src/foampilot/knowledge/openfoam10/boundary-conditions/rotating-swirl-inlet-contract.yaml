@@ -1,0 +1,39 @@
+schema_version: 1.0.0
+id: of10.boundary.rotating-swirl-inlet-contract
+title: Native cylindrical and swirling inlet velocity contract
+fork: foundation
+version: "10"
+knowledge_type: boundary_condition
+solvers: []
+models: [cylindricalInletVelocity, swirlInletVelocity, swirlFlowRateInletVelocity]
+tags: [swirl, rotating-inlet, cylindrical, origin, axis, rpm, flow-rate]
+applicability:
+  conditions:
+    - A velocity inlet requires axial, radial, or tangential motion about a declared axis.
+    - A native Foundation v10 boundary condition should replace custom coded patch logic.
+  not_applicable:
+    - The patch has uniform Cartesian velocity without rotation.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 cylindricalInletVelocity patch-field source
+  locator: OpenFOAM-10/src/finiteVolume/fields/fvPatchFields/derived/cylindricalInletVelocity/cylindricalInletVelocityFvPatchVectorField.C
+  sha256: 4114ce7f49895d905b63efa77105744a73ea42b402fba49a372d1f52159d0dff
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Native Foundation v10 cylindrical and swirling inlet patch fields need a complete geometric frame and velocity functions before any utility reads the field.
+  rules:
+    - For cylindricalInletVelocity provide origin, a non-zero axis, axialVelocity, radialVelocity, rpm, and an initialized value entry.
+    - For swirlInletVelocity provide origin, a non-zero axis, axialVelocity, radialVelocity, tangentialVelocity, and value.
+    - For swirlFlowRateInletVelocity provide flowRate, rpm, value, and explicitly state origin and axis for deterministic geometry even though the implementation can infer defaults.
+    - Keep the frame consistent with the mesh and inlet normal. Check units and signs of rpm, flow rate, and axial velocity independently.
+    - refineHexMesh -noFields can avoid mapping fields during refinement, but it does not make an incomplete boundary dictionary valid for the later solver. Every written field must still construct successfully.
+  failure_signals:
+    - blockMesh succeeds but a field-reading utility reports origin, axis, axialVelocity, radialVelocity, tangentialVelocity, flowRate, rpm, or value as undefined.
+    - The solver starts with a zero or reversed inlet because the declared axis and patch normal disagree.
+  validation:
+    - Require all preprocessing utilities to read U successfully before the main solve.
+    - Confirm the inlet velocity has the requested axial flux and tangential direction without using a target-case field.

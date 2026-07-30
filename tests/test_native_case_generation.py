@@ -200,6 +200,11 @@ def test_bundle_prompt_keeps_diagnostics_outside_the_required_solve() -> None:
         "For MPI, set the solver executable and mpi_ranks; never emit "
         "mpirun or orterun."
     ) in prompt
+    assert (
+        "Use plain checkMesh unless the public task explicitly requires "
+        "stricter flags"
+    ) in prompt
+    assert "-allGeometry or -allTopology" in prompt
 
 
 def test_materializer_rejects_unsafe_and_protected_files(

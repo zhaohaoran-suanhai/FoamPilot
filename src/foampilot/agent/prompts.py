@@ -25,6 +25,8 @@ the sum of command timeouts within the public resource budget. Each generated
 file must have a safe case-relative path and complete UTF-8 content. Use
 Foundation OpenFOAM v10 syntax and make field boundary patches match the mesh.
 For MPI, set the solver executable and mpi_ranks; never emit mpirun or orterun.
+Use plain checkMesh unless the public task explicitly requires stricter flags;
+do not add -allGeometry or -allTopology as an extra qualification gate.
 The public request and acceptance requirements are authoritative."""
 
 

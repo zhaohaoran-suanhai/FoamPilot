@@ -19,7 +19,7 @@ MANIFEST = PROJECT / "src/foampilot/knowledge/knowledge-manifest.json"
 
 def test_reviewed_corpus_is_complete_frozen_and_has_no_target_solution() -> None:
     entries = load_knowledge_corpus(CORPUS)
-    assert len(entries) == 28
+    assert len(entries) == 36
     assert verify_knowledge_manifest(CORPUS, MANIFEST) == []
     boundedness = next(
         entry
@@ -392,3 +392,158 @@ def test_buoyant_pressure_contract_covers_operating_pressure_gauge_start() -> No
     assert "do not duplicate the operating pressure" in serialized
     assert "pRefValue 0" in serialized
     assert "constant/pRef" in serialized
+
+
+def test_extended_solver_contracts_cover_observed_startup_failures() -> None:
+    entries = {
+        entry.id: entry
+        for entry in load_knowledge_corpus(CORPUS)
+    }
+    expected_fragments = {
+        "of10.solver.incompressible-transient-contract": (
+            "pisoFoam",
+            "pimpleFoam",
+            "div((nuEff*dev2(T(grad(U)))))",
+            "diffusion none",
+        ),
+        "of10.function.scalartransport-contract": (
+            "scalarTransport",
+            "diffusion",
+        ),
+        "of10.mesh.two-dimensional-empty-extrusion": (
+            "boundary face",
+            "block cell face",
+            "collapsed",
+        ),
+        "of10.physics.volume-fraction-source": (
+            "setFields",
+            "without -time",
+        ),
+        "of10.boundary.rotating-swirl-inlet-contract": (
+            "origin",
+            "axis",
+            "value",
+        ),
+        "of10.solver.rhosimplefoam-contract": (
+            "rhoSimpleFoam",
+            "alphat",
+            "[1 -1 -1 0 0 0 0]",
+            "minFactor",
+            "maxFactor",
+            "rhoInlet",
+            "profile turbulentBL",
+            "transonic yes",
+            "consistent yes",
+            "bounded Gauss upwind",
+            "0.9",
+        ),
+        "of10.solver.buoyantfoam-contract": (
+            "div(((rho*nuEff)*dev2(T(grad(U)))))",
+            "thermophysicalTransport",
+            "laminar",
+            "Fourier",
+        ),
+        "of10.solver.solidequilibriumdisplacementfoam-contract": (
+            "solidEquilibriumDisplacementFoam",
+            "div((sigmaExp+sigmaD))",
+            "laplacian(DD,Dcorr)",
+        ),
+        "of10.solver.srfsimplefoam-contract": (
+            "SRFSimpleFoam",
+            "SRFVelocity",
+            "inletValue",
+        ),
+        "of10.solver.twoliquidmixingfoam-contract": (
+            "twoLiquidMixingFoam",
+            "maxAlphaCo",
+            "required control entry",
+            "nAlphaSubCycles",
+            "div(phi,alpha)",
+        ),
+        "of10.solver.electrostaticfoam-contract": (
+            "electrostaticFoam",
+            "epsilon0 epsilon0",
+            "k k",
+        ),
+    }
+
+    for entry_id, fragments in expected_fragments.items():
+        serialized = entries[entry_id].model_dump_json()
+        for fragment in fragments:
+            assert fragment in serialized
+
+
+def test_extended_tasks_retrieve_exact_public_contracts() -> None:
+    entries = load_knowledge_corpus(CORPUS)
+    queries = (
+        (
+            "pimpleFoam transient laminar blocked channel tracer",
+            "of10.solver.incompressible-transient-contract",
+        ),
+        (
+            "scalarTransport function object tracer diffusion",
+            "of10.function.scalartransport-contract",
+        ),
+        (
+            "simpleFoam cyclic pipe rigid body swirl inlet origin axis",
+            "of10.boundary.rotating-swirl-inlet-contract",
+        ),
+        (
+            "rhoSimpleFoam compressible RAS square bend alphat",
+            "of10.solver.rhosimplefoam-contract",
+        ),
+        (
+            "solidEquilibriumDisplacementFoam plane stress traction beam",
+            "of10.solver.solidequilibriumdisplacementfoam-contract",
+        ),
+        (
+            "SRFSimpleFoam steady annular rotating reference frame Urel",
+            "of10.solver.srfsimplefoam-contract",
+        ),
+        (
+            "twoLiquidMixingFoam miscible phase fraction maxAlphaCo",
+            "of10.solver.twoliquidmixingfoam-contract",
+        ),
+        (
+            "electrostaticFoam charged wire dielectric epsilon0",
+            "of10.solver.electrostaticfoam-contract",
+        ),
+    )
+
+    for text, expected_entry_id in queries:
+        selected = select_knowledge(
+            entries,
+            KnowledgeQuery(text=text, limit=5),
+        )
+        assert expected_entry_id in {
+            match.entry_id
+            for match in selected
+        }
+
+
+def test_explicit_solver_name_outranks_incidental_topic_overlap() -> None:
+    entries = load_knowledge_corpus(CORPUS)
+    query = KnowledgeQuery(
+        text=(
+            "Foundation OpenFOAM v10 pisoFoam laminar wake behind a Darcy "
+            "porous square blockage. Use topoSet, a cartesian coordinate "
+            "system at the origin, an axis, a cell zone, symmetry planes, "
+            "kinematic viscosity, pressure and velocity fields."
+        ),
+        limit=1,
+    )
+
+    selected = select_knowledge(entries, query)
+
+    assert selected[0].entry_id == (
+        "of10.solver.incompressible-transient-contract"
+    )
+
+    contract = next(
+        entry
+        for entry in entries
+        if entry.id == "of10.solver.incompressible-transient-contract"
+    )
+    rules = "\n".join(contract.content.rules)
+    assert "explicitPorositySourceCoeffs" in rules
+    assert "constant/coordinateSystems" in rules

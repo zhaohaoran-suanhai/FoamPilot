@@ -218,6 +218,7 @@ from deterministic unit tests.
 - [Knowledge governance](docs/knowledge-governance.md)
 - [Qualification](docs/qualification.md)
 - [Controlled-learning 15-case report](docs/reports/2026-07-30-controlled-learning-15.md)
+- [Delivery readiness report](docs/reports/2026-07-30-delivery-readiness.md)
 - [Standalone real-case gate](docs/reports/2026-07-29-standalone-real-gate.md)
 - [License](LICENSE)
 - [Provenance and notices](NOTICE.md)

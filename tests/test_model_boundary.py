@@ -61,6 +61,10 @@ def test_transport_errors_use_configured_retry_delays() -> None:
     assert sleeps == [2, 5]
 
 
+def test_default_transport_backoff_allows_overload_to_recover() -> None:
+    assert ModelRetryPolicy().delays_seconds == (5, 15, 45, 90)
+
+
 def test_transport_retry_does_not_retry_schema_error() -> None:
     client = SequenceClient([SchemaOutputError("invalid")])
     with pytest.raises(SchemaOutputError):
@@ -82,7 +86,10 @@ def test_exhausted_transport_error_reports_attempt_count() -> None:
             TransportError("third"),
         ]
     )
-    with pytest.raises(TransportError, match="after 3 attempts"):
+    with pytest.raises(
+        TransportError,
+        match="after 3 attempts: third",
+    ):
         generate_with_retry(
             client,
             model_request(),
@@ -131,6 +138,50 @@ class StreamingResponse:
             b'"delta":"true}"}'
         )
         yield b"data: [DONE]"
+
+
+class OverloadedStreamingResponse:
+    status_code = 200
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def iter_lines(self):
+        yield b'data: {"type":"response.created"}'
+        yield (
+            b'data: {"type":"error","error":'
+            b'{"type":"service_unavailable_error",'
+            b'"code":"server_is_overloaded",'
+            b'"message":"Our servers are currently overloaded. '
+            b'Please try again later."}}'
+        )
+
+
+def test_codex_oauth_preserves_sse_error_detail(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "requests.post",
+        lambda *args, **kwargs: OverloadedStreamingResponse(),
+    )
+
+    client = CodexOAuthModelClient(
+        model="gpt-5.6-sol",
+        access_token="secret",
+    )
+    with pytest.raises(
+        TransportError,
+        match=(
+            "server_is_overloaded.*"
+            "Our servers are currently overloaded"
+        ),
+    ):
+        client.generate_structured(
+            ModelRequest(
+                purpose="probe",
+                system_prompt="Return structured output.",
+                user_prompt="Set ok true.",
+            ),
+            Probe,
+        )
 
 
 def test_codex_oauth_uses_required_sse_streaming_protocol(

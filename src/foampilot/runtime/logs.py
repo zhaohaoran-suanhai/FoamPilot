@@ -54,7 +54,8 @@ def parse_openfoam_log(text: str) -> OpenFOAMLogSummary:
     """Parse the public completion signals used by Stage 1."""
 
     times = re.findall(
-        rf"(?m)^\s*Time\s*=\s*({_NUMBER})\s*s?\s*$",
+        rf"(?m)^\s*(?:Time|Iteration)\s*(?:=|:)\s*"
+        rf"({_NUMBER})\s*s?\s*$",
         text,
     )
     continuity_matches = re.findall(

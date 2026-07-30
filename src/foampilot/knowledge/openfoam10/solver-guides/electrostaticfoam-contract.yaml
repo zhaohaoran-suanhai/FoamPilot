@@ -1,0 +1,39 @@
+schema_version: 1.0.0
+id: of10.solver.electrostaticfoam-contract
+title: electrostaticFoam potential and charge-transport contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [electrostaticFoam]
+models: [electrostatic, dielectric, charge-transport, transient]
+tags: [electrostaticfoam, electrostatic, potential, charge, epsilon0, dielectric]
+applicability:
+  conditions:
+    - Foundation v10 electrostaticFoam solves electric potential coupled to transported charge density.
+    - The case provides phi, rho, dielectric permittivity, and charge-transport mobility.
+  not_applicable:
+    - The task requires a magnetohydrodynamic or externally coupled electromagnetic solver.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 electrostaticFoam field construction
+  locator: OpenFOAM-10/applications/solvers/electromagnetics/electrostaticFoam/createFields.H
+  sha256: 7d4727cb8d3c3a032a1db995ce3aeed3c00e5e375bb44350ebef6d77bcbce5dc
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 electrostaticFoam reads named dimensioned scalars from physicalProperties, solves potential, and transports charge density in time.
+  rules:
+    - Provide volScalarField phi with electric-potential dimensions [1 2 -3 0 0 -1 0] and rho with charge-density dimensions [0 -3 1 0 0 1 0].
+    - physicalProperties uses the native dimensionedScalar stream form with a repeated internal name, for example epsilon0 epsilon0 [-1 -3 4 0 0 2 0] <value>; and k k [-1 0 2 0 0 1 0] <value>. Writing only epsilon0 [dimensions] <value> or k [dimensions] <value> makes the reader expect a word and fail on the opening bracket.
+    - Provide laplacian(phi) and div(rhoFlux,rho) schemes plus an asymmetric-capable solver for the transported rho equation.
+    - Use fixed electric potential where voltage is imposed, compatible charge-density conditions, symmetry on symmetry planes, and empty on spanwise faces of a two-dimensional extrusion.
+  failure_signals:
+    - physicalProperties reports wrong token type, expected word, at epsilon0 or k.
+    - Startup cannot read phi, rho, epsilon0, k, laplacian(phi), or div(rhoFlux,rho).
+    - Charge transport uses a symmetric-only linear solver despite its advective operator.
+  validation:
+    - Require Mesh OK, normal completion at the requested final time, and finite written phi and rho fields.
+    - Reject a run that only completes the potential solve but does not advance the charge-density equation.

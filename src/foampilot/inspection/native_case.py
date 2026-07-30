@@ -33,6 +33,7 @@ _NON_FOAM_SUFFIXES = {
     ".csv",
     ".dat",
     ".geo",
+    ".inc",
     ".json",
     ".msh",
     ".obj",

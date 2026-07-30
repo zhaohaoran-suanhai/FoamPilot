@@ -36,4 +36,13 @@ class EnvironmentSnapshot(StrictModel):
         return {item.name for item in self.commands}
 
     def agent_payload(self) -> dict[str, object]:
-        return self.model_dump(exclude={"tutorial_root"}, mode="json")
+        return {
+            "schema_version": self.schema_version,
+            "distribution": self.distribution,
+            "version": self.version,
+            "workspace_writable": self.workspace_writable,
+            "executable_names": sorted(self.executable_names),
+            "mpi_available": self.mpi_launcher is not None,
+            "gmsh_available": self.gmsh is not None,
+            "max_mpi_ranks": self.max_mpi_ranks,
+        }

@@ -1,0 +1,45 @@
+schema_version: 1.0.0
+id: of10.solver.rhosimplefoam-contract
+title: rhoSimpleFoam compressible RAS startup contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [rhoSimpleFoam]
+models: [compressible, steady, ras, perfect-gas, simple]
+tags: [rhosimplefoam, compressible, ras, simple, alphat, thermodynamics]
+applicability:
+  conditions:
+    - Foundation v10 rhoSimpleFoam solves steady compressible flow with thermodynamics and optional RAS turbulence.
+    - The primary pressure is dimensional thermodynamic pressure.
+  not_applicable:
+    - The flow is incompressible or uses a transient compressible solver.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 rhoSimpleFoam application source
+  locator: OpenFOAM-10/applications/solvers/compressible/rhoSimpleFoam/rhoSimpleFoam.C
+  sha256: f836c6a01b1c7f08eb0bc5651b554ace37be3c9cb136fe79429e1bfbcd0fc151
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 rhoSimpleFoam needs dimensional thermodynamic fields, compressible turbulent transport, and the complete steady pressure-velocity-energy discretization.
+  rules:
+    - Provide physicalProperties, momentumTransport, U, p, T, every turbulence field selected by the RAS model, alphat, fvSchemes, fvSolution, controlDict, and any declared fvConstraint.
+    - Use pressure dimensions [1 -1 -2 0 0 0 0], velocity [0 1 -1 0 0 0 0], temperature [0 0 0 1 0 0 0], k [0 2 -2 0 0 0 0], epsilon [0 2 -3 0 0 0 0], nut [0 2 -1 0 0 0 0], and compressible alphat [1 -1 -1 0 0 0 0]. Changing only the alphat patch type does not repair wrong field dimensions.
+    - Use the compressible alphat wall function required by the selected model and a declared turbulent Prandtl number.
+    - Under divSchemes/default none, include div(phi,U), the selected energy term such as div(phi,h), div(phi,K), div(phid,p), transported turbulence entries, and div(((rho*nuEff)*dev2(T(grad(U))))).
+    - A limitPressure fvConstraint that is specified as relative factors uses the exact keys minFactor and maxFactor. Do not replace factor keys with absolute min and max entries.
+    - For a compressible flowRateInletVelocity mass-flow boundary that needs an inlet-density estimate and turbulent boundary-layer profile, provide rhoInlet and profile turbulentBL explicitly when those semantics are requested.
+    - Configure SIMPLE controls and relaxation for p, U, energy, and turbulence. For a high-throughput compressible duct baseline, Foundation v10 uses transonic yes and consistent yes, GAMG with DILU for p, PBiCGStab with DILU for U, enthalpy and turbulence, corrected surface-normal and laplacian schemes, and coherent equation relaxation. Treat residualControl as a convergence gate, not a substitute for complete dictionaries.
+    - Start a demanding high-speed bend or duct with bounded Gauss upwind for U, enthalpy, k, epsilon, and kinetic energy before considering higher-order convection. A proven Foundation v10 steady startup baseline uses field relaxation p 1 and equation relaxation 0.9 for U, enthalpy, k, and epsilon; do not introduce linearUpwind or limitedLinear together with materially weaker relaxation until the conservative baseline is stable.
+  failure_signals:
+    - Startup reports addition of dynamic transport dimensions [1 -1 -1 0 0 0 0] and kinematic dimensions [0 2 -1 0 0 0 0].
+    - alphat uses kinematic dimensions or an incompressible wall-function type.
+    - fvSchemes reports a missing energy, pressure, kinetic-energy, turbulence, or viscous-stress divergence entry.
+    - Pressure or enthalpy diverges within early steady iterations and thermodynamics aborts on a negative reconstructed temperature.
+    - A factor-based pressure limiter is written with min and max instead of minFactor and maxFactor.
+  validation:
+    - Require Mesh OK, normal completion, finite U, p, T, density, turbulence, and alphat fields, and task-derived residual and conservation evidence.
+    - Reject a run that merely reaches its iteration cap with non-physical pressure or temperature.

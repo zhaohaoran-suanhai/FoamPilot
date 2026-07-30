@@ -207,6 +207,35 @@ def test_inspection_reports_missing_declared_file(tmp_path: Path) -> None:
     assert any(issue.code == "MISSING_DECLARED_FILE" for issue in report.issues)
 
 
+def test_inspection_accepts_headerless_include_fragments(
+    tmp_path: Path,
+) -> None:
+    _write_declared_case(tmp_path)
+    (tmp_path / "constant").mkdir()
+    fragment = "constant/values.inc"
+    (tmp_path / fragment).write_text(
+        "uniform 0;\n",
+        encoding="utf-8",
+    )
+    plan = _plan()
+    plan.files.append(
+        GeneratedFile(path=fragment, content="uniform 0;\n")
+    )
+
+    report = inspect_native_case(
+        case_root=tmp_path,
+        task=_task(),
+        plan=plan,
+        available_executables={"blockMesh", "icoFoam"},
+    )
+
+    assert not any(
+        issue.code == "MISSING_FOAM_HEADER"
+        and issue.path == fragment
+        for issue in report.issues
+    )
+
+
 def test_inspection_rejects_explicit_missing_field_patch(
     tmp_path: Path,
 ) -> None:

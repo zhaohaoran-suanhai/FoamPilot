@@ -361,3 +361,47 @@ def test_requested_output_rejects_path_escape(tmp_path: Path) -> None:
 
     assert not report.passed
     assert report.checks[0].observed["present"] is False
+
+
+def test_numeric_time_checks_accept_roundoff_equivalent_directory(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "9.99999999996/D"
+    output.parent.mkdir()
+    output.write_text("displacement", encoding="utf-8")
+    solve = _step(
+        tmp_path,
+        step_id="solve-solid",
+        executable="solidEquilibriumDisplacementFoam",
+        return_code=0,
+        stdout="Iteration: 9.99999999996\nEnd\n",
+    )
+    report = validate_native_run(
+        task=_task(
+            checks=[
+                {
+                    "name": "completion",
+                    "kind": "completion",
+                    "parameters": {},
+                },
+                {
+                    "name": "final-time",
+                    "kind": "final_time",
+                    "parameters": {"minimum": 10.0},
+                },
+                {
+                    "name": "displacement",
+                    "kind": "requested_output",
+                    "parameters": {"path": "10/D"},
+                },
+            ]
+        ),
+        run_result=PlanRunResult(case_dir=tmp_path, steps=[solve]),
+        case_root=tmp_path,
+    )
+
+    assert report.passed
+    output_check = next(
+        check for check in report.checks if check.name == "displacement"
+    )
+    assert output_check.observed["resolved_path"] == "9.99999999996/D"

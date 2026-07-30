@@ -29,6 +29,7 @@ content:
     - Use exactly one cell through the suppressed direction.
     - Assign mesh type empty to both bounding planes.
     - Assign field type empty on the same patch for every volume field.
+    - Every boundary face must match an actual block cell face. For a collapsed hex, keep the boundary face consistent with the repeated block vertices or avoid the degenerate block; do not invent a triangular boundary face that has no neighbour cell face.
   failure_signals:
     - Mesh and field patch types disagree.
     - More than one solution cell exists through the suppressed direction.

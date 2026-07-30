@@ -1,0 +1,43 @@
+schema_version: 1.0.0
+id: of10.solver.twoliquidmixingfoam-contract
+title: twoLiquidMixingFoam miscible-liquid startup contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [twoLiquidMixingFoam]
+models: [incompressible, miscible, two-liquid, phase-fraction, transient]
+tags: [twoliquidmixingfoam, miscible, phase-fraction, maxalphaco, p-rgh]
+applicability:
+  conditions:
+    - Foundation v10 twoLiquidMixingFoam transports the fraction of two incompressible miscible liquids.
+    - Density and viscosity differ by phase and molecular diffusion is declared.
+  not_applicable:
+    - The phases are immiscible with a sharp VOF interface or have independent velocities.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 twoLiquidMixingFoam application source
+  locator: OpenFOAM-10/applications/solvers/multiphase/twoLiquidMixingFoam/twoLiquidMixingFoam.C
+  sha256: e0ad60e1501e15bf00b9085a3a47e4f1e1ee0e43e17e236e92cf68050f1b2d0c
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 twoLiquidMixingFoam needs two phase property dictionaries, a bounded alpha field, reduced pressure, gravity, diffusion controls, and both flow and phase Courant limits.
+  rules:
+    - Declare the two phase names and diffusion coefficients in phaseProperties and provide one physicalProperties.<phase> dictionary for each phase.
+    - Provide U, p_rgh, the transported alpha.<phase> field, g, momentumTransport, fvSchemes, fvSolution, and a native initialization step when the starting interface is regional.
+    - Under divSchemes/default none, write the exact transported-fraction key div(phi,alpha); Foundation v10 twoLiquidMixingFoam looks up this generic operator name even when the field on disk is alpha.<phase>. Do not substitute div(phi,alpha.<phase>).
+    - controlDict must include maxCo and maxAlphaCo as a required control entry pair when adaptive time stepping is used, plus a positive maxDeltaT. The solver reads maxAlphaCo directly; maxCo alone is insufficient.
+    - In fvSolution give the transported alpha.<phase> solver dictionary nAlphaSubCycles and nAlphaCorr explicitly, together with a scalar solver, smoother, tolerance, and relTol. These controls belong with the alpha solver entry rather than only in PIMPLE.
+    - Keep p_rgh dimensions [1 -1 -2 0 0 0 0], use fixedFluxPressure on closed moving-fluid walls, and keep alpha boundary conditions consistent with phase entry and exit.
+    - Under divSchemes/default none, provide every requested momentum, alpha, diffusion, and viscous-stress operator using the exact field group name.
+  failure_signals:
+    - Startup reports maxAlphaCo is undefined in controlDict.
+    - A phase-specific physicalProperties dictionary or alpha field cannot be found.
+    - fvSolution/solvers/alpha.<phase> reports nAlphaSubCycles or nAlphaCorr as undefined.
+    - p_rgh uses kinematic-pressure dimensions instead of dynamic pressure.
+  validation:
+    - Require successful initialization, Mesh OK, normal completion, finite U, p_rgh and alpha, and task-derived phase bounds and inventory checks.
+    - Use both flow and phase Courant evidence when judging time-step adequacy.

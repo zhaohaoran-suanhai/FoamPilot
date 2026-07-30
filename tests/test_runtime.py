@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from foampilot.runtime import (
     RuntimeConfig,
     parse_openfoam_log,
@@ -43,3 +45,24 @@ End
     assert failed.fatal
     assert failed.non_finite
     assert not failed.completed
+
+
+def test_openfoam_log_parser_accepts_iteration_progress_as_time() -> None:
+    summary = parse_openfoam_log(
+        "Iteration = 0.01995\n"
+        "Iteration = 0.02\n"
+        "End\n"
+    )
+
+    assert summary.latest_time == 0.02
+    assert summary.completed
+
+
+def test_openfoam_log_parser_accepts_colon_iteration_progress() -> None:
+    summary = parse_openfoam_log(
+        "Iteration: 9.99999999996\n"
+        "End\n"
+    )
+
+    assert summary.latest_time == pytest.approx(10.0)
+    assert summary.completed

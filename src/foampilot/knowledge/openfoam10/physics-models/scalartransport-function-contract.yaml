@@ -1,0 +1,41 @@
+schema_version: 1.0.0
+id: of10.function.scalartransport-contract
+title: scalarTransport function-object dictionary contract
+fork: foundation
+version: "10"
+knowledge_type: physics_model
+solvers: []
+models: [scalarTransport, passive-scalar, function-object, advection, diffusion]
+tags: [scalartransport, function-object, tracer, diffusion, passive-scalar]
+applicability:
+  conditions:
+    - A Foundation v10 flow solver must also advance a passive or bounded volScalarField.
+    - The scalar is driven by an existing flux and should be solved from controlDict.
+  not_applicable:
+    - scalarTransportFoam is the primary application and owns the full solve.
+    - The field is static input data and should not be transported.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 scalarTransport function-object source
+  locator: OpenFOAM-10/src/functionObjects/solvers/scalarTransport/scalarTransport.C
+  sha256: 7b22f365173dbdba3f2cd5e6083dd360f0b9b347b9a3c0bdef3a8994fd887495
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: The Foundation v10 scalarTransport function object reads an explicit diffusion mode and uses the named scalar, flux, schemes, and fvSolution controls.
+  rules:
+    - Prefer the native #includeFunc scalarTransport(fieldName) form when its defaults match the public task.
+    - In an explicit dictionary provide type scalarTransport, the scalar field name, and the required diffusion entry. Valid Foundation v10 diffusion modes are none, constant, and viscosity.
+    - For diffusion constant also provide D. For diffusion viscosity provide alphal and alphat. Do not omit diffusion even when no diffusion is intended; write diffusion none.
+    - Provide a readable scalar field, div(phi,schemesField), and the scalar solver controls requested by the selected bounded or unbounded transport path.
+    - Do not use a coded function object to replace this built-in behavior.
+  failure_signals:
+    - Startup reports keyword diffusion is undefined in controlDict/functions.
+    - A constant diffusion mode cannot find D, or a viscosity mode cannot find alphal or alphat.
+    - The scalar field is present but remains unchanged because no scalarTransport function object or solver was configured.
+  validation:
+    - Require normal flow-solver completion and finite scalar values at the requested output times.
+    - Check task-derived scalar bounds or conservation separately from flow continuity.

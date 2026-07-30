@@ -83,6 +83,8 @@ def _eligible(entry: KnowledgeEntry, query: KnowledgeQuery) -> bool:
 
 
 def _score(entry: KnowledgeEntry, query_tokens: tuple[str, ...]) -> int:
+    query = set(query_tokens)
+    solver_tokens = set(_tokens(" ".join(entry.solvers)))
     high = set(
         _tokens(
             " ".join(
@@ -99,8 +101,8 @@ def _score(entry: KnowledgeEntry, query_tokens: tuple[str, ...]) -> int:
     # Detailed guidance is delivered after selection; its verbosity must not
     # change an entry's relevance.
     body = set(_tokens(entry.content.summary))
-    query = set(query_tokens)
-    return 4 * len(query & high) + len(query & body)
+    exact_solver_bonus = 20 if query & solver_tokens else 0
+    return exact_solver_bonus + 4 * len(query & high) + len(query & body)
 
 
 def select_knowledge(

@@ -1,0 +1,40 @@
+schema_version: 1.0.0
+id: of10.solver.srfsimplefoam-contract
+title: SRFSimpleFoam steady rotating-frame contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [SRFSimpleFoam]
+models: [incompressible, steady, ras, srf, rotating-frame]
+tags: [srfsimplefoam, srf, rotating-frame, urel, simple, srfvelocity]
+applicability:
+  conditions:
+    - Foundation v10 SRFSimpleFoam solves a steady incompressible flow in one rotating reference frame.
+    - Relative velocity Urel and SRFProperties define the rotating-frame formulation.
+  not_applicable:
+    - The frame moves transiently, multiple mesh regions rotate, or the task uses an MRF or dynamic-mesh solver.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 SRFSimpleFoam application source
+  locator: OpenFOAM-10/applications/solvers/incompressible/simpleFoam/SRFSimpleFoam/SRFSimpleFoam.C
+  sha256: a61c298e20a2ad62aec282d3a3872831dffea45c0fefb0cb8d508a8db56b80e8
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 SRFSimpleFoam reads Urel, SRFProperties, steady SIMPLE controls, and rotating-frame boundary fields before decomposition or solution.
+  rules:
+    - Provide SRFProperties with one model, origin, non-zero axis, and its coefficients; provide Urel rather than U.
+    - Every patch using type SRFVelocity must include inletValue, relative, and value. This applies to inlet and wall patches alike; for a stationary inertial wall use inletValue uniform (0 0 0), relative no, and an initialized value.
+    - Use pressureInletOutletVelocity or another pressure-compatible outlet velocity, one pressure reference or fixed pressure, and turbulence fields compatible with the selected RAS model.
+    - Under divSchemes/default none, provide div(phi,Urel), transported turbulence entries, and div((nuEff*dev2(T(grad(Urel))))).
+    - For MPI provide a valid decomposeParDict before decomposePar, run SRFSimpleFoam with typed mpi_ranks, and reconstruct accepted fields.
+  failure_signals:
+    - decomposePar or the solver reports inletValue, relative, or value missing from an SRFVelocity patch.
+    - The executable cannot find Urel or SRFProperties.
+    - fvSchemes reports a U-based rather than Urel-based momentum or viscous-stress operator.
+  validation:
+    - Require Mesh OK, successful decomposition when parallel, normal completion, reconstruction, and finite Urel, p, and turbulence fields.
+    - Check the relative and inertial interpretation of inlet and wall velocities from task geometry.

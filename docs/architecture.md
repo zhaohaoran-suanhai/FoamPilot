@@ -48,3 +48,7 @@ record and must remain within the TaskSpec budget.
 
 Evaluator-only qualification runs on a temporary copy of the completed case,
 so VTK marker files and post-processing cannot mutate the artifact manifest.
+
+See [Runtime workflow and pre-solve health analysis](runtime-workflow-and-pre-solve-health-analysis.md)
+for the current end-to-end state machine, measured phase latency, failure
+classification, and operational-readiness boundary.

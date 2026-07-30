@@ -65,7 +65,18 @@ def test_discovery_reports_facts_without_physics_ontology(
         snapshot.executable_names
     )
     assert "solver_families" not in snapshot.model_dump()
-    assert "tutorial_root" not in snapshot.agent_payload()
+    agent_payload = snapshot.agent_payload()
+    assert "tutorial_root" not in agent_payload
+    assert "openfoam_root" not in agent_payload
+    assert "workspace_root" not in agent_payload
+    assert "commands" not in agent_payload
+    assert agent_payload["executable_names"] == sorted(
+        snapshot.executable_names
+    )
+    assert agent_payload["mpi_available"] is (
+        snapshot.mpi_launcher is not None
+    )
+    assert agent_payload["gmsh_available"] is (snapshot.gmsh is not None)
     assert snapshot.workspace_writable
     assert next(
         item for item in snapshot.commands if item.name == "icoFoam"

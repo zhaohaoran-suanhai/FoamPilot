@@ -23,7 +23,7 @@ class ModelRetryPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_attempts: int = Field(default=5, ge=1)
-    delays_seconds: tuple[float, ...] = (2, 5, 15, 30)
+    delays_seconds: tuple[float, ...] = (5, 15, 45, 90)
 
     @model_validator(mode="after")
     def delay_count_matches_attempts(self) -> "ModelRetryPolicy":
@@ -59,7 +59,8 @@ def generate_with_retry(
         except TransportError as error:
             if attempt >= active.max_attempts:
                 raise TransportError(
-                    f"model transport failed after {attempt} attempts"
+                    f"model transport failed after {attempt} attempts: "
+                    f"{error}"
                 ) from error
             sleep(active.delays_seconds[attempt - 1])
         except SchemaOutputError:

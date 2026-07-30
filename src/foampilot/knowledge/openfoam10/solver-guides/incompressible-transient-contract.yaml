@@ -1,0 +1,41 @@
+schema_version: 1.0.0
+id: of10.solver.incompressible-transient-contract
+title: pisoFoam and pimpleFoam transient incompressible startup contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [pisoFoam, pimpleFoam]
+models: [incompressible, transient, laminar, ras, piso, pimple]
+tags: [pisofoam, pimplefoam, transient, incompressible, momentum, viscous-stress]
+applicability:
+  conditions:
+    - Foundation v10 pisoFoam or pimpleFoam advances an incompressible velocity-pressure system.
+    - The case uses laminar or RAS momentum transport with kinematic pressure.
+  not_applicable:
+    - Density, energy, phase fraction, or solid displacement is the primary coupled equation.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 pisoFoam application source
+  locator: OpenFOAM-10/applications/solvers/incompressible/pisoFoam/pisoFoam.C
+  sha256: 206d0302d1d8823b4e74e0d613ab0a7296ade3108f87119b032b5fd4c91b2e3f
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 pisoFoam and pimpleFoam require a complete incompressible momentum discretization and matching PISO or PIMPLE controls before time advancement.
+  rules:
+    - Provide U, kinematic p, physicalProperties, momentumTransport, controlDict, fvSchemes, and fvSolution with every mesh patch covered by both fields.
+    - Under divSchemes/default none, include div(phi,U) and the exact viscous-stress entry div((nuEff*dev2(T(grad(U))))); the solver requests the complete operator name even for laminar momentum transport.
+    - Use a transient ddt scheme, a pressure solver, a velocity solver, and PISO or PIMPLE controls matching the selected executable. Give pFinal and UFinal when final correctors require zero relative tolerance.
+    - Create required cell zones before solving and reference the exact generated zone name from any fvModel or fvConstraint.
+    - For Foundation v10 explicit porous resistance with pisoFoam or pimpleFoam, declare type explicitPorositySource at the model level and put selectionMode cellZone, cellZone, type DarcyForchheimer, d, f, and coordinateSystem inside an explicitPorositySourceCoeffs sub-dictionary. Define a named cartesian coordinate system in constant/coordinateSystems and reference that name; do not flatten the coefficients into the model level or set model DarcyForchheimer there.
+    - An auxiliary transported scalar is not solved merely because its field and div scheme exist; configure a supported solver or function object explicitly. For a Foundation v10 scalarTransport function object, the diffusion entry is mandatory, so write diffusion none when no diffusion is intended.
+  failure_signals:
+    - fvSchemes reports div((nuEff*dev2(T(grad(U))))) as undefined on the first momentum assembly.
+    - fvSolution reports a missing PISO, PIMPLE, pFinal, or UFinal entry.
+    - An fvModel cannot find its selected cellZone.
+  validation:
+    - Require Mesh OK, successful zone creation when used, normal solver completion, finite U and p, and task-derived continuity limits.
+    - Check any auxiliary scalar independently from the velocity-pressure completion signal.
