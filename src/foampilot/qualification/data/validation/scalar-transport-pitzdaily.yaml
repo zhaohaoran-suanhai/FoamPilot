@@ -1,0 +1,42 @@
+case_id: scalar-transport-pitzdaily
+source_sha256: 2fd940bd1a119cdb145b2f61ea1733a32ccc4e88df7658a1bd80286d83148fb1
+golden_sha256: 21f2a287278722ec5c74cec5b3b9948435aa1d467e05400d26652fc1d7fec086
+expected_application: scalarTransportFoam
+expected_end_time: 0.1
+metrics:
+  - name: final_time
+    category: completion
+    formula: latest written time reaches the exact task target
+    field: log.time
+    unit: s
+    sample_coordinates: [[0.1, 0.0, 0.0]]
+    comparison_mode: lower_bound
+    tolerance: 0.0
+    tolerance_source: Exact public TaskSpec target.
+  - name: scalar_conservation
+    category: conservation
+    formula: volume-mean final passive-scalar inventory under task-prescribed potential flow
+    field: T
+    unit: "1"
+    sample_coordinates: [[0.1, 0.0, 0.0]]
+    comparison_mode: absolute_max
+    tolerance: 0.01
+    tolerance_source: Task-matched official-mesh potential-flow baseline with a one-percent absolute engineering allowance.
+  - name: downstream_scalar_profile
+    category: physics_golden
+    formula: relative L2 error of passive scalar samples downstream of the step
+    field: T
+    unit: "1"
+    sample_coordinates:
+      - [0.1, -0.02, 0.0]
+      - [0.1, 0.0, 0.0]
+      - [0.1, 0.02, 0.0]
+      - [0.206, -0.015, 0.0]
+      - [0.206, 0.0, 0.0]
+      - [0.206, 0.015, 0.0]
+    comparison_mode: relative_l2
+    tolerance: 0.15
+    tolerance_source: Task-matched official-mesh potential-flow baseline plus interpolation allowance.
+notes:
+  - The official example is evaluator-only and unavailable during blind authoring.
+  - The reference uses the official pitzDaily mesh and the public task's potential-flow initialization in three deterministic serial repeats.

@@ -8,6 +8,8 @@ from foampilot.knowledge import (
     select_knowledge,
     verify_knowledge_manifest,
 )
+from foampilot.agent.context import load_agent_context
+from foampilot.tasks import load_task_spec
 
 
 PROJECT = Path(__file__).parents[1]
@@ -17,7 +19,7 @@ MANIFEST = PROJECT / "src/foampilot/knowledge/knowledge-manifest.json"
 
 def test_reviewed_corpus_is_complete_frozen_and_has_no_target_solution() -> None:
     entries = load_knowledge_corpus(CORPUS)
-    assert len(entries) == 18
+    assert len(entries) == 28
     assert verify_knowledge_manifest(CORPUS, MANIFEST) == []
     boundedness = next(
         entry
@@ -149,3 +151,244 @@ def test_type_and_solver_filters_are_applied_before_scoring() -> None:
         ),
     )
     assert matches == ()
+
+
+def test_parallel_knowledge_uses_method_specific_decomposition_coefficients() -> None:
+    entries = load_knowledge_corpus(CORPUS)
+    parallel = next(
+        entry
+        for entry in entries
+        if entry.id == "of10.parallel.serial-first-explicit-mpi"
+    )
+    rules = "\n".join(parallel.content.rules)
+
+    assert "hierarchicalCoeffs" in rules
+    assert "simpleCoeffs" in rules
+    assert "generic coeffs" in rules
+
+
+def test_maxwell_pimple_task_retrieves_its_solver_family_contract() -> None:
+    task = load_task_spec(
+        PROJECT
+        / "src/foampilot/qualification/data/tasks"
+        / "laminar-planar-poiseuille.yaml"
+    )
+
+    context = load_agent_context(
+        task,
+        package_root=PROJECT / "src/foampilot",
+    )
+
+    assert (
+        "of10.solver.pimplefoam-maxwell-contract"
+        in context.selected_knowledge_ids
+    )
+
+
+def test_blocked_channel_retrieves_volume_fraction_source_contract() -> None:
+    task = load_task_spec(
+        PROJECT
+        / "src/foampilot/qualification/data/tasks"
+        / "compressible-blocked-channel.yaml"
+    )
+
+    context = load_agent_context(
+        task,
+        package_root=PROJECT / "src/foampilot",
+    )
+
+    assert (
+        "of10.physics.volume-fraction-source"
+        in context.selected_knowledge_ids
+    )
+    assert (
+        "of10.solver.rhopimplefoam-compressible-laminar-contract"
+        in context.selected_knowledge_ids
+    )
+
+
+def test_srf_and_mhd_tasks_retrieve_exact_solver_contracts() -> None:
+    for case_id, entry_id in (
+        ("srf-rotor", "of10.solver.srfpimplefoam-contract"),
+        ("mhd-hartmann", "of10.solver.mhdfoam-contract"),
+    ):
+        task = load_task_spec(
+            PROJECT
+            / "src/foampilot/qualification/data/tasks"
+            / f"{case_id}.yaml"
+        )
+
+        context = load_agent_context(
+            task,
+            package_root=PROJECT / "src/foampilot",
+        )
+
+        assert entry_id in context.selected_knowledge_ids
+
+
+def test_solid_task_retrieves_foundation_v10_solver_contract() -> None:
+    task = load_task_spec(
+        PROJECT
+        / "src/foampilot/qualification/data/tasks"
+        / "solid-plate-hole.yaml"
+    )
+
+    context = load_agent_context(
+        task,
+        package_root=PROJECT / "src/foampilot",
+    )
+
+    assert (
+        "of10.solver.soliddisplacementfoam-contract"
+        in context.selected_knowledge_ids
+    )
+
+
+def test_porous_task_retrieves_foundation_v10_solver_contract() -> None:
+    task = load_task_spec(
+        PROJECT
+        / "src/foampilot/qualification/data/tasks"
+        / "porous-angled-duct.yaml"
+    )
+
+    context = load_agent_context(
+        task,
+        package_root=PROJECT / "src/foampilot",
+    )
+
+    assert (
+        "of10.solver.poroussimplefoam-contract"
+        in context.selected_knowledge_ids
+    )
+
+
+def test_cht_task_retrieves_foundation_v10_multiregion_contract() -> None:
+    task = load_task_spec(
+        PROJECT
+        / "src/foampilot/qualification/data/tasks"
+        / "cht-cooling-cylinder.yaml"
+    )
+
+    context = load_agent_context(
+        task,
+        package_root=PROJECT / "src/foampilot",
+    )
+
+    assert (
+        "of10.solver.chtmultiregionfoam-contract"
+        in context.selected_knowledge_ids
+    )
+
+
+def test_shallow_water_contract_distinguishes_static_bed_from_time_outputs() -> None:
+    entries = load_knowledge_corpus(CORPUS)
+    solver = next(
+        entry
+        for entry in entries
+        if entry.id == "of10.solver.shallowwaterfoam-contract"
+    )
+    rules = "\n".join(solver.content.rules)
+
+    assert "static input field" in rules
+    assert "not automatically written" in rules
+    assert "h, hU" in rules
+    assert "hTotal" in rules
+    assert "g g [0 1 -2 0 0 0 0]" in rules
+    assert "Omega Omega [0 0 -1 0 0 0 0]" in rules
+
+
+def test_solver_contracts_capture_complete_observed_v10_dictionary_sets() -> None:
+    entries = {
+        entry.id: entry
+        for entry in load_knowledge_corpus(CORPUS)
+    }
+    expected_fragments = {
+        "of10.solver.mhdfoam-contract": (
+            "pFinal",
+            "pBFinal",
+            "div(phiB,U)",
+            "div(phi,B)",
+            "div(phiB,((2*DBU)*B))",
+        ),
+        "of10.solver.pimplefoam-maxwell-contract": (
+            "momentumPredictor off",
+            "nOuterCorrectors",
+            "vanAlbada",
+            "(U|sigma)Final",
+        ),
+        "of10.solver.srfpimplefoam-contract": (
+            "value uniform (0 0 0)",
+            "Urel.*",
+            "k.*",
+            "epsilon.*",
+        ),
+        "of10.solver.interfoam-vof-contract": (
+            "constantAlphaContactAngle",
+            "inletOutlet",
+            "liquid reservoir",
+            "momentumPredictor no",
+            "nCorrectors 3",
+            "fixedValue p_rgh",
+            "Gauss interfaceCompression vanLeer 1",
+            "nAlphaCorr 1",
+            "nAlphaSubCycles 2",
+        ),
+        "of10.solver.simplefoam-rans-contract": (
+            "consistent yes",
+            "limitedLinear 1",
+            "0.9",
+        ),
+        "of10.solver.poroussimplefoam-contract": (
+            "constant/porosityProperties",
+            "No porosity models present",
+            "full local cross-section",
+            "shared inlet interface",
+            "common plane normal to the inlet axis",
+            "turbulentBL",
+            "turbulentIntensityKineticEnergyInlet",
+            "turbulentMixingLengthDissipationRateInlet",
+            "porous-section slip walls still use turbulence wall functions",
+            "strictly positive internal k and epsilon",
+            "nUCorrectors 2",
+            "do not enable consistent SIMPLE",
+            "inletOutlet",
+            "0.7",
+            "0.9",
+        ),
+        "of10.solver.chtmultiregionfoam-contract": (
+            "0/<fluid>/nut",
+            "0/<fluid>/alphat",
+            "turbulence model",
+            "nMoles 1",
+        ),
+        "of10.solver.shallowwaterfoam-contract": (
+            "constant/gravitationalProperties",
+            "rotating true",
+            "Omega",
+            "h0",
+            "hTotal",
+            "div(phiv,hU)",
+            "Gauss LUST un",
+            "nOuterCorrectors",
+        ),
+    }
+
+    for entry_id, fragments in expected_fragments.items():
+        serialized = entries[entry_id].model_dump_json()
+        for fragment in fragments:
+            assert fragment in serialized
+
+
+def test_buoyant_pressure_contract_covers_operating_pressure_gauge_start() -> None:
+    entries = {
+        entry.id: entry
+        for entry in load_knowledge_corpus(CORPUS)
+    }
+    serialized = entries[
+        "of10.boundary.buoyant-pressure-semantics"
+    ].model_dump_json()
+
+    assert "uniform zero reduced-pressure gauge" in serialized
+    assert "do not duplicate the operating pressure" in serialized
+    assert "pRefValue 0" in serialized
+    assert "constant/pRef" in serialized

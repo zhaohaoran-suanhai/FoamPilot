@@ -12,8 +12,14 @@ import pyvista as pv
 class OpenFOAMCaseData:
     """Read generated fields through VTK's OpenFOAM reader."""
 
-    def __init__(self, case_dir: str | Path) -> None:
+    def __init__(
+        self,
+        case_dir: str | Path,
+        *,
+        region: str | None = None,
+    ) -> None:
         self.case_dir = Path(case_dir).resolve()
+        self.region = region
         marker = self.case_dir / "foampilot.foam"
         marker.touch(exist_ok=True)
         self.reader = pv.OpenFOAMReader(str(marker))
@@ -30,11 +36,33 @@ class OpenFOAMCaseData:
         self.reader.set_active_time_value(float(selected))
         return self.reader.read()
 
-    def internal_mesh(self, time_value: float | None = None):
+    def _region_output(self, time_value: float | None = None):
         output = self._read(time_value)
+        if self.region is None:
+            return output
+        if self.region not in output.keys():
+            raise KeyError(self.region)
+        return output[self.region]
+
+    def internal_mesh(self, time_value: float | None = None):
+        output = self._region_output(time_value)
         if "internalMesh" not in output.keys():
             raise KeyError("internalMesh")
         return output["internalMesh"]
+
+    def boundary_patch(
+        self,
+        patch_name: str,
+        *,
+        time_value: float | None = None,
+    ):
+        output = self._region_output(time_value)
+        if "boundary" not in output.keys():
+            raise KeyError("boundary")
+        boundary = output["boundary"]
+        if patch_name not in boundary.keys():
+            raise KeyError(patch_name)
+        return boundary[patch_name]
 
     def sample(
         self,
@@ -94,16 +122,19 @@ class OpenFOAMCaseData:
         ) else np.asarray(np.sum(values * volumes) / np.sum(volumes))
 
     def boundary_fluxes(
-        self, *, time_value: float | None = None
+        self,
+        *,
+        time_value: float | None = None,
+        field: str = "U",
     ) -> list[tuple[np.ndarray, float]]:
-        output = self._read(time_value)
+        output = self._region_output(time_value)
         boundary = output["boundary"]
         cells: list[tuple[np.ndarray, float]] = []
         for name in boundary.keys():
             patch = boundary[name]
             if not isinstance(patch, pv.PolyData) or patch.n_cells == 0:
                 continue
-            if "U" not in patch.cell_data:
+            if field not in patch.cell_data:
                 continue
             with_sizes = patch.compute_cell_sizes(
                 length=False, area=True, volume=False
@@ -114,7 +145,10 @@ class OpenFOAMCaseData:
                 auto_orient_normals=False,
                 consistent_normals=True,
             )
-            velocity = np.asarray(with_normals.cell_data["U"], dtype=float)
+            velocity = np.asarray(
+                with_normals.cell_data[field],
+                dtype=float,
+            )
             normals = np.asarray(
                 with_normals.cell_data["Normals"], dtype=float
             )
@@ -125,11 +159,16 @@ class OpenFOAMCaseData:
         return cells
 
     def flux_on_plane(
-        self, axis: int, coordinate: float, *, tolerance: float
+        self,
+        axis: int,
+        coordinate: float,
+        *,
+        tolerance: float,
+        field: str = "U",
     ) -> float:
         selected = [
             flux
-            for center, flux in self.boundary_fluxes()
+            for center, flux in self.boundary_fluxes(field=field)
             if abs(float(center[axis]) - coordinate) <= tolerance
         ]
         if not selected:

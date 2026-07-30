@@ -29,7 +29,7 @@ content:
   rules:
     - Treat maxCo and maxAlphaCo as safety ceilings, not accuracy targets. When strict phase-fraction bounds are required, configure them strictly below the public ceilings instead of copying the allowed maxima, and cap maxDeltaT consistently with the mesh and interface motion.
     - Declare nAlphaCorr and nAlphaSubCycles explicitly. MULESCorr and nLimiterIter control the bounded correction process, but their presence alone is not proof that the requested tolerance is met.
-    - Record all-time extrema and phase-volume history with native function objects on every time step. Do not infer boundedness from the final field or normal End marker.
+    - When the public task explicitly requires all-time log evidence, record every time step with three Foundation v10 volFieldValue function objects using type volFieldValue, writeFields false, regionType all, and operations operation min, operation max, and operation volIntegrate for the phase field. Foundation v10 does not provide fieldMinMax; do not use that cross-distribution function type. For ordinary output-time evidence, let the evaluator inspect written fields. Do not infer boundedness from the final field or normal End marker.
     - If a completed finite run violates a bound, keep geometry, material properties, boundary conditions, and initialization fixed. First test a smaller time-step/interface-Courant family; only if the overshoot persists, test one alpha correction, sub-cycling, or limiter family.
     - Change one causal family per repair and rerun the full requested interval. Do not weaken a public tolerance to turn an observed overshoot into a pass.
     - Accept the numerical repair only when all-time lower and upper bounds and phase-volume conservation pass together.

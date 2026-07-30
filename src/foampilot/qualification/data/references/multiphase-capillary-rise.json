@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "case_id": "multiphase-capillary-rise",
+  "created_at": "2026-07-29T12:00:00Z",
+  "openfoam_version": "10",
+  "source_sha256": "4f0ce820097e87e8fa50df25c6c6149c069acff3125a474452816029f50389ff",
+  "metrics": [
+    {
+      "name": "final_time",
+      "category": "completion",
+      "field": "log.time",
+      "unit": "s",
+      "formula": "solver reaches the exact public task target",
+      "sample_coordinates": [[0.0005, 0.01, 0.0005]],
+      "comparison_mode": "lower_bound",
+      "reference": 0.5,
+      "observed_repeat_spread": 0.0,
+      "sampling_error_allowance": 0.0,
+      "engineering_floor": 0.0,
+      "final_tolerance": 0.0,
+      "tolerance_source": "Exact public TaskSpec target.",
+      "required": true
+    },
+    {
+      "name": "liquid_volume",
+      "category": "conservation",
+      "field": "alpha.water",
+      "unit": "m3",
+      "formula": "relative error of final domain liquid inventory with an open bottom reservoir",
+      "sample_coordinates": [[0.0005, 0.00025, 0.0005], [0.0005, 0.01975, 0.0005]],
+      "comparison_mode": "relative_absolute",
+      "reference": 8.845804107403135e-09,
+      "observed_repeat_spread": 0.0,
+      "sampling_error_allowance": 0.005,
+      "engineering_floor": 0.01,
+      "final_tolerance": 0.01,
+      "tolerance_source": "One-percent inventory agreement cap for the fixed open-reservoir task.",
+      "required": true
+    },
+    {
+      "name": "interface_height",
+      "category": "physics_golden",
+      "field": "alpha.water",
+      "unit": "m",
+      "formula": "relative error of final centerline alpha.water=0.5 interface height",
+      "sample_coordinates": [[0.0005, 0.00025, 0.0005], [0.0005, 0.00075, 0.0005], [0.0005, 0.00125, 0.0005], [0.0005, 0.00175, 0.0005], [0.0005, 0.00225, 0.0005], [0.0005, 0.00275, 0.0005], [0.0005, 0.00325, 0.0005], [0.0005, 0.00375, 0.0005], [0.0005, 0.00425, 0.0005], [0.0005, 0.00475, 0.0005], [0.0005, 0.00525, 0.0005], [0.0005, 0.00575, 0.0005], [0.0005, 0.00625, 0.0005], [0.0005, 0.00675, 0.0005], [0.0005, 0.00725, 0.0005], [0.0005, 0.00775, 0.0005], [0.0005, 0.00825, 0.0005], [0.0005, 0.00875, 0.0005], [0.0005, 0.00925, 0.0005], [0.0005, 0.00975, 0.0005], [0.0005, 0.01025, 0.0005], [0.0005, 0.01075, 0.0005], [0.0005, 0.01125, 0.0005], [0.0005, 0.01175, 0.0005], [0.0005, 0.01225, 0.0005], [0.0005, 0.01275, 0.0005], [0.0005, 0.01325, 0.0005], [0.0005, 0.01375, 0.0005], [0.0005, 0.01425, 0.0005], [0.0005, 0.01475, 0.0005], [0.0005, 0.01525, 0.0005], [0.0005, 0.01575, 0.0005], [0.0005, 0.01625, 0.0005], [0.0005, 0.01675, 0.0005], [0.0005, 0.01725, 0.0005], [0.0005, 0.01775, 0.0005], [0.0005, 0.01825, 0.0005], [0.0005, 0.01875, 0.0005], [0.0005, 0.01925, 0.0005], [0.0005, 0.01975, 0.0005]],
+      "comparison_mode": "relative_absolute",
+      "reference": 0.00875,
+      "observed_repeat_spread": 0.0,
+      "sampling_error_allowance": 0.06,
+      "engineering_floor": 0.15,
+      "final_tolerance": 0.15,
+      "tolerance_source": "Official final-time interface with one sampling interval allowance.",
+      "required": true
+    }
+  ]
+}

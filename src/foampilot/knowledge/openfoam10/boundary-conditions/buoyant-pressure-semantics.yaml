@@ -28,12 +28,15 @@ content:
   rules:
     - Keep p as thermodynamic pressure for the compressible equation of state.
     - Keep p_rgh consistent with p minus hydrostatic head and the chosen pressure reference.
-    - Treat pRefCell and pRefValue as the reduced-pressure gauge anchor, not as a replacement for operating pressure.
+    - For a closed cavity initialized at a uniform thermodynamic operating pressure with fixedFluxPressure walls, use a uniform zero reduced-pressure gauge as the stable baseline; do not duplicate the operating pressure in both p and p_rgh.
+    - Treat pRefCell and pRefValue as the reduced-pressure gauge anchor, not as a replacement for operating pressure. For a closed cavity with constant/pRef set to the thermodynamic operating pressure and p_rgh initialized to zero, use pRefValue 0 in PIMPLE; putting the operating pressure in pRefValue duplicates the reference in the reduced-pressure solve.
     - Use pressure boundary conditions that match the velocity flux and the closed or open nature of each patch.
   failure_signals:
     - p is initialized near zero for a perfect-gas operating-pressure case.
     - p and p_rgh encode incompatible hydrostatic states.
+    - Initial continuity and Courant numbers explode because both p and p_rgh were initialized to the operating pressure.
     - A pRefValue meaning is copied from an unrelated pressure formulation.
+    - constant/pRef is the operating pressure but PIMPLE also uses that operating pressure as pRefValue instead of the reduced-pressure gauge value zero.
   validation:
     - Inventory p, p_rgh, gravity datum, operating pressure, pRefCell, and pRefValue together.
     - Verify reconstructed thermodynamic pressure stays finite, positive, and physically plausible.

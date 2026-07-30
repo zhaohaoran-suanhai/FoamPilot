@@ -1,0 +1,46 @@
+schema_version: 1.0.0
+id: of10.solver.scalartransportfoam-contract
+title: scalarTransportFoam passive-scalar transport contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [scalarTransportFoam]
+models: [incompressible, passive-scalar, transport, steady, transient]
+tags: [scalartransportfoam, passive-scalar, scalar, transport, diffusivity, simple]
+applicability:
+  conditions:
+    - A prescribed incompressible velocity field transports a passive scalar.
+    - Scalar diffusion is represented by one constant diffusivity.
+  not_applicable:
+    - The scalar changes density, momentum, or another solved flow property.
+    - Species reactions, compressibility, or tensor diffusivity are required.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 scalarTransportFoam application source
+  locator: OpenFOAM-10/applications/solvers/basic/scalarTransportFoam
+  sha256: 72cf69ffa47a98fd564721d0da4dadd526187b7fc80abd027b7944a909c00f73
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 scalarTransportFoam solves steady or transient transport of field T by a prescribed U and flux phi, using simpleControl and a constant diffusivity DT.
+  rules:
+    - Provide readable T and U fields and flux-compatible boundary conditions on every mesh patch.
+    - Put the dimensioned scalar DT in constant/physicalProperties using the stream form DT DT [0 2 -1 0 0 0 0] value; the repeated name is required by the Foundation v10 dimensionedScalar lookup. The application does not read this input from constant/transportProperties.
+    - Provide a SIMPLE dictionary in system/fvSolution because the application constructs simpleControl before reading the fields, even when ddtSchemes selects a transient discretization.
+    - The advective div(phi,T) term makes the T equation an asymmetric matrix in general. Use an asymmetric-capable linear solver; the Foundation v10 scalar-transport pattern uses PBiCGStab with DILU. PCG with DIC is only for symmetric systems and is rejected when scalar advection is active.
+    - Define div(phi,T) and laplacian(DT,T) in system/fvSchemes, plus a non-none ddt scheme for transient transport.
+    - Supply a finite prescribed velocity before scalarTransportFoam. A separate native initialization solver may generate U and phi when the public task requires it.
+    - Control the scalar integration interval through controlDict and treat normal End as execution evidence rather than proof of scalar conservation.
+  failure_signals:
+    - Startup reports that SIMPLE is undefined in system/fvSolution.
+    - Startup cannot find constant/physicalProperties or cannot look up DT.
+    - fvSchemes reports div(phi,T) or laplacian(DT,T) as undefined.
+    - The T solve reports Unknown asymmetric matrix solver PCG because fvSolution selected a symmetric-only solver or preconditioner.
+    - T or U is missing, has uncovered patches, or becomes non-finite.
+  validation:
+    - Require mesh validity, successful velocity initialization when requested, normal completion, final time, and finite T and U.
+    - Check scalar inventory or boundary balance according to the public domain and boundary conditions.
+    - Compare a downstream scalar profile with an analytical or independently frozen reference when available.

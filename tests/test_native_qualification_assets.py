@@ -5,6 +5,7 @@ from pathlib import Path
 
 from foampilot.agent import load_agent_context
 from foampilot.knowledge import load_knowledge_corpus
+from foampilot.qualification.runner import qualification_data_path
 from foampilot.tasks import load_task_spec
 
 
@@ -62,6 +63,17 @@ def test_each_qualification_task_retrieves_its_public_solver_contract() -> None:
         assert context.selected_knowledge_ids
 
 
+def test_scalar_transport_task_retrieves_foundation_v10_solver_contract() -> None:
+    task = load_task_spec(
+        qualification_data_path("tasks", "scalar-transport-pitzdaily")
+    )
+    context = load_agent_context(task)
+
+    assert "of10.solver.scalartransportfoam-contract" in (
+        context.selected_knowledge_ids
+    )
+
+
 def test_native_authoring_skill_uses_only_execution_plan_v2_fields() -> None:
     skill = (
         PACKAGE_ROOT
@@ -92,6 +104,76 @@ def test_native_authoring_skill_keeps_optional_diagnostics_external() -> None:
     )
 
 
+def test_native_authoring_skill_separates_all_time_log_evidence() -> None:
+    skill = (
+        PACKAGE_ROOT
+        / "src"
+        / "foampilot"
+        / "skills"
+        / "openfoam-author-native-case"
+        / "SKILL.md"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        "When the public task explicitly requires all-time log evidence"
+        in skill
+    )
+    assert (
+        "For ordinary output-time measurements, let the evaluator inspect "
+        "written fields"
+        in skill
+    )
+
+
+def test_interfoam_boundedness_knowledge_uses_foundation_v10_statistics() -> None:
+    entries = {
+        entry.id: entry
+        for entry in load_knowledge_corpus(
+            PACKAGE_ROOT
+            / "src"
+            / "foampilot"
+            / "knowledge"
+            / "openfoam10"
+        )
+    }
+    rules = "\n".join(
+        entries["of10.numerics.interfoam-alpha-boundedness"].content.rules
+    )
+
+    for fragment in (
+        "type volFieldValue",
+        "operation min",
+        "operation max",
+        "operation volIntegrate",
+        "writeFields false",
+        "fieldMinMax",
+    ):
+        assert fragment in rules
+
+
+def test_volume_fraction_initializer_uses_control_dict_function_object() -> None:
+    entries = {
+        entry.id: entry
+        for entry in load_knowledge_corpus(
+            PACKAGE_ROOT
+            / "src"
+            / "foampilot"
+            / "knowledge"
+            / "openfoam10"
+        )
+    }
+    rules = "\n".join(
+        entries["of10.physics.volume-fraction-source"].content.rules
+    )
+
+    for fragment in (
+        "system/controlDict",
+        "without -func",
+        "-time constant",
+    ):
+        assert fragment in rules
+
+
 def test_solver_contracts_cover_observed_foundation_v10_failure_shields() -> None:
     entries = {
         entry.id: entry
@@ -107,10 +189,13 @@ def test_solver_contracts_cover_observed_foundation_v10_failure_shields() -> Non
     expected_rules = {
         "of10.solver.potentialfoam-contract": (
             "div(div(phi,U))",
+            "-writep",
+            "solver for p",
         ),
         "of10.solver.simplefoam-rans-contract": (
             "executable simpleFoam",
             "mpi_ranks",
+            "div((nuEff*dev2(T(grad(U)))))",
         ),
         "of10.solver.interfoam-vof-contract": (
             "[1 -1 -2 0 0 0 0]",
@@ -119,13 +204,145 @@ def test_solver_contracts_cover_observed_foundation_v10_failure_shields() -> Non
         "of10.solver.rhocentralfoam-contract": (
             "timeFormat general",
             "initial directory named 0",
+            "(rho|rhoU|rhoE)",
+            "solver diagonal",
         ),
         "of10.solver.buoyantfoam-contract": (
             "div(phi,K)",
             "single scalar values",
+            "momentumPredictor no",
+            "bounded Gauss limitedLinear 0.2",
+            "rho 1.0",
+        ),
+        "of10.solver.scalartransportfoam-contract": (
+            "constant/physicalProperties",
+            "DT DT [0 2 -1 0 0 0 0]",
+            "SIMPLE",
+            "laplacian(DT,T)",
+            "asymmetric matrix",
+            "PBiCGStab",
+            "DILU",
+        ),
+        "of10.solver.pimplefoam-maxwell-contract": (
+            "selectionMode all",
+            "U source subdictionary",
+            "explicit vector",
+            "implicit scalar",
+        ),
+        "of10.solver.rhopimplefoam-compressible-laminar-contract": (
+            "model Stokes",
+            "Newtonian",
+            "div(((rho*nuEff)*dev2(T(grad(U)))))",
+            "div(phi,(p|rho))",
+            "rhoFinal",
+        ),
+        "of10.physics.volume-fraction-source": (
+            "transport constIsoSolid",
+            "-dict system/",
+            "const fvMesh& m = mesh()",
+            "m.time().constant()",
+        ),
+        "of10.solver.srfpimplefoam-contract": (
+            "freestreamValue",
+            "div((nuEff*dev2(T(grad(Urel)))))",
+            "p zeroGradient",
+            "inletOutlet",
+            "Gauss limitedLinearV 1",
+            "adjustTimeStep no",
+            "UInf (1 0 0)",
+            "not UInf uniform",
+        ),
+        "of10.solver.mhdfoam-contract": (
+            "BPISO",
+            "mu mu [1 1 -2 0 0 -2 0]",
+            "sigma sigma [-1 -3 3 0 0 2 0]",
+            "div(phiB,((2*DBU)*B))",
+            "BFinal",
+        ),
+        "of10.solver.soliddisplacementfoam-contract": (
+            "type uniform",
+            "d2dt2(rho,D)",
+            "d2dt2Schemes",
+            "laplacian(DD,D)",
+            "stressAnalysis",
+            "compactNormalStress",
+        ),
+        "of10.solver.chtmultiregionfoam-contract": (
+            "-defaultRegionName",
+            "system/fvSolution",
+            "system/<region>/fvSolution",
+            "PIMPLE",
+            "constIsoSolid",
+            "constant/<fluid>/g",
+            "thermo eConst",
+            "sensibleInternalEnergy",
+            "selectionMode all",
+            "compressible::turbulentTemperatureCoupledBaffleMixed",
+            "checkMesh -region <name>",
+            "no -allRegions",
+            "rhoFinal",
+            "div(phi,(p|rho))",
+            "radiationModel none",
+            "radiation off",
         ),
     }
     for entry_id, fragments in expected_rules.items():
         rules = "\n".join(entries[entry_id].content.rules)
         for fragment in fragments:
             assert fragment in rules
+
+
+def test_native_authoring_skill_pairs_constraint_patch_types() -> None:
+    skill = (
+        PACKAGE_ROOT
+        / "src"
+        / "foampilot"
+        / "skills"
+        / "openfoam-author-native-case"
+        / "SKILL.md"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        "mesh type `symmetryPlane` requires field type `symmetryPlane`"
+        in skill
+    )
+    assert '#includeEtc "caseDicts/setConstraintTypes"' in skill
+
+
+def test_native_authoring_skill_requires_multiblock_face_conformity() -> None:
+    skill = (
+        PACKAGE_ROOT
+        / "src"
+        / "foampilot"
+        / "skills"
+        / "openfoam-author-native-case"
+        / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    normalized = " ".join(skill.split())
+
+    assert "every shared face has identical subdivisions" in normalized
+    assert "check the full adjacency graph" in normalized
+    assert "named subdivision variables" in normalized
+    assert "grading-compatible point locations" in normalized
+    assert "counter-clockwise in x-y" in normalized
+    assert "never write `-$name`" in normalized
+    assert "fluid-solid interface" in normalized
+    assert "tangential subdivisions" in normalized
+
+
+def test_native_authoring_skill_covers_topology_geometry_and_budget_shields() -> None:
+    skill = (
+        PACKAGE_ROOT
+        / "src"
+        / "foampilot"
+        / "skills"
+        / "openfoam-author-native-case"
+        / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    normalized = " ".join(skill.split())
+
+    assert "reuse the exact same vertex labels" in normalized
+    assert "-merge-points" in normalized
+    assert "defaultFaces" in normalized
+    assert "sum of all command timeouts" in normalized
+    assert "full local frame and cross-section" in normalized

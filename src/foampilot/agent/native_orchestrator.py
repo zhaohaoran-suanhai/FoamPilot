@@ -21,7 +21,7 @@ from foampilot.environment import (
     EnvironmentSnapshot,
     discover_environment,
 )
-from foampilot.inspection import inspect_native_case
+from foampilot.inspection import InspectionReport, inspect_native_case
 from foampilot.models import ModelClient, TransportError
 from foampilot.plans import (
     ExecutionPlan,
@@ -35,7 +35,10 @@ from foampilot.runtime import (
     RuntimeConfig,
 )
 from foampilot.tasks import TaskSpec, stage_public_assets
-from foampilot.validation.models import PublicValidationReport
+from foampilot.validation.models import (
+    PublicValidationCheck,
+    PublicValidationReport,
+)
 from foampilot.validation.native import validate_native_run
 
 from .context import AgentContext, load_agent_context
@@ -143,6 +146,29 @@ def _status_for_report(
     if report.failure_layer is None:
         return "PUBLIC_VALIDATION_FAILED"
     return report.failure_layer
+
+
+def _inspection_validation_report(
+    inspection: InspectionReport,
+) -> PublicValidationReport:
+    return PublicValidationReport(
+        checks=[
+            PublicValidationCheck(
+                name=f"static:{issue.code}",
+                passed=False,
+                detail=(
+                    f"{issue.code} at {issue.path or '<case>'}: "
+                    f"{issue.detail}"
+                ),
+                observed={
+                    "code": issue.code,
+                    "path": issue.path,
+                },
+            )
+            for issue in inspection.issues
+        ],
+        failure_layer="STATIC_INSPECTION_FAILED",
+    )
 
 
 def _apply_repair(
@@ -406,40 +432,31 @@ class NativeAgent:
                 attempt_root / "static-inspection.json",
                 inspection,
             )
-            if not inspection.passed:
-                attempts.append(
-                    AttemptSummary(
-                        attempt=attempt_number,
-                        status="STATIC_INSPECTION_FAILED",
+            if inspection.passed:
+                runner = self.runner
+                if runner is None:
+                    runner = PlanRunner.from_runtime_config(
+                        self.runtime_config,
+                        environment.executable_names,
+                        workspace_root=run_dir,
                     )
+                run_result = runner.run(
+                    case_dir=case_root,
+                    commands=active_plan.commands,
+                    budget=task.resource_budget,
                 )
-                return self._finish(
-                    run_dir=run_dir,
+                _write_json(attempt_root / "run-result.json", run_result)
+                report = validate_native_run(
                     task=task,
-                    status="STATIC_INSPECTION_FAILED",
-                    attempts=attempts,
-                    message="Static safety inspection rejected the case.",
-                    model_calls=model_calls,
+                    run_result=run_result,
+                    case_root=case_root,
                 )
-
-            runner = self.runner
-            if runner is None:
-                runner = PlanRunner.from_runtime_config(
-                    self.runtime_config,
-                    environment.executable_names,
-                    workspace_root=run_dir,
+                log_text = _run_log(run_result)
+            else:
+                report = _inspection_validation_report(inspection)
+                log_text = "\n".join(
+                    check.detail for check in report.checks
                 )
-            run_result = runner.run(
-                case_dir=case_root,
-                commands=active_plan.commands,
-                budget=task.resource_budget,
-            )
-            _write_json(attempt_root / "run-result.json", run_result)
-            report = validate_native_run(
-                task=task,
-                run_result=run_result,
-                case_root=case_root,
-            )
             _write_json(
                 attempt_root / "public-validation.json",
                 report,
@@ -461,7 +478,6 @@ class NativeAgent:
                     model_calls=model_calls,
                 )
 
-            log_text = _run_log(run_result)
             fingerprint = failure_fingerprint(
                 report,
                 log_tail=log_text,

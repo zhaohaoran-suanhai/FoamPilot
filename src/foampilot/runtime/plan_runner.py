@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
+import re
 import subprocess
 
 from foampilot.plans import NativeCommand
@@ -29,6 +30,9 @@ _MPI_HOST_OPTIONS = {
     "-host",
     "-hostfile",
 }
+_FAILED_MESH_CHECKS = re.compile(
+    r"\bFailed\s+[1-9]\d*\s+mesh checks?\b"
+)
 Executor = Callable[..., subprocess.CompletedProcess[str]]
 
 
@@ -226,6 +230,27 @@ class PlanRunner:
                 except subprocess.TimeoutExpired:
                     timed_out = True
                     return_code = None
+            semantic_failure = False
+            if (
+                command.executable == "checkMesh"
+                and return_code == 0
+                and not timed_out
+            ):
+                check_text = "\n".join(
+                    (
+                        stdout_path.read_text(
+                            encoding="utf-8",
+                            errors="replace",
+                        ),
+                        stderr_path.read_text(
+                            encoding="utf-8",
+                            errors="replace",
+                        ),
+                    )
+                )
+                semantic_failure = bool(
+                    _FAILED_MESH_CHECKS.search(check_text)
+                )
             step = PlanStepResult(
                 step_id=command.step_id,
                 command=typed_argv,
@@ -237,7 +262,7 @@ class PlanRunner:
                 stderr_path=stderr_path,
             )
             steps.append(step)
-            if timed_out or return_code != 0:
+            if timed_out or return_code != 0 or semantic_failure:
                 failed_step_id = command.step_id
                 run_timed_out = timed_out
                 break

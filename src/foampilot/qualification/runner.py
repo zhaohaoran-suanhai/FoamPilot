@@ -1,4 +1,4 @@
-"""Run the installable official-six qualification through NativeAgent."""
+"""Run installable qualification suites through NativeAgent."""
 
 from __future__ import annotations
 
@@ -28,6 +28,11 @@ from .reporting import (
     build_qualification_report,
     markdown_report,
     native_case_dir,
+)
+from .suites import (
+    QualificationSuite,
+    load_qualification_suite,
+    qualification_suite_path,
 )
 from .validators import extract_observations, validate_observations
 
@@ -200,8 +205,8 @@ def write_qualification_report(
     """Write JSON and Markdown beside the per-case run directories."""
 
     run_root.mkdir(parents=True, exist_ok=True)
-    json_path = run_root / "official-six-report.json"
-    markdown_path = run_root / "official-six-report.md"
+    json_path = run_root / f"{report.protocol_id}-report.json"
+    markdown_path = run_root / f"{report.protocol_id}-report.md"
     json_path.write_text(
         report.model_dump_json(indent=2) + "\n",
         encoding="utf-8",
@@ -213,23 +218,19 @@ def write_qualification_report(
     return json_path, markdown_path
 
 
-def run_official_six(
+def run_qualification_suite(
     *,
+    suite: QualificationSuite,
     run_root: Path,
     workers: int,
     model_name: str,
     auth: Path,
-    case_ids: list[str] | None = None,
 ) -> QualificationReport:
-    """Run selected official-six cases and write one ordered report."""
+    """Run one strict suite through the existing native qualification path."""
 
-    selected = list(case_ids or CASE_ORDER)
-    if len(selected) != len(set(selected)):
-        raise ValueError("case IDs must be unique")
-    if any(case_id not in CASE_ORDER for case_id in selected):
-        raise ValueError("unknown official-six case ID")
     if workers not in {1, 2}:
         raise ValueError("workers must be 1 or 2")
+    selected = [item.case_id for item in suite.cases]
     issues = validate_qualification_inputs(selected)
     if issues:
         raise ValueError(
@@ -239,12 +240,12 @@ def run_official_six(
     access_token = load_codex_access_token(auth)
     raw_results: list[dict[str, object]] = []
     parallel = [
-        case_id
-        for case_id in selected
-        if case_id != "buoyant-cavity"
+        item.case_id
+        for item in suite.cases
+        if not item.exclusive
     ]
     with ThreadPoolExecutor(
-        max_workers=min(workers, 2)
+        max_workers=min(workers, suite.max_workers)
     ) as executor:
         futures = {
             executor.submit(
@@ -258,10 +259,12 @@ def run_official_six(
         }
         for future in as_completed(futures):
             raw_results.append(future.result())
-    if "buoyant-cavity" in selected:
+    for item in suite.cases:
+        if not item.exclusive:
+            continue
         raw_results.append(
             _run_one(
-                "buoyant-cavity",
+                item.case_id,
                 run_root=run_root,
                 model_name=model_name,
                 access_token=access_token,
@@ -271,6 +274,43 @@ def run_official_six(
     report = build_qualification_report(
         raw_results,
         model_name=model_name,
+        protocol_id=suite.protocol_id,
+        case_order=tuple(selected),
     )
     write_qualification_report(report, run_root)
     return report
+
+
+def run_official_six(
+    *,
+    run_root: Path,
+    workers: int,
+    model_name: str,
+    auth: Path,
+    case_ids: list[str] | None = None,
+) -> QualificationReport:
+    """Run selected official-six cases through the generic suite runner."""
+
+    suite = load_qualification_suite(
+        qualification_suite_path("official-six-v1")
+    )
+    if case_ids:
+        if len(case_ids) != len(set(case_ids)):
+            raise ValueError("case IDs must be unique")
+        if any(case_id not in CASE_ORDER for case_id in case_ids):
+            raise ValueError("unknown official-six case ID")
+        selected = set(case_ids)
+        suite = suite.model_copy(
+            update={
+                "cases": [
+                    item for item in suite.cases if item.case_id in selected
+                ]
+            }
+        )
+    return run_qualification_suite(
+        suite=suite,
+        run_root=run_root,
+        workers=workers,
+        model_name=model_name,
+        auth=auth,
+    )

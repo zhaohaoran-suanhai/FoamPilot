@@ -1,0 +1,45 @@
+schema_version: 1.0.0
+id: of10.solver.shallowwaterfoam-contract
+title: shallowWaterFoam field and rotating-gravity contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [shallowWaterFoam]
+models: [incompressible, shallow-water, transient, rotating, PIMPLE]
+tags: [shallowwaterfoam, shallow-water, h0, htotal, hu, gravitationalproperties]
+applicability:
+  conditions:
+    - Foundation v10 shallowWaterFoam advances water depth and depth-integrated momentum over a prescribed bed.
+    - The task supplies shallow-water gravity, rotation, initial depth, bed height, and momentum.
+  not_applicable:
+    - The task requires a three-dimensional free surface, VOF interface capture, or compressible flow.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 shallowWaterFoam application source
+  locator: OpenFOAM-10/applications/solvers/incompressible/shallowWaterFoam/shallowWaterFoam.C
+  sha256: feb25af2044b2b1eb33f2f1ad29868f91cdf34d50f0a9bce470feb0f4f66766b
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 shallowWaterFoam reads bed height h0, water depth h, depth-integrated momentum hU, total depth hTotal, rotating gravity data, and PIMPLE controls.
+  rules:
+    - Use constant/gravitationalProperties rather than constant/g. Foundation v10 dimensioned-vector lookup requires both the dictionary key and the dimensioned value name, for example g g [0 1 -2 0 0 0 0] (0 0 -9.81) and Omega Omega [0 0 -1 0 0 0 0] (0 0 7.292e-5); omitting the second name makes the dimensions token invalid. Declare rotating true or false and include Omega when rotation is enabled.
+    - Provide 0/h0 and 0/h with length dimensions, 0/hU with area-per-time dimensions, and 0/hTotal with length dimensions and calculated patch values. Cover every mesh patch coherently; hTotal is part of the startup field inventory, not merely optional post-processing.
+    - Treat h0 as a static input field. Foundation v10 discovers it from the latest available mesh-time instance, binds it as a const field, and h0 is not automatically written into each output time. Validate or preserve the authored h0 input itself; require time-directory outputs only for evolving or auto-written fields such as h, hU, U, and hTotal.
+    - When a bed feature is regional, initialize h0, h, and hU together with setFields so that the prescribed total free-surface state and momentum remain consistent.
+    - Supply a PIMPLE dictionary with nOuterCorrectors, nCorrectors, nNonOrthogonalCorrectors, and momentumPredictor. A solvers dictionary alone is incomplete.
+    - Provide h, hFinal, hU, and hUFinal linear-solver entries. A Foundation v10 baseline uses PCG with DIC for h and smoothSolver for hU; final entries inherit their base settings with zero relative tolerance.
+    - Under divSchemes default none, include the exact momentum transport entry div(phiv,hU). A Foundation v10 square-bump baseline uses Gauss LUST un, CrankNicolson 0.9 time discretization, and uncorrected laplacian and surface-normal schemes.
+    - Preserve positive water depth and finite hU throughout the run, and keep the time step consistent with shallow-water wave and advection speeds.
+  failure_signals:
+    - Startup reports that PIMPLE is undefined in system/fvSolution.
+    - Startup cannot find constant/gravitationalProperties even though constant/g exists.
+    - Reading gravitationalProperties expects a word but encounters the opening dimensions bracket because g or Omega lacks its dimensioned value name.
+    - Startup cannot read h0, h, hU, hTotal, hFinal, hUFinal, or div(phiv,hU).
+    - setFields changes the bed height without consistently updating water depth and depth-integrated momentum.
+  validation:
+    - Require Mesh OK, successful initialization, normal completion through the requested time, finite required fields, and positive water depth.
+    - Check depth and momentum conservation together with task-derived free-surface or wave observables.

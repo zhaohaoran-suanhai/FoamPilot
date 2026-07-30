@@ -32,7 +32,7 @@ def load_agent_context(
     task: TaskSpec,
     *,
     package_root: str | Path | None = None,
-    limit: int = 8,
+    limit: int = 5,
 ) -> AgentContext:
     """Retrieve public formal-safe knowledge without solver preselection."""
 

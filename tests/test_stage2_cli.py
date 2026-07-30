@@ -28,7 +28,7 @@ def test_knowledge_validate_verifies_entries_and_frozen_manifest(capsys) -> None
     assert main(["knowledge", "validate", str(CORPUS), "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload == {
-        "entry_count": 18,
+        "entry_count": 28,
         "issues": [],
         "manifest": str(MANIFEST),
         "status": "PASS",

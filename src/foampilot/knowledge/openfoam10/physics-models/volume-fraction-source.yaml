@@ -1,0 +1,44 @@
+schema_version: 1.0.0
+id: of10.physics.volume-fraction-source
+title: rhoPimpleFoam volume-fraction and solid-equilibrium source contract
+fork: foundation
+version: "10"
+knowledge_type: physics_model
+solvers: [rhoPimpleFoam, pimpleFoam]
+models: [compressible, volumeFractionSource, solidEquilibriumEnergySource, porous, solid, equilibrium-energy]
+tags: [rhopimplefoam, volume-fraction, alpha-volume, alpha-solid, volumephase, solidphase, fvmodels, postprocess]
+applicability:
+  conditions:
+    - A fixed spatial volume fraction modifies superficial fluid transport through volumeFractionSource.
+    - A fixed solid fraction may add equilibrium solid thermal inertia to a compressible energy equation.
+  not_applicable:
+    - The volume fraction is a transported multiphase field.
+    - Porous drag or non-equilibrium solid temperature requires a different model.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 volumeFractionSource and solidEquilibriumEnergySource
+  locator: OpenFOAM-10 src/fvModels/derived/volumeFractionSource and src/fvModels/derived/solidEquilibriumEnergySource
+  sha256: 21e5acb19d7f0cf1602430b01ff7436194eef562dc6c2da0840ff2944445fe5a
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 volumeFractionSource reads a fixed constant/alpha.<volumePhase> field, while solidEquilibriumEnergySource reads constant/alpha.<solidPhase> and a phase-specific solid physical-properties dictionary; these are model inputs rather than time-zero solution fields.
+  rules:
+    - For each volumeFractionSource entry, set volumePhase to the phase suffix and create constant/alpha.<volumePhase> before the solver starts. Writing only 0/alpha.<volumePhase> does not satisfy the model lookup.
+    - Generate spatially varying constant alpha fields with an available native initializer that writes to the constant instance. One Foundation v10 pattern is a coded function object configured under system/controlDict, executed by postProcess without -func and with its inputs selected from -time constant; using -func <inlineName> instead requests a separately installed function-object configuration. If a separate generated dictionary is used, pass its complete case-root-relative location, for example -dict system/initControlDict; a bare filename is resolved at the case root rather than below system.
+    - Inside a Foundation v10 coded function object's codeExecute block, obtain the database as `const fvMesh& m = mesh()` and use `m.time().constant()` for the constant instance. Solver-main variables such as runTime and a bare mesh object are not automatically in that generated class scope.
+    - A solid fraction that affects both transport volume and equilibrium energy needs a volumeFractionSource for solid plus a separate solidEquilibriumEnergySource with solidPhase solid.
+    - Put solid rho, Cv, and kappa in constant/physicalProperties.<solidPhase> using a valid heSolidThermo package. For constant isotropic Foundation v10 solid transport, the registered thermoType entry is transport constIsoSolid, not the fluid-style constIso. Do not place those thermophysical coefficients directly in the solidEquilibriumEnergySource dictionary.
+    - Keep fixed volume fractions dimensionless, finite, and within their public bounds, and initialize any phase temperature field required by the solid energy model.
+  failure_signals:
+    - Startup reports that volumePhase or solidPhase is undefined in fvModels.
+    - Startup cannot find constant/alpha.volume or constant/alpha.solid after an initializer wrote only time-zero fields.
+    - The solid energy model cannot find constant/physicalProperties.solid or a required phase temperature.
+    - Dynamic solid-thermo compilation reports Unknown transport type constIso and lists constIsoSolid.
+    - Coded initializer compilation reports runTime undefined or asks whether mesh() was intended.
+  validation:
+    - Require successful initialization and verify constant alpha fields exist before the solver command.
+    - Require normal completion, finite bounded fractions, and requested mass, energy, or profile observables.

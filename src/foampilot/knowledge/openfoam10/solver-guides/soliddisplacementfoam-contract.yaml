@@ -1,0 +1,43 @@
+schema_version: 1.0.0
+id: of10.solver.soliddisplacementfoam-contract
+title: solidDisplacementFoam linear-elastic displacement contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [solidDisplacementFoam]
+models: [solid, linear-elastic, small-strain, displacement, planeStress, thermalStress]
+tags: [soliddisplacementfoam, solid-mechanics, displacement, stress, d2dt2, traction]
+applicability:
+  conditions:
+    - Foundation v10 solidDisplacementFoam solves transient or steady linear-elastic small-strain displacement D with optional thermal stress.
+    - Material properties are uniform values or fields understood by solidDisplacementThermo.
+  not_applicable:
+    - The problem requires finite strain, plasticity, contact, nonlinear material behavior, or a different solid-mechanics solver.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 solidDisplacementFoam application source
+  locator: OpenFOAM-10 applications/solvers/stressAnalysis/solidDisplacementFoam
+  sha256: 6759a9491e01823a883ea15676eb443dce0be4f4f05bb1e56be0fd4a0a5163c7
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 solidDisplacementFoam reads material properties through solidDisplacementThermo and selects second-time-derivative, displacement-Laplacian, and explicit-stress schemes by exact operator names.
+  rules:
+    - In constant/physicalProperties, define rho, E, nu, Cp, kappa, and alphav as subdictionaries containing type uniform and a scalar value, or use type field with a readable field; do not write these entries as primitive dimensioned scalars.
+    - Set planeStress and thermalStress explicitly. A non-thermal calculation still supplies coherent Cp, kappa, alphav, and T data because the thermo object constructs these properties before the displacement loop.
+    - Provide a readable vector displacement field D. Use tractionDisplacement with traction and pressure entries for loaded or traction-free boundaries, symmetry-compatible field types on geometric symmetry patches, and empty on an empty two-dimensional span.
+    - In system/fvSchemes, provide a separate d2dt2Schemes dictionary with the exact key d2dt2(rho,D); select steadyState for pseudo-time steady iterations or a supported second-derivative scheme for a genuinely transient task. A ddtSchemes entry does not satisfy this lookup.
+    - Define laplacian(DD,D) because the implicit displacement equation names that scheme, and define div(sigmaD) when compactNormalStress uses the named explicit stress divergence.
+    - Configure an fvSolution solver for D and a stressAnalysis subdictionary containing compactNormalStress, optional nCorrectors, and the scalar D convergence tolerance. Foundation v10 reads the literal stressAnalysis name rather than a solidDisplacementFoam-named control dictionary.
+    - The solver writes sigma and sigmaEq at write times. Run native postProcess only for additional requested components after the displacement solve has produced sigma.
+  failure_signals:
+    - physicalProperties reports an attempt to return a primitive entry as a sub-dictionary.
+    - fvSchemes.d2dt2Schemes reports that d2dt2(rho,D) is undefined.
+    - Startup reports that laplacian(DD,D), div(sigmaD), D, planeStress, or thermalStress is undefined.
+    - fvSolution reports stressAnalysis or stressAnalysis/compactNormalStress as undefined.
+  validation:
+    - Require Mesh OK, normal completion through the requested iteration or time, and finite D, sigma, and sigmaEq.
+    - Check boundary displacement/traction behavior, symmetry, and a task-derived stress or displacement metric without exposing a target-case solution.

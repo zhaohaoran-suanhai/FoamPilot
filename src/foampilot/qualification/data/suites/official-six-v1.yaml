@@ -1,0 +1,10 @@
+schema_version: 1
+protocol_id: official-six-v1
+max_workers: 2
+cases:
+  - {case_id: laminar-cavity, role: regression}
+  - {case_id: potential-cylinder, role: regression}
+  - {case_id: rans-pitzdaily, role: regression}
+  - {case_id: multiphase-dam-break, role: regression}
+  - {case_id: compressible-shock-tube, role: regression}
+  - {case_id: buoyant-cavity, role: regression, exclusive: true}

@@ -28,13 +28,16 @@ content:
   rules:
     - Provide physicalProperties, momentumTransport, U, p, every turbulence field required by the selected RANS model, fvSchemes, fvSolution, controlDict, and a valid mesh.
     - Use steadyState time discretization and a SIMPLE dictionary with a valid pressure reference when pressure has no fixed-value anchor.
+    - For the Foundation v10 high-Reynolds-number separated-flow baseline, use SIMPLE consistent yes, a bounded linearUpwind velocity convection scheme, bounded limitedLinear 1 convection for k and epsilon, and equation relaxation near 0.9. Treat these as a coherent convergence baseline before substituting more diffusive upwind transport or weaker relaxation.
+    - When divSchemes/default is none, include the exact Foundation v10 viscous-stress entry div((nuEff*dev2(T(grad(U))))); otherwise simpleFoam can load the turbulence model and still fail on the first momentum assembly.
     - Use one coherent wall-function set for the selected high- or low-Reynolds-number closure; do not mix k, epsilon or omega, and nut conditions from unrelated models.
     - Configure relaxation for stable convergence and keep enough iteration and write budget to preserve a final state; add residualControl only when early stopping is explicitly needed.
     - When MPI is used, decompose before solving, use executable simpleFoam with mpi_ranks on that typed command, and reconstruct before evaluator sampling; never embed mpirun or orterun because the Runner owns the launcher.
   failure_signals:
     - A turbulence field or model coefficient dictionary is missing.
     - A wall function is incompatible with the selected RANS closure or patch type.
-    - End is reached only because the iteration cap is exhausted while residuals, continuity, or flow balance remain poor.
+    - fvSchemes reports div((nuEff*dev2(T(grad(U))))) as undefined.
+    - End is reached only because the iteration cap is exhausted while residuals, continuity, or flow balance remain poor; a normal exit at that cap is not convergence.
   validation:
     - Require Mesh OK, normal solver completion, finite fields, and a reconstructed latest state.
     - Check residual trends, continuity, inlet/outlet flow balance, and requested pressure or velocity observables independently.

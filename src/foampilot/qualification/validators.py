@@ -4,9 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+import subprocess
 from typing import Any
 
 import numpy as np
+
+from foampilot.physics.wall_heat_flux import (
+    audit_wall_heat_flux,
+    parse_wall_heat_flux_data,
+)
+from foampilot.runtime import RuntimeConfig
 
 from .models import (
     PrivateValidation,
@@ -196,8 +203,12 @@ def _buoyant(data: OpenFOAMCaseData, validation: PrivateValidation) -> dict:
 
     _safe(
         "wall_heat_balance",
-        lambda: abs(wall_fluxes()[0])
-        / max(abs(wall_fluxes()[1]), 1e-12),
+        lambda: audit_wall_heat_flux(
+            data.case_dir,
+            openfoam_root=RuntimeConfig.local_foundation_v10().openfoam_root,
+            hot_patch="hot",
+            cold_patch="cold",
+        ).normalized_imbalance,
         output,
     )
 
@@ -283,6 +294,341 @@ def _multiphase(
     return output
 
 
+def _metric_coordinates(
+    validation: PrivateValidation,
+    metric_name: str,
+) -> list[list[float]]:
+    return next(
+        metric.sample_coordinates
+        for metric in validation.metrics
+        if metric.name == metric_name
+    )
+
+
+def _all_boundary_flux_imbalance(
+    data: OpenFOAMCaseData,
+    *,
+    field: str = "U",
+) -> float:
+    values = [value for _, value in data.boundary_fluxes(field=field)]
+    return abs(sum(values)) / max(sum(map(abs, values)), 1e-12)
+
+
+def _scalar_transport(
+    data: OpenFOAMCaseData,
+    validation: PrivateValidation,
+) -> dict:
+    output = {"final_time": data.latest_time}
+
+    def scalar_inventory() -> float:
+        mesh = data.internal_mesh()
+        volume = float(
+            np.sum(
+                np.asarray(
+                    mesh.compute_cell_sizes(
+                        length=False,
+                        area=False,
+                        volume=True,
+                    ).cell_data["Volume"],
+                    dtype=float,
+                )
+            )
+        )
+        return data.volume_integral("T") / max(volume, 1e-12)
+
+    _safe(
+        "scalar_conservation",
+        scalar_inventory,
+        output,
+    )
+    coordinates = _metric_coordinates(
+        validation,
+        "downstream_scalar_profile",
+    )
+    _safe(
+        "downstream_scalar_profile",
+        lambda: flatten_arrays(data.sample("T", coordinates)),
+        output,
+    )
+    return output
+
+
+def _planar_poiseuille(
+    data: OpenFOAMCaseData,
+    validation: PrivateValidation,
+) -> dict:
+    output = {"final_time": data.latest_time}
+    _safe(
+        "flow_balance",
+        lambda: _flux_imbalance(
+            data.flux_on_plane(0, -0.1, tolerance=1e-6),
+            data.flux_on_plane(0, 0.1, tolerance=1e-6),
+        ),
+        output,
+    )
+    coordinates = _metric_coordinates(validation, "velocity_profile")
+    _safe(
+        "velocity_profile",
+        lambda: flatten_arrays(data.sample("U", coordinates)[:, 0]),
+        output,
+    )
+    return output
+
+
+def _porous_duct(
+    data: OpenFOAMCaseData,
+    validation: PrivateValidation,
+) -> dict:
+    output = {"final_iteration": data.latest_time}
+    _safe(
+        "flow_balance",
+        lambda: _all_boundary_flux_imbalance(data),
+        output,
+    )
+
+    def pressure_drop() -> float:
+        inlet = np.asarray(
+            data.boundary_patch("inlet").cell_data["p"],
+            dtype=float,
+        )
+        outlet = np.asarray(
+            data.boundary_patch("outlet").cell_data["p"],
+            dtype=float,
+        )
+        return float(
+            np.mean(inlet)
+            - np.mean(outlet)
+        )
+
+    _safe("pressure_drop", pressure_drop, output)
+    return output
+
+
+def _compressible_blocked_channel(
+    data: OpenFOAMCaseData,
+    validation: PrivateValidation,
+) -> dict:
+    output = {"final_time": data.latest_time}
+    _safe("total_mass", lambda: data.volume_integral("rho"), output)
+    coordinates = _metric_coordinates(validation, "primitive_profiles")
+
+    def profiles() -> list[float]:
+        return flatten_arrays(
+            data.sample("p", coordinates),
+            data.sample("T", coordinates),
+            data.sample("rho", coordinates),
+            data.sample("U", coordinates),
+        )
+
+    _safe("primitive_profiles", profiles, output)
+    return output
+
+
+def _cht_region_heat_flow(case_dir: Path, region: str) -> float:
+    function_name = f"wallHeatFlux(region={region})"
+    script = (
+        'source "$1/etc/bashrc"\n'
+        'cd "$2"\n'
+        'chtMultiRegionFoam -postProcess -func "$3" -latestTime'
+    )
+    completed = subprocess.run(
+        [
+            "bash",
+            "--noprofile",
+            "--norc",
+            "-c",
+            script,
+            "_",
+            str(RuntimeConfig.local_foundation_v10().openfoam_root),
+            str(case_dir),
+            function_name,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise RuntimeError(
+            f"{function_name} failed"
+            + (f": {detail}" if detail else "")
+        )
+    candidates = sorted(
+        case_dir.glob(
+            f"postProcessing/{region}/{function_name}/*/wallHeatFlux.dat"
+        )
+    )
+    if not candidates:
+        raise RuntimeError(f"{function_name} produced no data")
+    rows = parse_wall_heat_flux_data(
+        candidates[-1].read_text(encoding="utf-8")
+    )
+    expected_patch = (
+        "fluid_to_solid" if region == "fluid" else "solid_to_fluid"
+    )
+    selected = [row for row in rows if row.patch == expected_patch]
+    if not selected:
+        raise RuntimeError(
+            f"{function_name} has no {expected_patch!r} patch"
+        )
+    return max(selected, key=lambda row: row.time).integrated_heat_flow_w
+
+
+def _cht_cooling_cylinder(
+    data: OpenFOAMCaseData,
+    validation: PrivateValidation,
+) -> dict:
+    fluid = OpenFOAMCaseData(data.case_dir, region="fluid")
+    solid = OpenFOAMCaseData(data.case_dir, region="solid")
+    output = {"final_time": min(fluid.latest_time, solid.latest_time)}
+
+    def heat_balance() -> float:
+        fluid_flow = _cht_region_heat_flow(data.case_dir, "fluid")
+        solid_flow = _cht_region_heat_flow(data.case_dir, "solid")
+        return abs(fluid_flow + solid_flow) / max(
+            abs(fluid_flow),
+            abs(solid_flow),
+            1e-12,
+        )
+
+    _safe("interface_heat_balance", heat_balance, output)
+
+    def profiles() -> list[float]:
+        fluid_coordinates = [
+            [-0.02, 0, 0],
+            [0.01, 0, 0],
+            [0.03, 0, 0],
+            [0.07, 0, 0],
+        ]
+        solid_coordinates = [
+            [0, 0, 0],
+            [0.0025, 0, 0],
+            [0.0045, 0, 0],
+        ]
+        return flatten_arrays(
+            fluid.sample("T", fluid_coordinates),
+            solid.sample("T", solid_coordinates),
+        )
+
+    _safe("temperature_profiles", profiles, output)
+    return output
+
+
+def _srf_rotor(
+    data: OpenFOAMCaseData,
+    validation: PrivateValidation,
+) -> dict:
+    output = {"final_time": data.latest_time}
+    _safe(
+        "flow_balance",
+        lambda: _all_boundary_flux_imbalance(data, field="Urel"),
+        output,
+    )
+    coordinates = _metric_coordinates(
+        validation,
+        "rotating_velocity_profile",
+    )
+    _safe(
+        "rotating_velocity_profile",
+        lambda: flatten_arrays(data.sample("Urel", coordinates)),
+        output,
+    )
+    return output
+
+
+def _mhd_hartmann(
+    data: OpenFOAMCaseData,
+    validation: PrivateValidation,
+) -> dict:
+    output = {"final_time": data.latest_time}
+    _safe(
+        "divergence_conservation",
+        lambda: _all_boundary_flux_imbalance(data),
+        output,
+    )
+    coordinates = _metric_coordinates(validation, "velocity_profile")
+    _safe(
+        "velocity_profile",
+        lambda: flatten_arrays(data.sample("U", coordinates)[:, 0]),
+        output,
+    )
+    return output
+
+
+def _capillary_rise(
+    data: OpenFOAMCaseData,
+    validation: PrivateValidation,
+) -> dict:
+    output = {"final_time": data.latest_time}
+
+    # The bottom is an open liquid reservoir, so capillary rise must increase
+    # the domain inventory. Compare the final inventory with the frozen
+    # reference instead of imposing a physically invalid closed-volume check.
+    _safe(
+        "liquid_volume",
+        lambda: data.volume_integral("alpha.water"),
+        output,
+    )
+    coordinates = _metric_coordinates(validation, "interface_height")
+
+    def interface_height() -> float:
+        values = data.sample(
+            "alpha.water",
+            coordinates,
+            allow_invalid=True,
+        ).reshape(-1)
+        heights = np.asarray(coordinates, dtype=float)[:, 1]
+        wet = heights[values >= 0.5]
+        return float(max(wet)) if len(wet) else 0.0
+
+    _safe("interface_height", interface_height, output)
+    return output
+
+
+def _solid_plate_hole(
+    data: OpenFOAMCaseData,
+    validation: PrivateValidation,
+) -> dict:
+    output = {"final_iteration": data.latest_time}
+
+    def symmetry_error() -> float:
+        displacement = np.asarray(
+            data.internal_mesh().cell_data["D"],
+            dtype=float,
+        )
+        scale = max(
+            float(np.linalg.norm(displacement, axis=1).max()),
+            1e-30,
+        )
+        left = np.asarray(
+            data.boundary_patch("left").cell_data["D"],
+            dtype=float,
+        )
+        down = np.asarray(
+            data.boundary_patch("down").cell_data["D"],
+            dtype=float,
+        )
+        normal_displacement = max(
+            float(np.abs(left[:, 0]).max()),
+            float(np.abs(down[:, 1]).max()),
+        )
+        return normal_displacement / scale
+
+    _safe("displacement_symmetry", symmetry_error, output)
+    coordinates = _metric_coordinates(validation, "hole_edge_stress")
+
+    def stress_profile() -> list[float]:
+        return flatten_arrays(
+            data.sample("sigmaxx", coordinates),
+            data.sample("sigmayy", coordinates),
+            data.sample("sigmaxy", coordinates),
+        )
+
+    _safe("hole_edge_stress", stress_profile, output)
+    return output
+
+
 EXTRACTORS = {
     "potential-cylinder": _potential,
     "laminar-cavity": _cavity,
@@ -290,6 +636,15 @@ EXTRACTORS = {
     "compressible-shock-tube": _shock,
     "buoyant-cavity": _buoyant,
     "multiphase-dam-break": _multiphase,
+    "scalar-transport-pitzdaily": _scalar_transport,
+    "laminar-planar-poiseuille": _planar_poiseuille,
+    "porous-angled-duct": _porous_duct,
+    "compressible-blocked-channel": _compressible_blocked_channel,
+    "cht-cooling-cylinder": _cht_cooling_cylinder,
+    "srf-rotor": _srf_rotor,
+    "mhd-hartmann": _mhd_hartmann,
+    "multiphase-capillary-rise": _capillary_rise,
+    "solid-plate-hole": _solid_plate_hole,
 }
 
 

@@ -1,0 +1,78 @@
+schema_version: 1
+task_id: solid-plate-hole
+title: Plane-stress elastic plate with a circular hole
+prompt: >-
+  Starting from an empty case directory, build and solve the first-quadrant
+  symmetry model of a square elastic plate containing a circular hole.
+  The modeled plate occupies 0<=x<=2 m, 0<=y<=2 m, and
+  0<=z<=0.5 m, excluding a radius-0.5 m quarter-circle at the origin.
+  Construct a body-fitted five-block mesh with one empty spanwise cell.
+  Resolve the inner quarter annulus with two 10 by 10 blocks, the lower
+  extension with 20 by 10 cells, the upper-right region with 20 by 20
+  cells, and the upper-left extension with 10 by 20 cells. Preserve left
+  and down symmetry planes, right and up outer boundaries, the hole wall,
+  and empty frontAndBack faces. Use solidDisplacementFoam with rho=7854
+  kg/m3, Poisson ratio 0.3, Young's modulus 2e11 Pa, Cp=434 J/(kg K),
+  kappa=60.5 W/(m K), alphav=1.1e-5 1/K, planeStress enabled, and thermal
+  stress disabled. Initialize displacement D=(0 0 0) m and T=300 K. Apply
+  traction (10000 0 0) Pa on the right boundary, zero traction on the upper
+  and hole boundaries, symmetry displacement conditions on left and down,
+  and coherent temperature conditions. Use a steady displacement scheme
+  over iterations 0 to 100 with deltaT=1 and write every 20 iterations.
+  Run serially. Generate all Foundation OpenFOAM v10 files yourself, run
+  blockMesh and checkMesh before solidDisplacementFoam, then use the native
+  postProcess utility to write components of sigma. Preserve D and sigma
+  results, and do not read or copy a pre-existing case.
+openfoam_target:
+  distribution: foundation
+  version: "10"
+resource_budget:
+  max_attempts: 2
+  max_wall_seconds: 900
+  max_mpi_ranks: 1
+  memory_mib: 2048
+required_outputs:
+  - mesh quality log
+  - completed solidDisplacementFoam log through iteration 100
+  - displacement and stress fields
+  - postProcess log for components of sigma
+  - fields suitable for symmetry and hole-edge stress evaluation
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - solidDisplacementFoam reaches iteration 100 and ends normally
+  - native postProcess writes stress components
+  - required fields remain finite
+  - displacement symmetry and hole-edge stress pass evaluator checks
+public_checks:
+  - name: mesh-quality
+    kind: mesh_ok
+    parameters: {}
+  - name: solid-solver
+    kind: command_executed
+    parameters:
+      executable: solidDisplacementFoam
+  - name: stress-postprocess
+    kind: command_executed
+    parameters:
+      executable: postProcess
+  - name: normal-completion
+    kind: completion
+    parameters: {}
+  - name: final-iteration
+    kind: final_time
+    parameters:
+      minimum: 100
+  - name: finite-fields
+    kind: finite_fields
+    parameters: {}
+  - name: final-displacement
+    kind: requested_output
+    parameters:
+      path: 100/D
+  - name: stress-component
+    kind: requested_output
+    parameters:
+      path: 100/sigmaxx
+public_assets: []
+protected_paths:
+  - /home/edwin/workplace/OpenFOAM-10/tutorials

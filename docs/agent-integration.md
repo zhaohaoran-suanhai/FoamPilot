@@ -26,6 +26,20 @@ No model reviewer sits between steps 4 and 5. There is no per-file model loop,
 preselected knowledge-ID allowlist, CaseSpec resolution, or renderer in the
 canonical path.
 
+### Conservative pre-solve gate
+
+Pre-solve inspection blocks only mechanically certain defects, such as an
+explicitly missing boundary patch or a known-incompatible Foundation v10
+dictionary construct. If includes, substitutions, or other dynamic syntax make
+the result uncertain, inspection records an advisory and lets OpenFOAM decide.
+
+A blocking static defect consumes the same evidence-scoped repair budget as a
+runtime failure; it does not terminate the task before the Agent can correct
+its files. During execution, an explicit `Failed N mesh checks` message from
+`checkMesh` stops later solver commands even when `checkMesh` returns zero.
+Ambiguous or unfamiliar log text is preserved as evidence and is not treated
+as a new hard-coded failure.
+
 ## Machine-readable commands
 
 ```bash
@@ -40,6 +54,17 @@ foampilot knowledge search src/foampilot/knowledge/openfoam10 "QUERY" \
   --formal --limit 8 --json
 foampilot skill validate \
   src/foampilot/skills/openfoam-author-native-case --json
+
+foampilot improve analyze RUN_DIR \
+  --qualification-report BASELINE.json \
+  --candidate-id CANDIDATE \
+  --lesson "GENERAL LESSON" \
+  --target knowledge \
+  --output IMPROVEMENTS/candidate.yaml
+foampilot improve compare BASELINE.json CURRENT.json \
+  --candidate IMPROVEMENTS/candidate.yaml \
+  --output IMPROVEMENTS/promotion.json \
+  --json
 ```
 
 Exit codes are 0 for pass, 2 for invalid CLI input, 3 for an environment
@@ -70,6 +95,32 @@ choose those IDs.
 Only general public material may enter the Agent prompt. Current target
 tutorial paths, private validators, golden values, and source mappings remain
 outside the Agent boundary.
+
+## Offline improvement boundary
+
+The improvement commands are a developer workflow over frozen evidence, not
+part of `NativeAgent.solve()`:
+
+```text
+frozen solve/qualification
+-> improve analyze
+-> developer applies one candidate change
+-> rerun qualification
+-> improve compare
+-> explicit promotion decision
+```
+
+There is no automatic promotion. The analyzer verifies the artifact manifest
+and requires a matching qualification result before it can hash an optional
+official example. Official examples are unavailable during blind authoring and
+repair. They may only be examined afterward to extract general principles;
+their paths, complete dictionaries, target-specific geometry, golden values,
+and evaluator tolerances never enter the model context.
+
+Learning candidates and promotion reports are written exclusively to
+developer-selected paths beside run roots. They are not written into immutable
+runs and do not become package knowledge or Skills without explicit review and
+approval.
 
 ## Single execution path
 

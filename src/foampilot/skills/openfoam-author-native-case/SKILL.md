@@ -27,7 +27,10 @@ Return one complete `ExecutionPlan` containing all files and commands:
    requested-output paths relative to that root (`1/U`, not `case/1/U`).
    The Runner owns MPI launchers: set the solver as `executable`, set
    `mpi_ranks`, and never emit `mpirun` or `orterun`.
-4. Keep the total step timeouts and MPI ranks inside the TaskSpec budget.
+4. Keep the total step timeouts and MPI ranks inside the TaskSpec budget. The
+   sum of all command timeouts must be no greater than `max_wall_seconds`;
+   reserve mesh, initialization, decomposition, and reconstruction time first,
+   then assign only the remaining budget to the solver.
 5. Map every required output to solver logs or written fields that the
    evaluator can inspect after the solve. Require mesh quality, normal
    completion, requested final time, finite fields, and the relevant
@@ -44,11 +47,42 @@ Return one complete `ExecutionPlan` containing all files and commands:
 - Cover every mesh patch in every field.
 - For a two-dimensional extrusion, use one suppressed-direction cell and
   matching `empty` mesh and field patches.
+- For a multi-block mesh, ensure every shared face has identical subdivisions
+  in both tangential directions and grading-compatible point locations. Define
+  named subdivision variables for integer cell counts in each topological edge
+  family and reuse them on every adjacent block instead of repeating unrelated
+  integer literals. For a 2D hex extruded from lower z to higher z, order its
+  four lower vertices counter-clockwise in x-y and map the four upper vertices
+  in the same order; verify this handedness for every block, not only the first.
+  OpenFOAM dictionary substitution is not arithmetic: never write `-$name` for
+  a negative coordinate. Use a literal negative scalar or define a separate
+  negative scalar and substitute that complete token.
+  Before emitting `blockMeshDict`, check the full adjacency graph, including
+  local block-axis direction and grading orientation; do not repair one
+  reported block pair while leaving another non-conformal shared face. At a
+  fluid-solid interface, match tangential subdivisions across the interface
+  independently of unrelated upstream, downstream, or radial cell counts.
+  Adjacent blocks must reuse the exact same vertex labels on their shared face;
+  coincident coordinates assigned new labels create disconnected topology.
+  Foundation v10 `blockMesh` has no `-merge-points` repair option: correct the
+  vertex and face topology instead of inventing a command flag. Account for
+  every exterior face in a named boundary patch. An unintended `defaultFaces`
+  patch or a one-dimensional `checkMesh` classification is evidence of missing
+  exterior faces, not a mesh-quality warning to ignore.
+- When geometry rotates or bends, transform the full local frame and
+  cross-section, including its face normals and porous or outlet axes. Moving
+  only the centerline while leaving the cross-section in global axes changes
+  the modeled area and resistance.
+- Keep constraint patch types consistent: mesh type `symmetryPlane` requires field type `symmetryPlane`, not `symmetry`. When appropriate, `#includeEtc "caseDicts/setConstraintTypes"` may derive Foundation v10 field constraints from the mesh.
 - For a regional initial condition, declare its dictionary and a native
   initialization command after mesh checks and before the solver.
 - Keep optional diagnostics outside the required solve plan. Do not add
   sampling, extrema, conservation, or convergence function objects merely to
   create evaluator evidence; written fields and solver logs are sufficient.
+- When the public task explicitly requires all-time log evidence, use the
+  exact dynamically retrieved Foundation v10 diagnostic recipe and record it
+  at the required cadence.
+- For ordinary output-time measurements, let the evaluator inspect written fields instead of adding function objects.
 - Return all complete files in the same CaseBundle. Keep their patch, field,
   and dictionary dependencies internally consistent.
 

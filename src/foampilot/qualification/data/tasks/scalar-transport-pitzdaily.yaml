@@ -1,0 +1,74 @@
+schema_version: 1
+task_id: scalar-transport-pitzdaily
+title: Passive-scalar transport through a sudden-expansion channel
+prompt: >-
+  Starting from an empty case directory, build and solve a two-dimensional
+  passive-scalar transport problem through a backward-facing step and tapered
+  outlet. The inlet is at x=-0.0206 m with 0 <= y <= 0.0254 m. At x=0 the
+  lower wall expands to y=-0.0254 m while the upper wall remains at
+  y=0.0254 m. Continue to x=0.206 m and taper both walls to
+  y=+/-0.0166 m at outlet x=0.290 m. Extrude one empty spanwise cell over
+  0.001 m. Use five connected structured blocks with counts 18 by 30,
+  180 by 27, 180 by 30, 25 by 27, and 25 by 30, graded toward the step and
+  walls. Preserve inlet, outlet, upperWall, lowerWall, and empty
+  frontAndBack patches. Establish a finite divergence-free incompressible
+  velocity field with inlet U=(10 0 0) m/s and impermeable walls using a
+  native potential-flow initialization before running scalarTransportFoam.
+  Transport a dimensionless scalar T with diffusivity 0.01 m2/s, initially
+  zero, fixed to 1 at the inlet, zero-gradient at the outlet and walls, and
+  empty spanwise boundaries. Integrate from 0 to 0.1 s with
+  deltaT=0.0001 s and write at least every 0.005 s. Run serially. Generate
+  all Foundation OpenFOAM v10 files yourself, run blockMesh and checkMesh,
+  and do not read or copy a pre-existing case.
+openfoam_target:
+  distribution: foundation
+  version: "10"
+resource_budget:
+  max_attempts: 2
+  max_wall_seconds: 900
+  max_mpi_ranks: 1
+  memory_mib: 2048
+required_outputs:
+  - mesh quality and velocity-initialization logs
+  - completed scalarTransportFoam log through 0.1 s
+  - velocity and passive-scalar fields at 0.1 s
+  - fields suitable for scalar-conservation and downstream-profile sampling
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - potential-flow initialization and scalarTransportFoam end normally
+  - scalarTransportFoam reaches 0.1 s
+  - required fields remain finite
+  - scalar conservation and downstream profile pass evaluator checks
+public_checks:
+  - name: mesh-quality
+    kind: mesh_ok
+    parameters: {}
+  - name: velocity-initialization
+    kind: command_executed
+    parameters:
+      executable: potentialFoam
+  - name: scalar-solver
+    kind: command_executed
+    parameters:
+      executable: scalarTransportFoam
+  - name: normal-completion
+    kind: completion
+    parameters: {}
+  - name: final-time
+    kind: final_time
+    parameters:
+      minimum: 0.1
+  - name: finite-fields
+    kind: finite_fields
+    parameters: {}
+  - name: final-scalar
+    kind: requested_output
+    parameters:
+      path: 0.1/T
+  - name: final-velocity
+    kind: requested_output
+    parameters:
+      path: 0.1/U
+public_assets: []
+protected_paths:
+  - /home/edwin/workplace/OpenFOAM-10/tutorials

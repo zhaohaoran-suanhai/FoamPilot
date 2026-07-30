@@ -18,3 +18,22 @@ def test_repository_ignores_runtime_artifacts() -> None:
     ignore = (root / ".gitignore").read_text(encoding="utf-8")
     for pattern in (".foampilot/", ".pytest_cache/", "dist/", "build/"):
         assert pattern in ignore
+
+
+def test_repository_documents_the_offline_improvement_boundary() -> None:
+    root = Path(__file__).resolve().parents[1]
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    integration = (root / "docs/agent-integration.md").read_text(
+        encoding="utf-8"
+    )
+    agents = (root / "AGENTS.md").read_text(encoding="utf-8")
+    combined = "\n".join((readme, integration, agents))
+
+    assert "foampilot improve analyze" in combined
+    assert "foampilot improve compare" in combined
+    assert "offline" in combined
+    assert "no automatic promotion" in combined
+    assert (
+        "Official examples are unavailable during blind authoring and repair."
+        in combined
+    )

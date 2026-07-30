@@ -151,14 +151,16 @@ def build_qualification_report(
     raw_results: list[dict[str, Any]],
     *,
     model_name: str,
+    protocol_id: str = "official-six-v1",
+    case_order: tuple[str, ...] = CASE_ORDER,
 ) -> QualificationReport:
-    """Build one deterministically ordered official-six report."""
+    """Build one deterministically ordered qualification report."""
 
     results = [
         qualification_result(**record)
         for record in raw_results
     ]
-    results.sort(key=lambda item: CASE_ORDER.index(item.case_id))
+    results.sort(key=lambda item: case_order.index(item.case_id))
     statuses: tuple[QualificationStatus, ...] = (
         "PASS",
         "FAIL_AGENT",
@@ -166,6 +168,7 @@ def build_qualification_report(
         "INVALID_QUALIFICATION",
     )
     return QualificationReport(
+        protocol_id=protocol_id,
         created_at=datetime.now(timezone.utc),
         model_name=model_name,
         counts={
@@ -180,7 +183,7 @@ def markdown_report(report: QualificationReport) -> str:
     """Render a compact human-readable qualification report."""
 
     lines = [
-        "# FoamPilot official-six qualification",
+        f"# FoamPilot {report.protocol_id} qualification",
         "",
         f"- Protocol: `{report.protocol_id}`",
         f"- Model: `{report.model_name}`",

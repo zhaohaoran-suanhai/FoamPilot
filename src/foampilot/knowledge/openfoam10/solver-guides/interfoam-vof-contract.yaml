@@ -33,12 +33,19 @@ content:
     - When divSchemes uses default none, explicitly provide div(rhoPhi,U), div(phi,alpha), div(phirb,alpha), and the Foundation v10 laminar viscous-stress key div(((rho*nuEff)*dev2(T(grad(U))))). A missing exact key is a startup dictionary error, not a stability failure.
     - Use positive transient time controls and limit both the flow and phase Courant numbers.
     - Make the pressure reference and every phase, velocity, and pressure boundary condition consistent with the mesh patches.
+    - In Foundation v10, use constantAlphaContactAngle for a constant wall contact angle; alphaContactAngle is not a registered patch-field type.
+    - For a liquid reservoir connected through an open inlet, use alpha inletOutlet with inletValue and value equal to the reservoir phase, pair U with pressureInletOutletVelocity, and anchor p_rgh consistently. A fixedValue phase fraction prevents liquid from leaving through the same opening and can corrupt the phase inventory.
+    - For a low-speed capillary-rise baseline between prescribed-pressure reservoirs, use fixedValue p_rgh at both the liquid inlet and open atmosphere, pressureInletOutletVelocity for U, and PIMPLE momentumPredictor no with nCorrectors 3. Reserve prghTotalPressure for an atmosphere whose dynamic total-pressure semantics are actually required.
+    - For the Foundation v10 low-speed capillary-rise baseline, start with div(phi,alpha) Gauss interfaceCompression vanLeer 1, div(rhoPhi,U) Gauss upwind, nAlphaCorr 1, and nAlphaSubCycles 2. Add MULESCorr, extra limiter iterations, a separate div(phirb,alpha), or higher-order momentum convection only when the task calls for them and revalidate both interface height and phase inventory; those changes are not neutral benchmark refinements.
     - Use a declared initialization utility before the solver when the initial interface is regional.
   failure_signals:
     - The phase-fraction field, a physicalProperties.<phase> dictionary, or either phase model cannot be read.
     - fvSolution reports pcorr, pcorrFinal, p_rgh, p_rghFinal, U, or the phase-fraction solver as undefined.
     - fvSchemes reports div(((rho*nuEff)*dev2(T(grad(U))))) as undefined.
     - The initial region is absent, empty, or outside the mesh.
+    - A capillary or reservoir boundary uses alphaContactAngle or fixes phase fraction where bidirectional flow is required.
+    - A capillary interface height is correct but the open-reservoir phase inventory is biased after replacing the simple Foundation baseline with extra MULES or higher-order convection controls.
+    - A quasi-static capillary solution has a consistent interface height but a biased liquid inventory because total-pressure or under-corrected momentum coupling changed the reservoir exchange.
     - Phase fraction becomes non-finite or materially leaves the interval from zero to one.
   validation:
     - Require normal completion, requested final time, and finite required fields.

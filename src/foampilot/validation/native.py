@@ -76,6 +76,33 @@ def _successful(step: PlanStepResult) -> bool:
     return step.return_code == 0 and not step.timed_out
 
 
+def _check_mesh_diagnostics(
+    steps: list[PlanStepResult],
+    texts: list[str],
+) -> str | None:
+    diagnostics: list[str] = []
+    for step, text in zip(reversed(steps), reversed(texts), strict=True):
+        if "checkMesh" not in step.command:
+            continue
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not (
+                line.startswith("***")
+                or re.search(r"\bFailed\s+\d+\s+mesh checks?\b", line)
+            ):
+                continue
+            normalized = line.lstrip("*").strip()[:500]
+            if normalized and normalized not in diagnostics:
+                diagnostics.append(normalized)
+            if len(diagnostics) == 3:
+                break
+        if diagnostics:
+            break
+    if not diagnostics:
+        return None
+    return "; ".join(diagnostics)[:1000]
+
+
 def _payload(parameters: dict[str, object], case_root: Path) -> dict:
     configured = parameters.get("evidence_file")
     relative = str(configured) if isinstance(configured, str) else ""
@@ -175,15 +202,24 @@ def _check(
             and bool(re.search(r"\bMesh OK\b", text))
             for step, text in zip(steps, texts, strict=True)
         )
+        diagnostic = None if matched else _check_mesh_diagnostics(steps, texts)
         return PublicValidationCheck(
             name=expectation.name,
             passed=matched,
             detail=(
                 "A successful checkMesh step reports Mesh OK."
                 if matched
-                else "No successful checkMesh step reports Mesh OK."
+                else (
+                    "No successful checkMesh step reports Mesh OK. "
+                    f"checkMesh diagnostics: {diagnostic}"
+                    if diagnostic
+                    else "No successful checkMesh step reports Mesh OK."
+                )
             ),
-            observed={"mesh_ok_marker": matched},
+            observed={
+                "mesh_ok_marker": matched,
+                "diagnostic": diagnostic,
+            },
             limits={"return_code": 0},
         )
 

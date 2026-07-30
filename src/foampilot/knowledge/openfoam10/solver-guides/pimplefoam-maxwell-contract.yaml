@@ -1,0 +1,43 @@
+schema_version: 1.0.0
+id: of10.solver.pimplefoam-maxwell-contract
+title: pimpleFoam transient laminar Maxwell and body-force contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [pimpleFoam]
+models: [incompressible, transient, laminar, Maxwell, viscoelastic, PIMPLE, semiImplicitSource]
+tags: [pimplefoam, maxwell, viscoelastic, stress, sigma, fvmodels, semiimplicitsource, body-force]
+applicability:
+  conditions:
+    - Foundation v10 pimpleFoam advances an incompressible transient flow with the laminar Maxwell momentum-transport model.
+    - A uniform or selected-cell body force may be supplied through semiImplicitSource.
+  not_applicable:
+    - The task uses Newtonian laminar transport without an extra stress field.
+    - The body force is imposed through a pressure gradient or another model type.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 pimpleFoam, Maxwell model, and semiImplicitSource sources
+  locator: OpenFOAM-10 applications/solvers/incompressible/pimpleFoam plus src/MomentumTransportModels laminar/Maxwell and src/fvModels/general/semiImplicitSource
+  sha256: 2e75e71b0a48ffaa4b03dd5f96b3d3ce2a172f535e9229fe76f929a6657acbac
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 pimpleFoam with the laminar Maxwell model transports the extra-stress field sigma and requires model-specific divergence schemes; semiImplicitSource selects cells with selectionMode and declares explicit and implicit source coefficients.
+  rules:
+    - Provide U, p, sigma, physicalProperties, momentumTransport, fvSchemes, fvSolution, controlDict, and any requested fvModels or fvConstraints dictionaries with coherent patch coverage.
+    - Under divSchemes default none, the Maxwell family requires exact entries for div(phi,U), div(phi,sigma), div(sigma), div((nu*dev2(T(grad(U))))), and div((nuM*grad(U))). Do not substitute the Newtonian nuEff key or omit the base-viscosity stress key.
+    - Configure laminar MaxwellCoeffs with nuM and lambda and preserve a finite sigma field using boundary conditions consistent with the velocity constraints.
+    - For a strongly coupled transient Maxwell baseline, use a bounded stress-convection scheme such as Gauss vanAlbada for div(phi,sigma), configure both "(U|sigma)" and "(U|sigma)Final" solver coverage, set momentumPredictor off, and use multiple nOuterCorrectors before pressure correctors. Changing only the stress convection to upwind does not replace the required outer coupling.
+    - A Foundation v10 semiImplicitSource uses selectionMode, for example selectionMode all, not select. Set volumeMode explicitly and declare a U source subdictionary containing an explicit vector entry and an implicit scalar entry; the compact U (((vector) scalar)) primitive form is incompatible with this reader.
+    - Use a PIMPLE dictionary and a valid pressure reference for a periodic or otherwise unanchored pressure field.
+  failure_signals:
+    - fvModels reports that selectionMode is undefined because select was used.
+    - fvModels tries to return sources/U as a sub-dictionary because a compact primitive source tuple was used.
+    - fvSchemes reports div((nu*dev2(T(grad(U))))) or another Maxwell stress divergence as undefined.
+    - The sigma field is missing, has incompatible patches, or becomes non-finite because the transient stress and momentum equations were under-coupled.
+  validation:
+    - Require Mesh OK, normal completion through the requested time, and finite U, p, and sigma.
+    - Check periodic or boundary flow balance and compare the requested transient velocity or stress observable independently.

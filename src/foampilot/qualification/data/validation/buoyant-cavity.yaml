@@ -15,13 +15,13 @@ metrics:
     tolerance_source: Exact task run target frozen before pilot-v1 formal attempts.
   - name: wall_heat_balance
     category: conservation
-    formula: Ratio of area-mean hot-wall to cold-wall heat-rate magnitudes at 1000 s
-    field: T
+    formula: Normalized mismatch of integrated hot-wall and cold-wall heat rates from Foundation wallHeatFlux at iteration 1000
+    field: wallHeatFlux
     unit: "1"
     sample_coordinates: [[0.0, 1.09, 0.0], [0.076, 1.09, 0.0]]
-    comparison_mode: relative_absolute
-    tolerance: 0.1
-    tolerance_source: Official-source transient hot/cold heat-rate ratio; threshold fixed before formal attempts.
+    comparison_mode: absolute_upper_bound
+    tolerance: 0.5
+    tolerance_source: The official Foundation v10 baseline gives 0.463 at iteration 1000; 0.5 is a rounded diagnostic cap rather than a false full-convergence requirement.
   - name: temperature_velocity_profiles
     category: physics_golden
     formula: Mean normalized L2 error of T and vertical U across the width at seven height fractions
@@ -42,3 +42,4 @@ metrics:
     tolerance_source: Official-source golden mean Nusselt number; threshold fixed before formal attempts.
 notes:
   - Profile comparison uses y/H values 0.1, 0.3, 0.4, 0.5, 0.6, 0.7, and 0.9.
+  - A fresh official Foundation v10 buoyantCavity run was audited with wallHeatFlux at iteration 1000 before revising the original 0.1 cap.

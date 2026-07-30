@@ -1,0 +1,45 @@
+case_id: laminar-planar-poiseuille
+source_sha256: 595cba8421de1a1e75399f1966f859a1476babbcb55a1b5fc740e68551b5340e
+golden_sha256: ff297fbf619c322a9ffffcd9a3e95d84f79570c0c968e4a4ea793aaa97c6cb5a
+expected_application: pimpleFoam
+expected_end_time: 25.0
+metrics:
+  - name: final_time
+    category: completion
+    formula: latest written time reaches the exact task target
+    field: log.time
+    unit: s
+    sample_coordinates: [[0.0, 0.5, 0.0]]
+    comparison_mode: lower_bound
+    tolerance: 0.0
+    tolerance_source: Exact public TaskSpec target.
+  - name: flow_balance
+    category: conservation
+    formula: normalized imbalance between the two cyclic streamwise patches
+    field: U
+    unit: "1"
+    sample_coordinates: [[-0.1, 0.5, 0.0], [0.1, 0.5, 0.0]]
+    comparison_mode: absolute_upper_bound
+    tolerance: 0.01
+    tolerance_source: One-percent engineering conservation cap.
+  - name: velocity_profile
+    category: physics_golden
+    formula: relative L2 error of streamwise velocity against the steady Maxwell parabolic profile
+    field: U
+    unit: m/s
+    sample_coordinates:
+      - [0.0, 0.05, 0.0]
+      - [0.0, 0.15, 0.0]
+      - [0.0, 0.25, 0.0]
+      - [0.0, 0.35, 0.0]
+      - [0.0, 0.45, 0.0]
+      - [0.0, 0.55, 0.0]
+      - [0.0, 0.65, 0.0]
+      - [0.0, 0.75, 0.0]
+      - [0.0, 0.85, 0.0]
+      - [0.0, 0.95, 0.0]
+    comparison_mode: relative_l2
+    tolerance: 0.08
+    tolerance_source: Analytical solution with mesh and point-interpolation allowance.
+notes:
+  - The analytical profile is independent of the official tutorial result tree.

@@ -1,0 +1,41 @@
+schema_version: 1.0.0
+id: of10.solver.mhdfoam-contract
+title: mhdFoam incompressible magnetohydrodynamic contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [mhdFoam]
+models: [incompressible, transient, laminar, magnetohydrodynamic, MHD, PISO, BPISO]
+tags: [mhdfoam, mhd, hartmann, magnetic, permeability, conductivity, bpiso, pb]
+applicability:
+  conditions:
+    - Foundation v10 mhdFoam solves laminar incompressible conducting flow coupled to a magnetic field.
+    - The case supplies velocity U, magnetic field B, kinematic pressure p, and magnetic pressure pB.
+  not_applicable:
+    - The physics requires compressible, turbulent, inductionless, or electric-potential formulations.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 mhdFoam application source
+  locator: OpenFOAM-10 applications/solvers/electromagnetics/mhdFoam
+  sha256: edc66c325e9ffd2a27ba5f85278e9538a6b1a1020d4c8744c6fd4120080f608b
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 mhdFoam runs separate hydrodynamic PISO and magnetic BPISO correction loops and reads four dimensioned constants plus U, B, p, and pB directly.
+  rules:
+    - In constant/physicalProperties, use the repeated dimensioned-scalar stream forms rho rho [1 -3 0 0 0 0 0], nu nu [0 2 -1 0 0 0 0], mu mu [1 1 -2 0 0 -2 0], and sigma sigma [-1 -3 3 0 0 2 0], followed by their values.
+    - Provide readable U, B, p, and pB fields with coherent boundary conditions on every mesh patch.
+    - In fvSolution, configure the complete coupled set p, pFinal, pB, pBFinal, U, B, and BFinal and provide both PISO and BPISO dictionaries; BPISO controls the magnetic-pressure correction loop and is not inferred from PISO. Regex entries such as "(U|B).*" may cover base and final vector solves, but both pressure-final aliases remain explicit.
+    - When divSchemes/default is none, define the complete Foundation v10 coupled divergence set div(phi,U), div(phiB,U), div(phi,B), and div(phiB,((2*DBU)*B)); retain valid pressure references when either pressure field lacks a fixed-value anchor. Treat these four entries as one solver-family contract rather than adding missing keys one startup failure at a time.
+    - Keep magnetic permeability mu distinct from dynamic viscosity; mhdFoam reads nu as kinematic viscosity and mu as the electromagnetic constant with different dimensions.
+  failure_signals:
+    - Startup reports that BPISO is undefined in fvSolution.
+    - physicalProperties reports rho, nu, mu, or sigma as undefined or dimensionally inconsistent.
+    - A solver entry for pFinal, pBFinal, B, or BFinal is missing when a final correction begins.
+    - fvSchemes reports div(phiB,U), div(phi,B), or the Lorentz-coupling divergence as undefined.
+  validation:
+    - Require Mesh OK, normal completion through the requested time, and finite U, B, p, and pB.
+    - Check fluid flux conservation, magnetic divergence behavior, and the requested Hartmann or magnetic profile without golden leakage.

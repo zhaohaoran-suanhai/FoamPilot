@@ -207,6 +207,63 @@ def test_inspection_reports_missing_declared_file(tmp_path: Path) -> None:
     assert any(issue.code == "MISSING_DECLARED_FILE" for issue in report.issues)
 
 
+def test_inspection_rejects_explicit_missing_field_patch(
+    tmp_path: Path,
+) -> None:
+    _write_declared_case(tmp_path)
+    velocity = tmp_path / "0/U"
+    velocity.write_text(
+        velocity.read_text(encoding="utf-8").replace(
+            """
+    fixedWalls
+    {
+        type noSlip;
+    }
+""",
+            "",
+        ),
+        encoding="utf-8",
+    )
+
+    report = _inspect(tmp_path)
+
+    issue = next(
+        item
+        for item in report.issues
+        if item.code == "MISSING_FIELD_PATCH"
+    )
+    assert issue.path == "0/U"
+    assert "fixedWalls" in issue.detail
+
+
+def test_inspection_keeps_unresolved_patch_coverage_advisory(
+    tmp_path: Path,
+) -> None:
+    _write_declared_case(tmp_path)
+    (tmp_path / "0/U").write_text(
+        _header("U", klass="volVectorField")
+        + """
+dimensions [0 1 -1 0 0 0 0];
+internalField uniform (0 0 0);
+boundaryField
+{
+    #include "U.boundary"
+}
+""",
+        encoding="utf-8",
+    )
+
+    report = _inspect(tmp_path)
+
+    assert report.passed
+    advisory = next(
+        item
+        for item in report.advisories
+        if item.code == "PATCH_COVERAGE_UNVERIFIED"
+    )
+    assert advisory.path == "0/U"
+
+
 def test_inspection_rejects_generated_shell_entrypoint(
     tmp_path: Path,
 ) -> None:
@@ -218,3 +275,31 @@ def test_inspection_rejects_generated_shell_entrypoint(
     report = _inspect(tmp_path)
 
     assert any(issue.code == "GENERATED_SHELL" for issue in report.issues)
+
+
+def test_inspection_rejects_foundation_v10_field_min_max(
+    tmp_path: Path,
+) -> None:
+    _write_declared_case(
+        tmp_path,
+        control_suffix="""
+functions
+{
+    alphaBounds
+    {
+        type fieldMinMax;
+        fields (alpha.water);
+    }
+}
+""",
+    )
+
+    report = _inspect(tmp_path)
+
+    issue = next(
+        item
+        for item in report.issues
+        if item.code == "UNSUPPORTED_OF10_FUNCTION_OBJECT"
+    )
+    assert issue.path == "system/controlDict"
+    assert "volFieldValue" in issue.detail

@@ -15,6 +15,14 @@ from foampilot.agent import (
 from foampilot.artifacts import ArtifactStore
 from foampilot.environment import discover_environment
 from foampilot.inspection import inspect_native_case
+from foampilot.improvement import (
+    ImprovementTarget,
+    RootCause,
+    compare_promotion,
+    create_learning_candidate,
+    load_learning_candidate,
+    write_learning_candidate,
+)
 from foampilot.knowledge import (
     KnowledgeQuery,
     load_knowledge_corpus,
@@ -32,7 +40,12 @@ from foampilot.models import (
     load_codex_access_token,
 )
 from foampilot.plans import ExecutionPlan, validate_execution_plan
-from foampilot.qualification import run_official_six
+from foampilot.qualification import (
+    QualificationReport,
+    load_qualification_suite,
+    run_official_six,
+    run_qualification_suite,
+)
 from foampilot.runtime import (
     RuntimeConfig,
     run_preflight,
@@ -55,6 +68,7 @@ COMMANDS = (
     "skill",
     "audit",
     "qualify",
+    "improve",
 )
 
 KNOWLEDGE_TYPES = (
@@ -176,8 +190,70 @@ def _parser() -> argparse.ArgumentParser:
     wall_heat.add_argument("--cold-patch", required=True)
     wall_heat.add_argument("--json", action="store_true")
 
+    improve = subparsers.add_parser("improve")
+    improve_commands = improve.add_subparsers(dest="improve_command")
+    improve_analyze = improve_commands.add_parser("analyze")
+    improve_analyze.add_argument("run_dir", type=Path)
+    improve_analyze.add_argument(
+        "--qualification-report",
+        required=True,
+        type=Path,
+    )
+    improve_analyze.add_argument("--candidate-id", required=True)
+    improve_analyze.add_argument("--lesson", required=True)
+    improve_analyze.add_argument(
+        "--target",
+        required=True,
+        choices=tuple(item.value for item in ImprovementTarget),
+    )
+    improve_analyze.add_argument(
+        "--root-cause",
+        choices=tuple(item.value for item in RootCause),
+    )
+    improve_analyze.add_argument("--official-example", type=Path)
+    improve_analyze.add_argument(
+        "--principle",
+        action="append",
+        default=[],
+    )
+    improve_analyze.add_argument(
+        "--leakage-family",
+        action="append",
+        default=[],
+    )
+    improve_analyze.add_argument(
+        "--development-case",
+        action="append",
+        default=[],
+    )
+    improve_analyze.add_argument(
+        "--regression-case",
+        action="append",
+        default=[],
+    )
+    improve_analyze.add_argument(
+        "--holdout-case",
+        action="append",
+        default=[],
+    )
+    improve_analyze.add_argument(
+        "--criterion",
+        action="append",
+        default=[],
+    )
+    improve_analyze.add_argument("--output", required=True, type=Path)
+    improve_analyze.add_argument("--json", action="store_true")
+
+    improve_compare = improve_commands.add_parser("compare")
+    improve_compare.add_argument("baseline_report", type=Path)
+    improve_compare.add_argument("current_report", type=Path)
+    improve_compare.add_argument("--candidate", required=True, type=Path)
+    improve_compare.add_argument("--output", required=True, type=Path)
+    improve_compare.add_argument("--json", action="store_true")
+
     qualify = subparsers.add_parser("qualify")
-    qualify.add_argument("suite", choices=("official-six",))
+    qualify.add_argument("suite", choices=("official-six", "suite"))
+    qualify.add_argument("--suite-file", type=Path)
     qualify.add_argument("--run-root", required=True, type=Path)
     qualify.add_argument("--workers", type=int, choices=(1, 2), default=2)
     qualify.add_argument("--model-name", default="gpt-5.6-sol")
@@ -524,22 +600,42 @@ def _audit(arguments: argparse.Namespace) -> int:
 
 
 def _qualify(arguments: argparse.Namespace) -> int:
-    if arguments.suite != "official-six":
-        raise ValueError("an official qualification suite is required")
-    report = run_official_six(
-        run_root=arguments.run_root,
-        workers=arguments.workers,
-        model_name=arguments.model_name,
-        auth=arguments.auth,
-    )
+    if arguments.suite == "official-six":
+        if arguments.suite_file is not None:
+            raise ValueError(
+                "--suite-file is only valid with 'qualify suite'"
+            )
+        report = run_official_six(
+            run_root=arguments.run_root,
+            workers=arguments.workers,
+            model_name=arguments.model_name,
+            auth=arguments.auth,
+        )
+    elif arguments.suite == "suite":
+        if arguments.suite_file is None:
+            raise ValueError(
+                "--suite-file is required with 'qualify suite'"
+            )
+        report = run_qualification_suite(
+            suite=load_qualification_suite(arguments.suite_file),
+            run_root=arguments.run_root,
+            workers=arguments.workers,
+            model_name=arguments.model_name,
+            auth=arguments.auth,
+        )
+    else:
+        raise ValueError("a qualification suite is required")
     payload = report.model_dump(mode="json")
     _emit(
         payload,
         as_json=arguments.json,
         human=(
-            "PASS: official-six qualification passed."
+            f"PASS: {report.protocol_id} qualification passed."
             if all(item.status == "PASS" for item in report.results)
-            else "FAIL_AGENT: one or more official-six cases failed."
+            else (
+                f"FAIL_AGENT: one or more {report.protocol_id} "
+                "cases failed."
+            )
         ),
     )
     return (
@@ -547,6 +643,77 @@ def _qualify(arguments: argparse.Namespace) -> int:
         if all(item.status == "PASS" for item in report.results)
         else 4
     )
+
+
+def _improve(arguments: argparse.Namespace) -> int:
+    if arguments.improve_command == "analyze":
+        qualification_report = QualificationReport.model_validate_json(
+            arguments.qualification_report.read_text(encoding="utf-8")
+        )
+        candidate = create_learning_candidate(
+            run_dir=arguments.run_dir,
+            qualification_report=qualification_report,
+            candidate_id=arguments.candidate_id,
+            generalized_lesson=arguments.lesson,
+            proposed_target=ImprovementTarget(arguments.target),
+            root_cause=(
+                RootCause(arguments.root_cause)
+                if arguments.root_cause is not None
+                else None
+            ),
+            official_example=arguments.official_example,
+            extracted_principles=arguments.principle,
+            leakage_families=arguments.leakage_family,
+            development_cases=arguments.development_case,
+            regression_cases=arguments.regression_case,
+            holdout_cases=arguments.holdout_case,
+            promotion_criteria=arguments.criterion,
+        )
+        destination = write_learning_candidate(
+            arguments.output,
+            candidate,
+        )
+        payload = candidate.model_dump(mode="json")
+        _emit(
+            payload,
+            as_json=arguments.json,
+            human=(
+                f"PASS: learning candidate written to {destination}; "
+                "no promotion was performed."
+            ),
+        )
+        return 0
+    if arguments.improve_command == "compare":
+        candidate = load_learning_candidate(arguments.candidate)
+        baseline = QualificationReport.model_validate_json(
+            arguments.baseline_report.read_text(encoding="utf-8")
+        )
+        current = QualificationReport.model_validate_json(
+            arguments.current_report.read_text(encoding="utf-8")
+        )
+        report = compare_promotion(candidate, baseline, current)
+        arguments.output.parent.mkdir(parents=True, exist_ok=True)
+        with arguments.output.open("x", encoding="utf-8") as stream:
+            json.dump(
+                report.model_dump(mode="json"),
+                stream,
+                indent=2,
+                sort_keys=True,
+            )
+            stream.write("\n")
+        payload = report.model_dump(mode="json")
+        _emit(
+            payload,
+            as_json=arguments.json,
+            human=(
+                "ELIGIBLE: all promotion gates passed; explicit approval "
+                "is still required."
+                if report.eligible
+                else "INELIGIBLE: one or more promotion gates failed."
+            ),
+        )
+        return 0 if report.eligible else 4
+    raise ValueError("an improve subcommand is required")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -574,6 +741,7 @@ def main(argv: list[str] | None = None) -> int:
             "skill": _skill,
             "audit": _audit,
             "qualify": _qualify,
+            "improve": _improve,
         }
         return handlers[arguments.command](arguments)
     except (ValueError, OSError, json.JSONDecodeError) as error:

@@ -30,12 +30,14 @@ content:
     - Keep thermodynamic p, hydrostatic-reduced p_rgh, gravity head, operating pressure, pRefCell, and pRefValue mutually consistent.
     - For a steady task use steadyState discretization and interpret controlDict time as iterations; omit residualControl unless explicitly needed, and when present give Foundation v10 PIMPLE residualControl fields as single scalar values rather than tolerance dictionaries.
     - Provide every divergence scheme used by the energy and momentum equations, including div(phi,K) for the kinetic-energy transport term.
+    - For the Foundation v10 steady natural-convection baseline, use momentumPredictor no, bounded Gauss limitedLinear 0.2 for U, K, enthalpy, and transported turbulence fields, and start relaxation with rho 1.0, p_rgh 0.7, U and enthalpy 0.3, and turbulence 0.7. Do not treat reaching the iteration cap as convergence when residuals or wall heat imbalance remain high.
     - Use one coherent Foundation v10 turbulence wall-function set, including compressible alphat with the declared turbulent Prandtl number.
     - For a large three-dimensional case, decompose, execute the solver with typed mpi_ranks, and reconstruct the accepted state.
   failure_signals:
     - Perfect-gas p is initialized near zero or p and p_rgh encode incompatible hydrostatics.
     - k, omega, nut, or alphat wall functions are missing or mutually inconsistent.
     - The iteration cap is reached with poor residual or local-continuity evidence.
+    - Temperature and velocity profiles look plausible but the two integrated wall heat flows remain imbalanced because the steady system is under-converged.
     - Molecular-only wall gradients disagree with transport-model integrated wall heat flow.
   validation:
     - Require Mesh OK, normal completion, finite reconstructed fields, decreasing terminal residuals, and acceptable local and cumulative continuity.

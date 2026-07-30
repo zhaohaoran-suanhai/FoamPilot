@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "case_id": "mhd-hartmann",
+  "created_at": "2026-07-29T12:00:00Z",
+  "openfoam_version": "10",
+  "source_sha256": "36744b36daed1317e7d29b9ca56745adc08f9ed4661492d5b41b0cad87ec8c1a",
+  "metrics": [
+    {
+      "name": "final_time",
+      "category": "completion",
+      "field": "log.time",
+      "unit": "s",
+      "formula": "solver reaches the exact public task target",
+      "sample_coordinates": [[10.0, 0.0, 0.05]],
+      "comparison_mode": "lower_bound",
+      "reference": 2.0,
+      "observed_repeat_spread": 0.0,
+      "sampling_error_allowance": 0.0,
+      "engineering_floor": 0.0,
+      "final_tolerance": 0.0,
+      "tolerance_source": "Exact public TaskSpec target.",
+      "required": true
+    },
+    {
+      "name": "divergence_conservation",
+      "category": "conservation",
+      "field": "U",
+      "unit": "1",
+      "formula": "absolute net velocity flux divided by total absolute boundary flux",
+      "sample_coordinates": [[0.0, 0.0, 0.05], [20.0, 0.0, 0.05]],
+      "comparison_mode": "absolute_upper_bound",
+      "reference": 0.0,
+      "observed_repeat_spread": 0.0,
+      "sampling_error_allowance": 0.0001,
+      "engineering_floor": 0.01,
+      "final_tolerance": 0.01,
+      "tolerance_source": "One-percent engineering boundary-flow conservation cap.",
+      "required": true
+    },
+    {
+      "name": "velocity_profile",
+      "category": "physics_golden",
+      "field": "U.x",
+      "unit": "m/s",
+      "formula": "relative L2 error of streamwise velocity across the channel",
+      "sample_coordinates": [[10.0, -0.95, 0.05], [10.0, -0.855, 0.05], [10.0, -0.76, 0.05], [10.0, -0.665, 0.05], [10.0, -0.57, 0.05], [10.0, -0.475, 0.05], [10.0, -0.38, 0.05], [10.0, -0.285, 0.05], [10.0, -0.19, 0.05], [10.0, -0.095, 0.05], [10.0, 0.0, 0.05], [10.0, 0.095, 0.05], [10.0, 0.19, 0.05], [10.0, 0.285, 0.05], [10.0, 0.38, 0.05], [10.0, 0.475, 0.05], [10.0, 0.57, 0.05], [10.0, 0.665, 0.05], [10.0, 0.76, 0.05], [10.0, 0.855, 0.05], [10.0, 0.95, 0.05]],
+      "comparison_mode": "relative_l2",
+      "reference": [0.6926414370536804, 0.9927853941917419, 1.0329749584197998, 1.0382000207901, 1.0388659238815308, 1.038949966430664, 1.0389599800109863, 1.0389599800109863, 1.0389599800109863, 1.0389599800109863, 1.0389599800109863, 1.0389599800109863, 1.0389599800109863, 1.0389599800109863, 1.0389599800109863, 1.038949966430664, 1.0388659238815308, 1.0382000207901, 1.0329749584197998, 0.9927853941917419, 0.6926414370536804],
+      "observed_repeat_spread": 0.0,
+      "sampling_error_allowance": 0.02,
+      "engineering_floor": 0.10,
+      "final_tolerance": 0.10,
+      "tolerance_source": "Official baseline profile with interpolation allowance.",
+      "required": true
+    }
+  ]
+}

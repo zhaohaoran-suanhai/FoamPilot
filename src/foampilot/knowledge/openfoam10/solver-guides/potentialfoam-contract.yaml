@@ -28,12 +28,13 @@ content:
   rules:
     - Provide U, p, fvSchemes, fvSolution with a potentialFlow non-orthogonal corrector dictionary, controlDict, and a valid mesh.
     - Use a reference for the velocity potential and, when pressure is requested, a consistent pressure reference.
-    - Request -writePhi when the potential is needed and -writep when the pressure field is a required output.
+    - Request -writePhi when the potential is needed and -writep when the pressure field is a required output. When using -writep, also configure a linear solver for p in fvSolution; the approximate-pressure calculation does not reuse the Phi solver.
     - When using -writep with divSchemes default none, provide both div(phi,U) and div(div(phi,U)); Foundation v10 constructs the approximate pressure from nested divergence operations.
     - Treat the written result as a single steady state; do not invent transient convergence semantics.
     - Use slip or symmetry on inviscid solid boundaries and keep inlet/outlet U and p conditions flux-compatible.
   failure_signals:
     - Phi or its reference cannot be created.
+    - The -writep calculation reaches approximate pressure and reports that the p solver is undefined.
     - U is reconstructed but required p or Phi output is absent because the corresponding option was omitted.
     - The result completes but inlet/outlet flux or an analytical potential-flow invariant fails.
   validation:

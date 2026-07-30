@@ -1,0 +1,36 @@
+case_id: porous-angled-duct
+source_sha256: 566638380fb6c18644c7a41797566c7594f4f8a8b2639875a76a5199479c4153
+golden_sha256: ba18b19c6b55666445f8231ce8a5335c7eb4a008c43887cb3ad703c0c6010318
+expected_application: porousSimpleFoam
+expected_end_time: 200.0
+metrics:
+  - name: final_iteration
+    category: completion
+    formula: latest written steady iteration reaches 200
+    field: log.time
+    unit: iteration
+    sample_coordinates: [[0.0, 0.02, 0.0]]
+    comparison_mode: lower_bound
+    tolerance: 0.0
+    tolerance_source: Exact public TaskSpec target.
+  - name: flow_balance
+    category: conservation
+    formula: normalized sum of all boundary volumetric fluxes
+    field: U
+    unit: "1"
+    sample_coordinates: [[-0.15, 0.01768, 0.0], [0.1237, 0.1591, 0.0]]
+    comparison_mode: absolute_upper_bound
+    tolerance: 0.01
+    tolerance_source: One-percent engineering conservation cap.
+  - name: pressure_drop
+    category: physics_golden
+    formula: relative error in named inlet-patch mean minus named outlet-patch mean kinematic pressure
+    field: p
+    unit: m2/s2
+    sample_coordinates: [[-0.149, 0.01768, 0.0], [0.12304, 0.15839, 0.0]]
+    comparison_mode: relative_absolute
+    tolerance: 0.15
+    tolerance_source: Official baseline patch-mean pressure drop with mesh and modeling allowance.
+notes:
+  - Resistance orientation is defined by the public TaskSpec.
+  - Named patches make the pressure-drop metric invariant to an unprescribed coordinate origin.

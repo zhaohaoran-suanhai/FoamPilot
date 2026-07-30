@@ -1,0 +1,45 @@
+schema_version: 1.0.0
+id: of10.solver.srfpimplefoam-contract
+title: SRFPimpleFoam single-rotating-frame transient contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [SRFPimpleFoam]
+models: [incompressible, transient, rotating-frame, SRF, PIMPLE, RANS]
+tags: [srfpimplefoam, srf, rotor, rotating, urel, freestream, pimple]
+applicability:
+  conditions:
+    - The entire computational domain is expressed in one rotating reference frame.
+    - Foundation v10 SRFPimpleFoam solves relative velocity Urel with PIMPLE coupling.
+  not_applicable:
+    - Only a subregion rotates or the task requires MRF or sliding-mesh interfaces.
+    - The solver advances absolute U rather than Urel.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 SRFPimpleFoam sources and official rotor2D dictionary pattern
+  locator: OpenFOAM-10 applications/solvers/incompressible/pimpleFoam/SRFPimpleFoam, src/finiteVolume/cfdTools/general/SRF, and tutorials/incompressible/SRFPimpleFoam/rotor2D
+  sha256: 88ffc307a45fb4cfc1d916b1ffb87e84c378698fc05a2f7f11e86dfcdd462822
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 SRFPimpleFoam advances relative velocity Urel in a single rotating frame, so the field names, SRF freestream boundaries, viscous-stress scheme key, and PIMPLE controls must all use the SRF-specific semantics.
+  rules:
+    - Provide SRFProperties, physicalProperties, momentumTransport, Urel, p, required turbulence fields, fvSchemes, fvSolution, and controlDict with application SRFPimpleFoam.
+    - On an inertial freestream, use SRFFreestreamVelocity for Urel with vector syntax such as UInf (1 0 0), not UInf uniform (1 0 0), and initialize its patch with value uniform (0 0 0); do not copy UInf into value, because that can make the initial flux appear to have specified inflow without adjustable outflow. For an external rotor surrounded by a circular far field, use p zeroGradient with pRefCell and pRefValue, and use inletOutlet with inletValue on k and epsilon; this is the coherent Foundation v10 SRF far-field combination. Use freestreamPressure only when an open pressure boundary is physically intended, and then provide both freestreamValue and value.
+    - Under divSchemes default none, provide div(phi,Urel) and the exact Foundation v10 stress key div((nuEff*dev2(T(grad(Urel))))), plus the transported turbulence-field entries required by the selected closure.
+    - For the transient external-rotor RANS baseline, use div(phi,Urel) Gauss limitedLinearV 1 and Gauss limitedLinear 1 for k and epsilon; these bounded limited schemes preserve the official SRF far-field behavior better than substituting upwind or linearUpwind without a task-specific accuracy study.
+    - Configure PIMPLE solvers and controls for Urel and p, not U, and preserve a valid pressure anchor through the freestream pressure boundary or a reference. Cover final iteration lookups with regex solver keys such as "Urel.*", "k.*", and "epsilon.*" or equivalent explicit Final aliases.
+    - When the task specifies a fixed deltaT, set adjustTimeStep no; maxCo remains a monitored stability limit rather than permission to change that requested time step.
+    - Use coherent rotor-wall Urel and turbulence wall functions for the selected RANS model.
+  failure_signals:
+    - freestreamPressure reports that freestreamValue is undefined.
+    - SRFFreestreamVelocity expects a vector for UInf but reads the word uniform.
+    - adjustPhi reports specified inflow with no adjustable outflow because the SRF freestream value was initialized to UInf instead of zero.
+    - fvSchemes reports div((nuEff*dev2(T(grad(Urel))))) as undefined because a U-based or Newtonian key was used.
+    - fvSolution has a solver entry for U but not Urel.
+  validation:
+    - Require Mesh OK, normal completion, finite Urel and pressure/turbulence fields, and the requested final time.
+    - Check global flow balance and rotating-frame velocity observables independently.

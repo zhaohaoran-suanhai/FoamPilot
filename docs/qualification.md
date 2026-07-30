@@ -1,15 +1,20 @@
-# Official-six qualification
+# Controlled qualification
 
-The `official-six-v1` suite checks whether FoamPilot can author and solve six
-representative Foundation OpenFOAM v10 cases without reading their target
-tutorials:
+The `controlled-learning-15-v1` suite checks whether FoamPilot can author and
+solve 15 representative Foundation OpenFOAM v10 cases without reading their
+target tutorials.
 
-- transient laminar cavity;
-- potential flow around a circular obstacle;
-- steady RANS sudden-expansion channel;
-- two-phase column collapse;
-- compressible shock tube;
-- turbulent buoyant cavity.
+The six regression cases cover transient laminar cavity flow, potential flow
+around a cylinder, steady RANS sudden expansion, two-phase column collapse,
+a compressible shock tube, and a turbulent buoyant cavity.
+
+The six development cases cover scalar transport, laminar Maxwell flow,
+porous RANS flow, compressible blocked-channel flow, conjugate heat transfer,
+and a single-reference-frame rotor.
+
+The three frozen holdouts cover magnetohydrodynamic Hartmann flow, capillary
+rise, and linear-elastic solid displacement around a plate hole. A case role
+controls how evidence may be used; it does not change the solve path.
 
 ## Isolation
 
@@ -24,15 +29,19 @@ tutorial case directories or solver time trees.
 ## Execution
 
 ```bash
-foampilot qualify official-six \
-  --run-root /tmp/foampilot-official-six \
+foampilot qualify suite \
+  --suite-file \
+    src/foampilot/qualification/data/suites/controlled-learning-15-v1.yaml \
+  --run-root /tmp/foampilot-controlled-learning-15 \
   --workers 2 \
   --model-name gpt-5.6-sol \
   --json
 ```
 
-At most two non-buoyant cases run concurrently. The large buoyant case runs
-exclusively. Each case retains its TaskSpec-defined attempt and MPI budget.
+At most two ordinary cases run concurrently. Cases marked `exclusive`, such
+as the large buoyant and CHT cases, run alone. Each case retains its
+TaskSpec-defined attempt, wall-time, memory, and MPI budget. The compatible
+`foampilot qualify official-six` wrapper runs only the six regression cases.
 
 ## Verdicts
 
@@ -48,17 +57,18 @@ Solver completion alone is not a qualification pass.
 
 ## Current evidence
 
-The last preserved run before the FoamPilot extraction showed that all six
-cases eventually completed their solver after bounded repair. Its strict
-physics report still contained failures. That report is historical evidence,
-not a claim that a fresh stochastic six-case run will reproduce the same
-verdicts.
+The frozen 2026-07-30 full-suite baseline produced 11 strict passes and four
+failures. Every case entered its requested solver; 14 reached public
+validation, while one CHT case failed in the solver. Targeted reruns after
+small, generalized knowledge and evaluator corrections passed the four
+affected families. These targeted results demonstrate the corrections but do
+not constitute a single fresh 15/15 stochastic rerun.
 
-The standalone extraction is first gated by deterministic tests, wheel
-installation, host preflight, and two non-tutorial real solves. A fresh
-official-six invocation is a separate qualification run.
+See the
+[controlled-learning 15-case report](reports/2026-07-30-controlled-learning-15.md)
+for case-level evidence, failure analysis, and the exact claim boundary.
 
-The standalone real-case gate reached 2/2 `PUBLIC_VALIDATION_PASS` on
-2026-07-29. This is recorded separately because it validates the generic
-authoring and repair loop without claiming an official-six result. See the
+The earlier standalone real-case gate reached 2/2
+`PUBLIC_VALIDATION_PASS` on 2026-07-29. It validates the installed-wheel
+authoring and repair loop, not strict 15-case physics qualification. See the
 [standalone gate report](reports/2026-07-29-standalone-real-gate.md).

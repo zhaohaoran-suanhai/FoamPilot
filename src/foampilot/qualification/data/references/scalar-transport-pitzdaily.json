@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "case_id": "scalar-transport-pitzdaily",
+  "created_at": "2026-07-29T15:00:00Z",
+  "openfoam_version": "10",
+  "source_sha256": "2fd940bd1a119cdb145b2f61ea1733a32ccc4e88df7658a1bd80286d83148fb1",
+  "metrics": [
+    {
+      "name": "final_time",
+      "category": "completion",
+      "field": "log.time",
+      "unit": "s",
+      "formula": "latest written time reaches the exact task target",
+      "sample_coordinates": [[0.1, 0.0, 0.0]],
+      "comparison_mode": "lower_bound",
+      "reference": 0.1,
+      "observed_repeat_spread": 0.0,
+      "sampling_error_allowance": 0.0,
+      "engineering_floor": 0.0,
+      "final_tolerance": 0.0,
+      "tolerance_source": "Exact public TaskSpec target.",
+      "required": true
+    },
+    {
+      "name": "scalar_conservation",
+      "category": "conservation",
+      "field": "T",
+      "unit": "1",
+      "formula": "volume-mean final passive-scalar inventory under task-prescribed potential flow",
+      "sample_coordinates": [[0.1, 0.0, 0.0]],
+      "comparison_mode": "absolute_max",
+      "reference": 0.9999820831840206,
+      "observed_repeat_spread": 0.0,
+      "sampling_error_allowance": 0.005,
+      "engineering_floor": 0.01,
+      "final_tolerance": 0.01,
+      "tolerance_source": "Task-matched official-mesh potential-flow baseline with a one-percent absolute engineering allowance.",
+      "required": true
+    },
+    {
+      "name": "downstream_scalar_profile",
+      "category": "physics_golden",
+      "field": "T",
+      "unit": "1",
+      "formula": "relative L2 error of passive scalar samples downstream of the step",
+      "sample_coordinates": [[0.1, -0.02, 0.0], [0.1, 0.0, 0.0], [0.1, 0.02, 0.0], [0.206, -0.015, 0.0], [0.206, 0.0, 0.0], [0.206, 0.015, 0.0]],
+      "comparison_mode": "relative_l2",
+      "reference": [0.9999998807907104, 0.9999999403953552, 1.0, 0.9999880790710449, 0.9999906420707703, 0.9999929070472717],
+      "observed_repeat_spread": 0.0,
+      "sampling_error_allowance": 0.03,
+      "engineering_floor": 0.15,
+      "final_tolerance": 0.15,
+      "tolerance_source": "Task-matched official-mesh potential-flow baseline plus interpolation allowance.",
+      "required": true
+    }
+  ]
+}

@@ -109,5 +109,5 @@ Official target cases and golden results remain evaluator-only. A formal
 benchmark may compare frozen outputs with private references after the run,
 but that comparison must not influence generation or repair.
 
-See [Qualification](qualification.md) for the six-case protocol and reporting
-boundary.
+See [Qualification](qualification.md) for the role-aware 15-case protocol and
+reporting boundary.

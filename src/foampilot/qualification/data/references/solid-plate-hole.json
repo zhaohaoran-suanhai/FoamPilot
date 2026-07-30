@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "case_id": "solid-plate-hole",
+  "created_at": "2026-07-29T12:00:00Z",
+  "openfoam_version": "10",
+  "source_sha256": "d180a0902c32776caea86789b6e31ba1dc5b5d5e9b2c3efce99bbf2a1bcad734",
+  "metrics": [
+    {
+      "name": "final_iteration",
+      "category": "completion",
+      "field": "log.time",
+      "unit": "iteration",
+      "formula": "solver reaches the exact public task iteration target",
+      "sample_coordinates": [[1.0, 1.0, 0.25]],
+      "comparison_mode": "lower_bound",
+      "reference": 100.0,
+      "observed_repeat_spread": 0.0,
+      "sampling_error_allowance": 0.0,
+      "engineering_floor": 0.0,
+      "final_tolerance": 0.0,
+      "tolerance_source": "Exact public TaskSpec target.",
+      "required": true
+    },
+    {
+      "name": "displacement_symmetry",
+      "category": "conservation",
+      "field": "D",
+      "unit": "1",
+      "formula": "maximum symmetry-plane normal displacement divided by maximum displacement",
+      "sample_coordinates": [[0.0, 1.0, 0.25], [1.0, 0.0, 0.25]],
+      "comparison_mode": "absolute_upper_bound",
+      "reference": 0.0,
+      "observed_repeat_spread": 0.0,
+      "sampling_error_allowance": 0.01,
+      "engineering_floor": 0.05,
+      "final_tolerance": 0.05,
+      "tolerance_source": "Five-percent symmetry-condition discretization cap.",
+      "required": true
+    },
+    {
+      "name": "hole_edge_stress",
+      "category": "physics_golden",
+      "field": "sigma",
+      "unit": "Pa",
+      "formula": "relative L2 error of in-plane stress components near the hole",
+      "sample_coordinates": [[0.5230022165, 0.0457567649, 0.25], [0.5071110588, 0.1358799987, 0.25], [0.4758115882, 0.2218745874, 0.25], [0.4300548233, 0.3011276291, 0.25], [0.3712310601, 0.3712310601, 0.25], [0.3011276291, 0.4300548233, 0.25], [0.2218745874, 0.4758115882, 0.25], [0.1358799987, 0.5071110588, 0.25], [0.0457567649, 0.5230022165, 0.25]],
+      "comparison_mode": "relative_l2",
+      "reference": [-498.1692199707031, -353.50469970703125, 545.99658203125, 2941.16796875, 7329.21533203125, 13597.775390625, 20557.19921875, 26624.26953125, 30194.833984375, -10642.607421875, -8219.6123046875, -4151.83349609375, 85.0268783569336, 3215.791748046875, 4442.90185546875, 4056.18408203125, 2882.213623046875, 1926.2579345703125, 589.4990234375, 1034.0831298828125, 249.96920776367188, -1867.6966552734375, -4638.9208984375, -6821.5361328125, -7313.25244140625, -5636.0791015625, -2155.86865234375],
+      "observed_repeat_spread": 0.0,
+      "sampling_error_allowance": 0.05,
+      "engineering_floor": 0.15,
+      "final_tolerance": 0.15,
+      "tolerance_source": "Official baseline in-plane stresses with near-boundary sampling allowance.",
+      "required": true
+    }
+  ]
+}

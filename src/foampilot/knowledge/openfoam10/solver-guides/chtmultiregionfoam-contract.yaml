@@ -1,0 +1,61 @@
+schema_version: 1.0.0
+id: of10.solver.chtmultiregionfoam-contract
+title: chtMultiRegionFoam region layout and control contract
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [chtMultiRegionFoam]
+models: [conjugate-heat-transfer, fluid, solid, multiregion, PIMPLE]
+tags: [chtmultiregionfoam, cht, multiregion, splitmeshregions, regionproperties, interface]
+applicability:
+  conditions:
+    - Foundation v10 chtMultiRegionFoam couples one or more fluid regions with one or more solid heat-conduction regions.
+    - A parent mesh is partitioned into named regions or compatible region meshes already exist.
+  not_applicable:
+    - The problem is single-region heat transfer or uses a different multi-region solver.
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 chtMultiRegionFoam application source
+  locator: OpenFOAM-10 applications/solvers/heatTransfer/chtMultiRegionFoam
+  sha256: 534fd2bb954510ed2bcd453a3f68cd54e5e690849ea959de283a7fea8f652f86
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 chtMultiRegionFoam has global multi-region controls plus per-region schemes, solvers, material models, fields, and conservatively coupled interface patches.
+  rules:
+    - List all fluid and solid names in constant/regionProperties and keep those names identical in constant/<region>, system/<region>, 0/<region>, and the meshes written under constant/<region>/polyMesh.
+    - When splitting a parent mesh by cell zones in Foundation v10, use splitMeshRegions -cellZones -defaultRegionName <name> -overwrite; -defaultRegion is not a valid v10 option.
+    - Supply the global system/fvSolution as well as every system/<region>/fvSolution. The global file owns the multi-region PIMPLE loop, while each regional file owns its field solvers and region-specific PIMPLE controls; regional files do not replace the global file.
+    - Supply system/<region>/fvSchemes for every region. Fluid schemes must cover the exact momentum, energy, turbulence, and pressure operators selected by the fluid formulation; solid schemes must cover its energy equation and transient or steady mode.
+    - For a compressible fluid region under divSchemes default none, include the pressure-density regex entry div(phi,(p|rho)) as well as the exact momentum, energy, turbulence, and viscous-stress entries.
+    - In system/<fluid>/fvSolution, provide explicit rho and rhoFinal diagonal solver entries in addition to p_rgh and p_rghFinal, velocity, energy, and turbulence solvers; the multi-region fluid loop looks up the density final entry during pressure correction.
+    - Put each region's physicalProperties, transport, radiation, fvModels, fvConstraints, and initial fields below its matching region directory. Every fluid region also needs constant/<fluid>/g, even when its value is (0 0 0); a root constant/g does not satisfy the regional lookup.
+    - Inventory the fluid turbulence model before solving and write its complete regional field set. A k-omega fluid normally needs 0/<fluid>/k, 0/<fluid>/omega, 0/<fluid>/nut, and 0/<fluid>/alphat in addition to U, p, p_rgh, and the energy variable; a k-epsilon fluid replaces omega with epsilon but still needs nut and alphat. Every field must cover the actual post-split regional patch names.
+    - Every regional radiationProperties dictionary uses the Foundation v10 selector key radiationModel. When radiation is disabled, write radiationModel none; the legacy-looking entry radiation off does not select a model.
+    - For a constant isotropic Foundation v10 solid thermo package using the supplied constant-volume heat capacity, use transport constIsoSolid, thermo eConst, energy sensibleInternalEnergy, nMoles 1 in specie, and Cv; constIso and solid hConst are not registered Foundation v10 combinations. Omitting nMoles can corrupt the initial sensible-energy-to-temperature conversion even when the written T field is positive.
+    - A uniform volumetric solid heat source belongs in constant/<solid>/fvModels with type heatSource, selectionMode all, and q in W/m3; select all is not the Foundation v10 selection key.
+    - After splitMeshRegions, inspect constant/<region>/polyMesh/boundary and write every regional field against the actual patch names. On both mapped-wall temperature interfaces use the Foundation v10 type compressible::turbulentTemperatureCoupledBaffleMixed, with Tnbr T and fluidThermo or solidThermo kappaMethod on the matching side; the unqualified turbulentTemperatureCoupledBaffleMixed name is not registered.
+    - Use root system/controlDict for time-step control and output. Keep deltaT, maxCo, maxDi, and maxDeltaT mutually consistent with both fluid Courant and solid diffusion limits. Treat maxCo and maxDi as upper caps rather than targets; if solid heating drives an energy-to-temperature inversion or negative temperature, reduce maxDi or maxDeltaT while preserving the requested end time and outputs.
+    - Validate the parent mesh before splitting, then verify region creation before invoking chtMultiRegionFoam. Foundation v10 has no -allRegions option for checkMesh; when a regional mesh check is needed, invoke checkMesh -region <name> once per fluid or solid region. Parallel decomposition, if requested, must decompose all regions coherently and remains Runner-owned.
+  failure_signals:
+    - splitMeshRegions rejects -defaultRegion and lists -defaultRegionName.
+    - chtMultiRegionFoam cannot find system/fvSolution even though regional fvSolution files exist.
+    - Startup cannot find a regional fvSchemes, fvSolution, physicalProperties, field, or generated interface patch.
+    - Coupled temperature patches report incompatible neighbor fields or conductivity methods.
+    - A mappedWall interface reports Unknown patchField type turbulentTemperatureCoupledBaffleMixed and lists the compressible-qualified type.
+    - Solid thermo compilation reports Unknown transport type constIso and lists constIsoSolid.
+    - Solid thermo compilation reports Unknown thermo type hConst and lists eConst.
+    - Solid startup reports a negative initial temperature although 0/<solid>/T is positive because the specie dictionary omitted nMoles 1.
+    - Startup cannot find constant/<fluid>/g after both region meshes are created.
+    - Fluid startup cannot find 0/<fluid>/nut or 0/<fluid>/alphat even though k and omega or epsilon were written.
+    - A regional radiationProperties dictionary reports radiationModel undefined because it contains radiation off.
+    - heatSource reports that selectionMode is undefined because select all was used.
+    - Fluid startup reports missing rho, rhoFinal, or div(phi,(p|rho)) after both regional meshes and thermodynamics load.
+    - A strong solid source reaches a negative temperature after several steps while the reported solid diffusion number is near an overly permissive maxDi cap.
+    - checkMesh rejects -allRegions as an invalid option before chtMultiRegionFoam can start.
+  validation:
+    - Require a valid parent mesh, the intended non-empty regions and interface, normal completion through the requested time, and finite fluid and solid temperature fields.
+    - Check interface heat balance, energy response to sources, fluid continuity, and task-derived temperature or velocity metrics without using a target-case solution.

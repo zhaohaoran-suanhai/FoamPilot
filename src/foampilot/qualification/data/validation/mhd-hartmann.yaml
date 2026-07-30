@@ -1,0 +1,56 @@
+case_id: mhd-hartmann
+source_sha256: 36744b36daed1317e7d29b9ca56745adc08f9ed4661492d5b41b0cad87ec8c1a
+golden_sha256: 85210561f74769b8fd1c0061044fbb65a1591c7c75f838482aee4948e8db21d1
+expected_application: mhdFoam
+expected_end_time: 2.0
+metrics:
+  - name: final_time
+    category: completion
+    formula: solver reaches the exact public task target
+    field: log.time
+    unit: s
+    sample_coordinates: [[10.0, 0.0, 0.05]]
+    comparison_mode: lower_bound
+    tolerance: 0.0
+    tolerance_source: Exact public TaskSpec target.
+  - name: divergence_conservation
+    category: conservation
+    formula: absolute net velocity flux divided by total absolute boundary flux
+    field: U
+    unit: "1"
+    sample_coordinates: [[0.0, 0.0, 0.05], [20.0, 0.0, 0.05]]
+    comparison_mode: absolute_upper_bound
+    tolerance: 0.01
+    tolerance_source: One-percent engineering boundary-flow conservation cap.
+  - name: velocity_profile
+    category: physics_golden
+    formula: relative L2 error of streamwise velocity across the channel
+    field: U.x
+    unit: m/s
+    sample_coordinates:
+      - [10.0, -0.95, 0.05]
+      - [10.0, -0.855, 0.05]
+      - [10.0, -0.76, 0.05]
+      - [10.0, -0.665, 0.05]
+      - [10.0, -0.57, 0.05]
+      - [10.0, -0.475, 0.05]
+      - [10.0, -0.38, 0.05]
+      - [10.0, -0.285, 0.05]
+      - [10.0, -0.19, 0.05]
+      - [10.0, -0.095, 0.05]
+      - [10.0, 0.0, 0.05]
+      - [10.0, 0.095, 0.05]
+      - [10.0, 0.19, 0.05]
+      - [10.0, 0.285, 0.05]
+      - [10.0, 0.38, 0.05]
+      - [10.0, 0.475, 0.05]
+      - [10.0, 0.57, 0.05]
+      - [10.0, 0.665, 0.05]
+      - [10.0, 0.76, 0.05]
+      - [10.0, 0.855, 0.05]
+      - [10.0, 0.95, 0.05]
+    comparison_mode: relative_l2
+    tolerance: 0.10
+    tolerance_source: Official baseline profile with interpolation allowance.
+notes:
+  - Target-case files and these evaluator coordinates remain unavailable to the Agent.

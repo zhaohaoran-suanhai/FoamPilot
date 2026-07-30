@@ -11,8 +11,13 @@ from foampilot.tasks import ResourceBudget
 
 
 class RecordingExecutor:
-    def __init__(self, return_codes: dict[str, int]) -> None:
+    def __init__(
+        self,
+        return_codes: dict[str, int],
+        stdout_by_marker: dict[str, str] | None = None,
+    ) -> None:
         self.return_codes = return_codes
+        self.stdout_by_marker = stdout_by_marker or {}
         self.invocations: list[list[str]] = []
         self.shell_values: list[bool] = []
 
@@ -21,7 +26,9 @@ class RecordingExecutor:
         self.invocations.append(invoked)
         self.shell_values.append(kwargs["shell"])
         marker = (
-            "solve"
+            "check"
+            if "checkMesh" in invoked
+            else "solve"
             if "buoyantFoam" in invoked
             else next(
                 value
@@ -35,7 +42,9 @@ class RecordingExecutor:
                 if value in invoked
             )
         )
-        kwargs["stdout"].write(f"{marker} stdout\n")
+        kwargs["stdout"].write(
+            self.stdout_by_marker.get(marker, f"{marker} stdout\n")
+        )
         kwargs["stderr"].write(f"{marker} stderr\n")
         return subprocess.CompletedProcess(
             invoked,
@@ -97,6 +106,7 @@ def _runner(
             "reconstruct",
             "buoyantFoam",
             "blockMesh",
+            "checkMesh",
         },
         workspace_root=tmp_path,
         executor=executor,
@@ -127,6 +137,62 @@ def test_runner_executes_argument_array_and_stops_at_first_failure(
     assert result.failed_step_id == "check"
     assert executor.shell_values == [False, False]
     assert result.steps[0].stdout_path.read_text() == "mesh stdout\n"
+
+
+def test_runner_stops_before_solver_on_explicit_checkmesh_failure(
+    tmp_path: Path,
+) -> None:
+    executor = RecordingExecutor(
+        return_codes={"check": 0, "solve": 0},
+        stdout_by_marker={
+            "check": (
+                "Checking geometry...\n"
+                "Failed 1 mesh checks.\n"
+                "End\n"
+            )
+        },
+    )
+    runner = _runner(tmp_path, executor)
+    case = tmp_path / "case"
+    case.mkdir()
+
+    result = runner.run(
+        case_dir=case,
+        commands=[
+            _command("mesh_check", executable="checkMesh"),
+            _command("solve"),
+        ],
+        budget=_budget(),
+    )
+
+    assert [step.step_id for step in result.steps] == ["mesh_check"]
+    assert result.steps[0].return_code == 0
+    assert result.failed_step_id == "mesh_check"
+    assert len(executor.invocations) == 1
+
+
+def test_runner_does_not_block_ambiguous_checkmesh_log(
+    tmp_path: Path,
+) -> None:
+    executor = RecordingExecutor(
+        return_codes={"check": 0, "solve": 0},
+        stdout_by_marker={"check": "Checking geometry...\nEnd\n"},
+    )
+    runner = _runner(tmp_path, executor)
+    case = tmp_path / "case"
+    case.mkdir()
+
+    result = runner.run(
+        case_dir=case,
+        commands=[
+            _command("mesh_check", executable="checkMesh"),
+            _command("solve"),
+        ],
+        budget=_budget(),
+    )
+
+    assert result.passed
+    assert len(executor.invocations) == 2
 
 
 def test_runner_wraps_parallel_solver_but_not_agent_shell(

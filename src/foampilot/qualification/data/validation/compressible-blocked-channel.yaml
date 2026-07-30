@@ -1,0 +1,39 @@
+case_id: compressible-blocked-channel
+source_sha256: 5251d98437db649d6c17b275618ad5c129bce20131dc05b754aff26c9cffd288
+golden_sha256: 9658f11fb479223eb52d9b0f899f42d2005176ca825c9d17e21d4466560f06a4
+expected_application: rhoPimpleFoam
+expected_end_time: 0.03
+metrics:
+  - name: final_time
+    category: completion
+    formula: latest written time reaches the exact task target
+    field: log.time
+    unit: s
+    sample_coordinates: [[0.2, 0.0, 0.0]]
+    comparison_mode: lower_bound
+    tolerance: 0.0
+    tolerance_source: Exact public TaskSpec target.
+  - name: total_mass
+    category: conservation
+    formula: final volume integral of density across all channels
+    field: rho
+    unit: kg
+    sample_coordinates: [[0.2, 0.0, 0.0]]
+    comparison_mode: relative_absolute
+    tolerance: 0.01
+    tolerance_source: Official baseline mass with one-percent conservation allowance.
+  - name: primitive_profiles
+    category: physics_golden
+    formula: relative L2 error of p, T, rho, and U samples across the four channels
+    field: p,T,rho,U
+    unit: mixed
+    sample_coordinates:
+      - [0.2, 0.0, 0.0]
+      - [0.2, -0.036, 0.0]
+      - [0.2, -0.072, 0.0]
+      - [0.2, -0.108, 0.0]
+    comparison_mode: relative_l2
+    tolerance: 0.15
+    tolerance_source: Official baseline primitive profiles with sampling allowance.
+notes:
+  - The private evaluator does not reveal the reference profiles to the Agent.

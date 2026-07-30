@@ -53,6 +53,7 @@ def _task() -> TaskSpec:
 def test_context_dynamically_retrieves_public_vof_knowledge() -> None:
     context = load_agent_context(_task())
 
+    assert len(context.selected_knowledge_ids) <= 5
     assert "of10.solver.interfoam-vof-contract" in (
         context.selected_knowledge_ids
     )

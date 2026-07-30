@@ -1,0 +1,41 @@
+case_id: srf-rotor
+source_sha256: cb7eac831bba2212462145afd2798f1adcbed09f4c3382e27b992e1a56935047
+golden_sha256: 3d62290eb6a1f8c6a019c7dde26a832af5f83a1a6855540b029b383087fbc9a6
+expected_application: SRFPimpleFoam
+expected_end_time: 2.0
+metrics:
+  - name: final_time
+    category: completion
+    formula: latest written time reaches the exact task target
+    field: log.time
+    unit: s
+    sample_coordinates: [[0.05, 0.0, 0.0]]
+    comparison_mode: lower_bound
+    tolerance: 0.0
+    tolerance_source: Exact public TaskSpec target.
+  - name: flow_balance
+    category: conservation
+    formula: normalized sum of outer-boundary relative-velocity fluxes
+    field: Urel
+    unit: "1"
+    sample_coordinates: [[-0.1, 0.0, 0.0], [0.1, 0.0, 0.0]]
+    comparison_mode: absolute_upper_bound
+    tolerance: 0.01
+    tolerance_source: One-percent engineering conservation cap.
+  - name: rotating_velocity_profile
+    category: physics_golden
+    formula: relative L2 error of relative velocity along the horizontal diameter
+    field: Urel
+    unit: m/s
+    sample_coordinates:
+      - [-0.09, 0.0, 0.0]
+      - [-0.05, 0.0, 0.0]
+      - [-0.025, 0.0, 0.0]
+      - [0.025, 0.0, 0.0]
+      - [0.05, 0.0, 0.0]
+      - [0.09, 0.0, 0.0]
+    comparison_mode: relative_l2
+    tolerance: 0.15
+    tolerance_source: Official baseline rotating-frame profile with interpolation allowance.
+notes:
+  - The official example remains evaluator-private during blind authoring.

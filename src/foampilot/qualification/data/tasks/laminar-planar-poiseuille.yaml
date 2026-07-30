@@ -1,0 +1,67 @@
+schema_version: 1
+task_id: laminar-planar-poiseuille
+title: Body-force-driven transient Maxwell Poiseuille flow
+prompt: >-
+  Starting from an empty case directory, build and solve the transient
+  laminar start-up of a planar Poiseuille flow. Model the half channel
+  -0.1 <= x <= 0.1 m, 0 <= y <= 1 m, and -0.1 <= z <= 0.1 m with a
+  1 by 40 by 1 block graded by a factor of 4 in y. Make the x-normal left
+  and right patches a cyclic pair, the y=0 patch a no-slip wall, y=1 a
+  symmetry plane, and the z-normal faces empty. Use pimpleFoam with base
+  kinematic viscosity 0.1 m2/s and the laminar Maxwell momentum-transport
+  model with nuM=1 m2/s and relaxation time lambda=5 s. Initialize
+  U=(0 0 0) m/s, kinematic p=0 m2/s2, and the Maxwell stress field to zero.
+  Drive the periodic flow with a uniform specific momentum source
+  (5 0 0) m/s2 applied to all cells and retain a consistent pressure
+  reference. Integrate from 0 to 25 s using deltaT=0.005 s and write every
+  1 s. Run serially. Generate all native Foundation OpenFOAM v10 files
+  yourself, run blockMesh and checkMesh, and preserve U, p, and the Maxwell
+  stress field for comparison with the analytical parabolic profile. Do not
+  read or copy a pre-existing case.
+openfoam_target:
+  distribution: foundation
+  version: "10"
+resource_budget:
+  max_attempts: 2
+  max_wall_seconds: 900
+  max_mpi_ranks: 1
+  memory_mib: 2048
+required_outputs:
+  - mesh quality log
+  - completed pimpleFoam log through 25 s
+  - velocity, kinematic-pressure, and Maxwell stress fields at 25 s
+  - fields suitable for cyclic-flow balance and velocity-profile sampling
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - pimpleFoam reaches 25 s and ends normally
+  - required fields remain finite
+  - cyclic flow balance and analytical velocity profile pass evaluator checks
+public_checks:
+  - name: mesh-quality
+    kind: mesh_ok
+    parameters: {}
+  - name: transient-solver
+    kind: command_executed
+    parameters:
+      executable: pimpleFoam
+  - name: normal-completion
+    kind: completion
+    parameters: {}
+  - name: final-time
+    kind: final_time
+    parameters:
+      minimum: 25
+  - name: finite-fields
+    kind: finite_fields
+    parameters: {}
+  - name: final-velocity
+    kind: requested_output
+    parameters:
+      path: 25/U
+  - name: final-pressure
+    kind: requested_output
+    parameters:
+      path: 25/p
+public_assets: []
+protected_paths:
+  - /home/edwin/workplace/OpenFOAM-10/tutorials

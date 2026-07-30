@@ -17,6 +17,7 @@ class InspectionIssue(StrictModel):
 
 class InspectionReport(StrictModel):
     issues: list[InspectionIssue] = Field(default_factory=list)
+    advisories: list[InspectionIssue] = Field(default_factory=list)
     observed_patches: list[str] = Field(default_factory=list)
 
     @property

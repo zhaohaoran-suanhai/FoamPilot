@@ -22,6 +22,9 @@ evaluation/runs/
 processor*/
 postProcessing/
 
+# Local design and execution plans; not part of the deliverable repository.
+docs/superpowers/
+
 # FoamPilot ships JSON schemas, manifests, and compact qualification data.
 !*.json
 !src/foampilot/qualification/data/

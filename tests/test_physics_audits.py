@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+import numpy as np
 
 from foampilot.physics import wall_heat_flux
 from foampilot.physics import (
@@ -16,6 +18,11 @@ from foampilot.physics import (
     solve_ideal_gas_riemann,
 )
 from foampilot.cli.main import main
+from foampilot.qualification import validators
+from foampilot.qualification.runner import (
+    load_private_validation,
+    load_reference,
+)
 
 
 def test_exact_sod_riemann_solution_matches_reference_wave_speeds() -> None:
@@ -164,6 +171,82 @@ def test_default_wall_heat_runner_uses_solver_postprocess_to_build_models(
 
     assert calls[0][-1] == "buoyantFoam"
     assert '"$3" -postProcess -func wallHeatFlux -latestTime' in calls[0][4]
+
+
+def test_buoyant_qualification_uses_true_integrated_wall_heat_balance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def capture_only_wall_balance(name, callback, output):
+        if name == "wall_heat_balance":
+            output[name] = callback()
+
+    monkeypatch.setattr(validators, "_safe", capture_only_wall_balance)
+    monkeypatch.setattr(
+        validators,
+        "audit_wall_heat_flux",
+        lambda *args, **kwargs: SimpleNamespace(
+            normalized_imbalance=0.05
+        ),
+        raising=False,
+    )
+    data = SimpleNamespace(case_dir=tmp_path, latest_time=1000.0)
+
+    observed = validators._buoyant(data, SimpleNamespace(metrics=[]))
+
+    assert observed["wall_heat_balance"] == pytest.approx(0.05)
+    metric = next(
+        item
+        for item in load_reference("buoyant-cavity")["metrics"]
+        if item["name"] == "wall_heat_balance"
+    )
+    assert metric["comparison_mode"] == "absolute_upper_bound"
+    assert metric["reference"] == 0.0
+    assert metric["final_tolerance"] == pytest.approx(0.5)
+    assert "official Foundation v10 baseline" in metric["tolerance_source"]
+
+
+def test_porous_pressure_drop_uses_named_boundary_patches() -> None:
+    patches = {
+        "inlet": SimpleNamespace(
+            cell_data={"p": np.asarray([110.0, 90.0])}
+        ),
+        "outlet": SimpleNamespace(
+            cell_data={"p": np.asarray([10.0, 10.0])}
+        ),
+    }
+    data = SimpleNamespace(
+        latest_time=200.0,
+        boundary_fluxes=lambda **_: [],
+        boundary_patch=lambda name: patches[name],
+    )
+
+    observed = validators._porous_duct(
+        data,
+        SimpleNamespace(metrics=[]),
+    )
+
+    assert observed["pressure_drop"] == pytest.approx(90.0)
+    assert "_errors" not in observed
+
+
+def test_dam_break_front_metric_is_robust_to_one_output_phase_shift() -> None:
+    validation = load_private_validation("multiphase-dam-break")
+    validation_metric = next(
+        metric
+        for metric in validation.metrics
+        if metric.name == "leading_front_position"
+    )
+    reference_metric = next(
+        metric
+        for metric in load_reference("multiphase-dam-break")["metrics"]
+        if metric["name"] == "leading_front_position"
+    )
+
+    assert validation_metric.comparison_mode == "absolute_mean"
+    assert "Mean absolute error" in validation_metric.formula
+    assert reference_metric["comparison_mode"] == "absolute_mean"
+    assert "Mean absolute error" in reference_metric["formula"]
 
 
 def test_shock_tube_audit_cli_reports_exact_public_wave_positions(

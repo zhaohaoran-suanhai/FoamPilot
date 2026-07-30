@@ -111,34 +111,78 @@ The package contains one general native authoring Skill plus benchmark,
 buoyant-flow, and `rhoCentralFoam` solver-family Skills. These are public
 guidance, not deterministic case templates.
 
-## Official-six qualification
+## Controlled qualification
 
-FoamPilot ships six public TaskSpecs, evaluator rules, and compact derived
-numeric references. It does not ship the official tutorial cases or their
-large solver results.
+FoamPilot ships a 15-case Foundation OpenFOAM v10 suite spanning regression,
+development, and holdout roles. Each case has a public TaskSpec plus
+evaluator-only rules and compact derived numeric references. The repository
+does not ship official tutorial directories or their large solver results.
 
 ```bash
-foampilot qualify official-six \
-  --run-root /tmp/foampilot-official-six \
+foampilot qualify suite \
+  --suite-file \
+    src/foampilot/qualification/data/suites/controlled-learning-15-v1.yaml \
+  --run-root /tmp/foampilot-controlled-learning-15 \
   --workers 2 \
   --model-name gpt-5.6-sol \
   --json
 ```
 
-The latest preserved pre-extraction run showed that all six tasks eventually
-entered and completed their OpenFOAM solver after the bounded repair policy.
-The stricter physics qualification still contained failures. Solver
-completion and physics qualification are therefore reported separately.
-A fresh post-extraction six-case run is not yet claimed.
+The smaller `foampilot qualify official-six` command remains available as a
+six-case regression wrapper.
 
-See [qualification methodology](docs/qualification.md).
+On 2026-07-30, the frozen 15-case baseline reached 11/15 strict qualification
+passes. All 15 cases entered their requested solver and 14 reached public
+validation; one CHT case failed during its solver run. Four evidence-scoped
+failures were then corrected and passed targeted reruns, but these separate
+runs are not presented as a fresh 15/15 stochastic suite result. See the
+[qualification methodology](docs/qualification.md) and
+[controlled-learning report](docs/reports/2026-07-30-controlled-learning-15.md).
 
-The fresh standalone non-tutorial gate is 2/2
+The standalone non-tutorial gate is 2/2
 `PUBLIC_VALIDATION_PASS`: the laminar enclosure passed on its first attempt,
 and the two-phase column collapse passed after one evidence-scoped
 time-step-cap repair. This verifies the installed-wheel solve path, not the
-full official-six physics qualification. See the
+15-case physics qualification. See the
 [standalone real-case gate report](docs/reports/2026-07-29-standalone-real-gate.md).
+
+## Offline controlled improvement
+
+FoamPilot can turn a frozen failed run into a reviewable learning candidate
+and compare qualification reports after a developer applies one small change:
+
+```text
+frozen solve/qualification
+-> foampilot improve analyze
+-> developer applies one candidate change
+-> rerun qualification
+-> foampilot improve compare
+-> explicit promotion decision
+```
+
+For example:
+
+```bash
+foampilot improve analyze RUN_DIR \
+  --qualification-report BASELINE.json \
+  --candidate-id of10-solver-family-rule \
+  --lesson "General solver-family lesson" \
+  --target knowledge \
+  --development-case SOURCE_CASE \
+  --output IMPROVEMENTS/candidate.yaml
+
+foampilot improve compare BASELINE.json CURRENT.json \
+  --candidate IMPROVEMENTS/candidate.yaml \
+  --output IMPROVEMENTS/promotion.json \
+  --json
+```
+
+This workflow is offline and has no automatic promotion. Candidate and
+comparison files live beside run roots, never inside immutable runs or package
+data. Official examples are unavailable during blind authoring and repair.
+Only after artifact verification and frozen qualification may a developer use
+one as a teacher reference; the candidate records its directory hash,
+generalized principles, and leakage family instead of copying the case.
 
 ## Failure layers
 
@@ -173,6 +217,7 @@ from deterministic unit tests.
 - [Agent integration](docs/agent-integration.md)
 - [Knowledge governance](docs/knowledge-governance.md)
 - [Qualification](docs/qualification.md)
+- [Controlled-learning 15-case report](docs/reports/2026-07-30-controlled-learning-15.md)
 - [Standalone real-case gate](docs/reports/2026-07-29-standalone-real-gate.md)
 - [License](LICENSE)
 - [Provenance and notices](NOTICE.md)

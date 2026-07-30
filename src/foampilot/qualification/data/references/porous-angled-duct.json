@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "case_id": "porous-angled-duct",
+  "created_at": "2026-07-29T12:00:00Z",
+  "openfoam_version": "10",
+  "source_sha256": "566638380fb6c18644c7a41797566c7594f4f8a8b2639875a76a5199479c4153",
+  "metrics": [
+    {
+      "name": "final_iteration",
+      "category": "completion",
+      "field": "log.time",
+      "unit": "iteration",
+      "formula": "latest written steady iteration reaches 200",
+      "sample_coordinates": [[0.0, 0.02, 0.0]],
+      "comparison_mode": "lower_bound",
+      "reference": 200.0,
+      "observed_repeat_spread": 0.0,
+      "sampling_error_allowance": 0.0,
+      "engineering_floor": 0.0,
+      "final_tolerance": 0.0,
+      "tolerance_source": "Exact public TaskSpec target.",
+      "required": true
+    },
+    {
+      "name": "flow_balance",
+      "category": "conservation",
+      "field": "U",
+      "unit": "1",
+      "formula": "normalized sum of all boundary volumetric fluxes",
+      "sample_coordinates": [[-0.15, 0.01768, 0.0], [0.1237, 0.1591, 0.0]],
+      "comparison_mode": "absolute_upper_bound",
+      "reference": 0.0,
+      "observed_repeat_spread": 0.0,
+      "sampling_error_allowance": 0.001,
+      "engineering_floor": 0.01,
+      "final_tolerance": 0.01,
+      "tolerance_source": "One-percent engineering conservation cap.",
+      "required": true
+    },
+    {
+      "name": "pressure_drop",
+      "category": "physics_golden",
+      "field": "p",
+      "unit": "m2/s2",
+      "formula": "relative error in named inlet-patch mean minus named outlet-patch mean kinematic pressure",
+      "sample_coordinates": [[-0.149, 0.01768, 0.0], [0.12304, 0.15839, 0.0]],
+      "comparison_mode": "relative_absolute",
+      "reference": 3101.214039916992,
+      "observed_repeat_spread": 0.0,
+      "sampling_error_allowance": 0.04,
+      "engineering_floor": 0.15,
+      "final_tolerance": 0.15,
+      "tolerance_source": "Official baseline patch-mean pressure drop with mesh and modeling allowance.",
+      "required": true
+    }
+  ]
+}

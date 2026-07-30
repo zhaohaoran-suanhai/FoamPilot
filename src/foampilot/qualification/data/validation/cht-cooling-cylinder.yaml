@@ -1,0 +1,42 @@
+case_id: cht-cooling-cylinder
+source_sha256: 8219901f0775aeea9f4f909a9ad3f510320c150b7cdf6524696e0558f3b6773e
+golden_sha256: 613d6bc85c072df53ccd6fb0031d533f989fbda9c37416547af1db27e5179d4c
+expected_application: chtMultiRegionFoam
+expected_end_time: 20.0
+metrics:
+  - name: final_time
+    category: completion
+    formula: both regions reach the exact task target
+    field: log.time
+    unit: s
+    sample_coordinates: [[0.01, 0.0, 0.0]]
+    comparison_mode: lower_bound
+    tolerance: 0.0
+    tolerance_source: Exact public TaskSpec target.
+  - name: interface_heat_balance
+    category: conservation
+    formula: normalized mismatch between fluid enthalpy gain and solid volumetric heat input
+    field: T,U,rho
+    unit: "1"
+    sample_coordinates: [[-0.04, 0.0, 0.0], [0.1, 0.0, 0.0]]
+    comparison_mode: absolute_upper_bound
+    tolerance: 0.01
+    tolerance_source: One-percent engineering energy-conservation cap.
+  - name: temperature_profiles
+    category: physics_golden
+    formula: relative L2 error of fluid and solid temperature samples
+    field: T
+    unit: K
+    sample_coordinates:
+      - [-0.02, 0.0, 0.0]
+      - [0.01, 0.0, 0.0]
+      - [0.03, 0.0, 0.0]
+      - [0.07, 0.0, 0.0]
+      - [0.0, 0.0, 0.0]
+      - [0.0025, 0.0, 0.0]
+      - [0.0045, 0.0, 0.0]
+    comparison_mode: relative_l2
+    tolerance: 0.15
+    tolerance_source: Official baseline multi-region temperatures with sampling allowance.
+notes:
+  - Region fields are read only by the evaluator after the blind solve.

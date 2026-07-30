@@ -29,10 +29,12 @@ content:
     - Provide physicalProperties with a coherent psi thermodynamics model and energy variable, momentumTransport, U, p, T, fvSchemes, fvSolution, controlDict, and a valid mesh.
     - Use zero viscosity only when the public task is explicitly inviscid and keep the laminar momentum model consistent with that assumption.
     - Align discontinuities with mesh faces and use empty transverse patches for a geometrically one-dimensional case.
+    - In fvSolution, address the Foundation v10 conserved equation names with a "(rho|rhoU|rhoE)" solver entry; the native explicit pattern uses solver diagonal, while entries for derived U or e fields do not satisfy those lookups.
     - Use adjustTimeStep and a positive maxCo for Courant control; deltaT is the initial step and maxDeltaT must exceed it when adaptive growth is intended.
     - Use timeFormat general when startTime is zero so the initial directory named 0 remains readable; preserve enough timePrecision to identify short adaptive output times.
   failure_signals:
     - The thermodynamic package, energy field, density, or transport model is inconsistent or unreadable.
+    - fvSolution reports rho, rhoU, or rhoE as undefined because only derived-field solver entries were provided.
     - maxDeltaT equals deltaT and prevents requested adaptive growth.
     - The run ends normally but mass, actual Courant history, or public wave propagation is inaccurate.
   validation:

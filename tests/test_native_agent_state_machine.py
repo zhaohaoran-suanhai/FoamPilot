@@ -184,6 +184,68 @@ def test_native_agent_applies_one_evidence_scoped_repair(
     assert runner.calls == 2
 
 
+def test_native_agent_repairs_blocking_static_issue_before_execution(
+    tmp_path: Path,
+) -> None:
+    bad_control = GeneratedFile(
+        path="system/controlDict",
+        content=(
+            _control_dict()
+            + """
+functions
+{
+    extrema
+    {
+        type fieldMinMax;
+        fields (U);
+    }
+}
+"""
+        ),
+    )
+    velocity = GeneratedFile(
+        path="0/U",
+        content="FoamFile { class volVectorField; object U; }\n",
+    )
+    plan = _plan(files=[bad_control, velocity])
+    repair = RepairDecision(
+        because="The static report identifies an unsupported function object.",
+        evidence=["UNSUPPORTED_OF10_FUNCTION_OBJECT in system/controlDict"],
+        cause="fieldMinMax is unavailable in Foundation OpenFOAM v10.",
+        changed_files=[
+            GeneratedFile(
+                path="system/controlDict",
+                content=_control_dict(),
+            )
+        ],
+        changed_commands=[],
+        expected_check="Static inspection accepts controlDict.",
+        stable_control="The mesh, fields, and solver command remain unchanged.",
+    )
+    model = RecordingModel([plan, repair])
+    runner = SequencePlanRunner([(0, "Time = 1\nEnd\n", "")])
+
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=model,
+        runner=runner,
+    ).solve(_task())
+
+    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    assert len(outcome.summary.attempts) == 2
+    assert outcome.summary.attempts[0].status == "STATIC_INSPECTION_FAILED"
+    assert runner.calls == 1
+    assert (
+        outcome.run_dir / "attempt-01/public-validation.json"
+    ).is_file()
+    assert (
+        outcome.run_dir / "attempt-01/repair-decision.json"
+    ).is_file()
+    assert (
+        outcome.run_dir / "attempt-02/case/system/controlDict"
+    ).read_text(encoding="utf-8") == _control_dict()
+
+
 def test_native_agent_repair_can_add_a_safe_required_dictionary(
     tmp_path: Path,
 ) -> None:

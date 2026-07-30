@@ -18,8 +18,8 @@ result.
 - `validation`: evaluator-owned checks over commands, logs, and written
   fields;
 - `artifacts`: immutable attempts and SHA256 manifests;
-- `qualification`: six external physics comparisons using compact packaged
-  references.
+- `qualification`: role-aware suite execution and external physics
+  comparisons using compact packaged references.
 
 ## Data flow
 

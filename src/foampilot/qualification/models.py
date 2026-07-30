@@ -1,4 +1,4 @@
-"""Small, installable contracts for the official-six qualification."""
+"""Small, installable contracts for role-aware qualification suites."""
 
 from __future__ import annotations
 
@@ -87,7 +87,10 @@ class QualificationResult(StrictModel):
 
 class QualificationReport(StrictModel):
     schema_version: Literal[1] = 1
-    protocol_id: Literal["official-six-v1"] = "official-six-v1"
+    protocol_id: str = Field(
+        default="official-six-v1",
+        pattern=r"^[a-z0-9][a-z0-9._-]*$",
+    )
     created_at: datetime
     model_name: str
     counts: dict[QualificationStatus, int]

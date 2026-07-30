@@ -36,6 +36,7 @@ SUPPORTED_COMMANDS = (
     "skill",
     "audit",
     "qualify",
+    "improve",
 )
 
 

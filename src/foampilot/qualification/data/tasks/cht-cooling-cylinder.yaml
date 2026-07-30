@@ -1,0 +1,87 @@
+schema_version: 1
+task_id: cht-cooling-cylinder
+title: Conjugate cooling of a volumetrically heated cylinder
+prompt: >-
+  Starting from an empty case directory, build and solve a two-dimensional
+  fluid-solid conjugate heat-transfer case. Place a solid cylinder of radius
+  0.005 m at the origin in a fluid domain extending from x=-0.04 to 0.10 m,
+  y=-0.04 to 0.04 m, and z=-0.0025 to 0.0025 m with empty front and back.
+  Use a body-fitted multi-block mesh with a 15-cell square core projected to
+  the cylinder, 12 radial solid cells, about 30 upstream cells and 20
+  downstream cells, with radial grading toward the cylinder. Preserve inlet,
+  outlet, topAndBottom, and empty outer patches. Create a solid cell zone
+  with topoSet and split the mesh into fluid and solid regions using
+  splitMeshRegions, naming the default region fluid. Use
+  chtMultiRegionFoam. The fluid is constant-density water with rho=998.19
+  kg/m3, Cv=4150 J/(kg K), mu=1.0005e-3 Pa s, Pr=6.31, and k-omega SST
+  RANS; initialize fluid T=297 K, U=(0 0 0) m/s, p=100000 Pa and p_rgh=0.
+  Impose inlet U=(0.1 0 0) m/s and T=297 K, p_rgh=0 at the outlet, slip and
+  adiabatic top/bottom boundaries, and no slip at the cylinder. The solid is
+  copper-like with rho=8940 kg/m3, Cv=385 J/(kg K), kappa=380 W/(m K),
+  initially 297 K, and a uniform volumetric heat source q=5e7 W/m3. Couple
+  temperature and heat flux conservatively at the fluid-solid interface.
+  Integrate from 0 to 20 s with deltaT=0.01 s, write every 0.1 s, maxCo=5,
+  maxDi=200, and maxDeltaT=1 s. The case may use up to two local MPI ranks.
+  Generate all Foundation OpenFOAM v10 files yourself, run blockMesh,
+  checkMesh, topoSet, and splitMeshRegions before the solver, and do not read
+  or copy a pre-existing case.
+openfoam_target:
+  distribution: foundation
+  version: "10"
+resource_budget:
+  max_attempts: 2
+  max_wall_seconds: 3600
+  max_mpi_ranks: 2
+  memory_mib: 6144
+required_outputs:
+  - mesh, topology, and region-splitting logs
+  - completed chtMultiRegionFoam log through 20 s
+  - fluid and solid temperature fields plus fluid velocity and pressure
+  - fields suitable for interface heat balance and temperature profiles
+acceptance_requirements:
+  - blockMesh and checkMesh report a valid mesh
+  - topoSet and splitMeshRegions create fluid and solid regions
+  - chtMultiRegionFoam reaches 20 s and ends normally
+  - required fields in both regions remain finite
+  - interface heat balance and temperature profiles pass evaluator checks
+public_checks:
+  - name: mesh-quality
+    kind: mesh_ok
+    parameters: {}
+  - name: solid-zone
+    kind: command_executed
+    parameters:
+      executable: topoSet
+  - name: region-split
+    kind: command_executed
+    parameters:
+      executable: splitMeshRegions
+  - name: conjugate-solver
+    kind: command_executed
+    parameters:
+      executable: chtMultiRegionFoam
+  - name: normal-completion
+    kind: completion
+    parameters: {}
+  - name: final-time
+    kind: final_time
+    parameters:
+      minimum: 20
+  - name: finite-fields
+    kind: finite_fields
+    parameters: {}
+  - name: fluid-temperature
+    kind: requested_output
+    parameters:
+      path: 20/fluid/T
+  - name: solid-temperature
+    kind: requested_output
+    parameters:
+      path: 20/solid/T
+  - name: fluid-velocity
+    kind: requested_output
+    parameters:
+      path: 20/fluid/U
+public_assets: []
+protected_paths:
+  - /home/edwin/workplace/OpenFOAM-10/tutorials

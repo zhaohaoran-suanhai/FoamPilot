@@ -15,6 +15,7 @@ from foampilot.qualification.models import (
 from foampilot.qualification.reporting import (
     build_qualification_report,
     classify_qualification,
+    markdown_report,
     native_case_dir,
 )
 
@@ -160,3 +161,42 @@ def test_report_preserves_protocol_order_and_mpi_rendering(
         ]
     ]
     assert report.counts["FAIL_AGENT"] == 1
+
+
+def test_report_accepts_generic_protocol_and_case_order(
+    tmp_path: Path,
+) -> None:
+    first = _outcome(tmp_path / "first", status="PLAN_INVALID")
+    second = _outcome(tmp_path / "second", status="PLAN_INVALID")
+    report = build_qualification_report(
+        [
+            {
+                "case_id": "first",
+                "outcome": first,
+                "manifest_issues": [],
+                "metrics": [],
+                "duration_seconds": 1.0,
+                "message": "failed",
+            },
+            {
+                "case_id": "second",
+                "outcome": second,
+                "manifest_issues": [],
+                "metrics": [],
+                "duration_seconds": 1.0,
+                "message": "failed",
+            },
+        ],
+        model_name="gpt-test",
+        protocol_id="custom-suite-v1",
+        case_order=("second", "first"),
+    )
+
+    assert report.protocol_id == "custom-suite-v1"
+    assert [result.case_id for result in report.results] == [
+        "second",
+        "first",
+    ]
+    assert markdown_report(report).startswith(
+        "# FoamPilot custom-suite-v1 qualification\n"
+    )

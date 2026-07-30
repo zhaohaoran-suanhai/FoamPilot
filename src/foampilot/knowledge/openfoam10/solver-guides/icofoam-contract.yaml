@@ -6,7 +6,7 @@ version: "10"
 knowledge_type: solver_guide
 solvers: [icoFoam]
 models: [incompressible, laminar, transient]
-tags: [icofoam, transient, incompressible, laminar]
+tags: [icofoam, transient, incompressible, laminar, newtonian, velocity, kinematic-pressure]
 applicability:
   conditions:
     - The fluid is incompressible, laminar, isothermal, and transient.

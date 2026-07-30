@@ -21,7 +21,16 @@ foampilot validate TASK.yaml --json
 foampilot plan TASK.yaml --output PLAN.json --json
 foampilot solve TASK.yaml --run-root RUNS --json
 foampilot report RUN_DIR --json
-foampilot qualify official-six --run-root RUNS/official-six --workers 2 --json
+foampilot qualify suite \
+  --suite-file \
+    src/foampilot/qualification/data/suites/controlled-learning-15-v1.yaml \
+  --run-root RUNS/controlled-learning-15 --workers 2 --json
+foampilot improve analyze RUN_DIR --qualification-report REPORT.json \
+  --candidate-id ID --lesson "LESSON" --target knowledge \
+  --output IMPROVEMENTS/candidate.yaml
+foampilot improve compare BASELINE.json CURRENT.json \
+  --candidate IMPROVEMENTS/candidate.yaml \
+  --output IMPROVEMENTS/promotion.json --json
 ```
 
 For source-tree development, use `PYTHONPATH=src` or install the package
@@ -47,6 +56,21 @@ editable into the selected Python 3.12 environment.
   external paths. The Runner owns MPI launch and resource enforcement.
 - Do not add optional function objects merely to manufacture evaluator
   evidence. Evaluators inspect solver logs and written fields.
+
+## Controlled improvement
+
+- Keep improvement offline and separate from `NativeAgent.solve()`.
+- Official examples are unavailable during blind authoring and repair.
+- Verify the immutable artifact manifest and matching frozen qualification
+  result before examining an official example as a teacher reference.
+- Extract only general solver-family principles; do not copy complete cases,
+  target geometry, patch-specific parameters, golden values, tolerances, or
+  official paths into Knowledge, Skills, or prompts.
+- Write candidates and promotion reports beside run roots, never into
+  finalized runs or package data.
+- A passing comparison means eligible for review, with no automatic promotion.
+  Change formal Knowledge, Skills, prompts, inspection, Runner, or evaluators
+  only after explicit approval.
 
 ## Execution and repair
 

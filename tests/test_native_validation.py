@@ -186,6 +186,40 @@ def test_task_owned_checks_validate_all_gate_evidence(
     assert conservation.observed["sample_count"] == 2
 
 
+def test_failed_mesh_check_exposes_bounded_checkmesh_diagnostics(
+    tmp_path: Path,
+) -> None:
+    mesh = _step(
+        tmp_path,
+        step_id="mesh",
+        executable="checkMesh",
+        return_code=0,
+        stdout=(
+            "Checking geometry...\n"
+            "***Total number of faces on empty patches is not divisible "
+            "by the number of cells in the mesh.\n"
+            "Failed 1 mesh checks.\n"
+            "End\n"
+        ),
+    )
+
+    report = validate_native_run(
+        task=_task(
+            checks=[
+                {"name": "mesh", "kind": "mesh_ok", "parameters": {}},
+            ]
+        ),
+        run_result=PlanRunResult(case_dir=tmp_path, steps=[mesh]),
+        case_root=tmp_path,
+    )
+
+    check = report.checks[0]
+    assert not check.passed
+    assert "empty patches" in check.detail
+    assert "Failed 1 mesh checks" in check.detail
+    assert len(check.detail) <= 1200
+
+
 def test_field_checks_fall_back_to_written_openfoam_fields(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
