@@ -113,11 +113,88 @@ class ArtifactStore:
                 problems.append(f"hash mismatch: {relative}")
         return problems
 
+    def manifest_sha256(self, run_dir: str | Path) -> str:
+        directory = self._run_path(run_dir)
+        manifest = directory / self.manifest_name
+        if not manifest.is_file():
+            raise FileNotFoundError(f"missing manifest: {manifest}")
+        return _file_sha256(manifest)
+
     @staticmethod
     def read_summary(run_dir: str | Path):
         """Load the native typed RunSummary."""
 
         path = Path(run_dir) / "summary.json"
-        from .models import RunSummary
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("summary root must be a mapping")
+        from .models import AttemptSummary, RunSummary
+        from foampilot.workflow import (
+            FailureDomain,
+            FailureRecord,
+            ResumeMetadata,
+            WorkflowState,
+        )
 
-        return RunSummary.model_validate_json(path.read_text(encoding="utf-8"))
+        version = payload.get("schema_version", 1)
+        if version == 2:
+            return RunSummary.model_validate(payload)
+        if version != 1:
+            raise ValueError(f"unsupported summary schema version: {version}")
+        status = str(payload.get("status", "REQUEST_INCOMPLETE"))
+        message = str(payload.get("message", "legacy run summary"))
+        native_statuses = {
+            "STATIC_INSPECTION_FAILED",
+            "MESH_FAILED",
+            "INITIALIZATION_FAILED",
+            "SOLVER_FAILED",
+            "POSTPROCESS_FAILED",
+            "PUBLIC_VALIDATION_FAILED",
+            "PUBLIC_VALIDATION_PASS",
+        }
+        if status == "PUBLIC_VALIDATION_PASS":
+            workflow_state = WorkflowState.COMPLETED
+            native_status = status
+            primary_failure = None
+        elif status in native_statuses:
+            workflow_state = WorkflowState.FAILED
+            native_status = status
+            primary_failure = FailureRecord(
+                domain=FailureDomain.LEGACY,
+                code=status,
+                detail=message,
+            )
+        else:
+            workflow_state = WorkflowState.FAILED
+            native_status = None
+            domains = {
+                "BLOCKED_ENVIRONMENT": FailureDomain.ENVIRONMENT,
+                "PLAN_INVALID": FailureDomain.PLAN,
+                "CASE_GENERATION_FAILED": FailureDomain.CASE,
+                "REQUEST_INCOMPLETE": FailureDomain.TASK,
+            }
+            primary_failure = FailureRecord(
+                domain=domains.get(status, FailureDomain.LEGACY),
+                code=status,
+                detail=message,
+            )
+        attempts = []
+        for item in payload.get("attempts", []):
+            if not isinstance(item, dict):
+                continue
+            try:
+                attempts.append(AttemptSummary.model_validate(item))
+            except ValueError:
+                continue
+        return RunSummary(
+            task_id=str(payload.get("task_id", "legacy-run")),
+            workflow_state=workflow_state,
+            native_status=native_status,
+            attempts=attempts,
+            primary_failure=primary_failure,
+            resume=ResumeMetadata(
+                allowed=False,
+                reason="legacy summaries cannot resume",
+            ),
+            message=message,
+        )

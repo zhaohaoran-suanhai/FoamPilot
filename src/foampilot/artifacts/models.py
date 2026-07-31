@@ -7,16 +7,19 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from foampilot.workflow import (
+    FailureRecord,
+    ParentRun,
+    ResumeMetadata,
+    WorkflowState,
+)
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-NativeAgentStatus = Literal[
-    "REQUEST_INCOMPLETE",
-    "BLOCKED_ENVIRONMENT",
-    "PLAN_INVALID",
-    "CASE_GENERATION_FAILED",
+NativeStatus = Literal[
     "STATIC_INSPECTION_FAILED",
     "MESH_FAILED",
     "INITIALIZATION_FAILED",
@@ -27,23 +30,62 @@ NativeAgentStatus = Literal[
 ]
 
 
+AttemptStatus = Literal[
+    "BLOCKED_ENVIRONMENT",
+    "CASE_GENERATION_FAILED",
+    "STATIC_INSPECTION_FAILED",
+    "MESH_FAILED",
+    "INITIALIZATION_FAILED",
+    "SOLVER_FAILED",
+    "POSTPROCESS_FAILED",
+    "PUBLIC_VALIDATION_FAILED",
+    "PUBLIC_VALIDATION_PASS",
+]
+
+# Kept as an import alias for callers that only type native attempt results.
+NativeAgentStatus = AttemptStatus
+
+
 class AttemptSummary(StrictModel):
     attempt: int = Field(ge=1)
-    status: NativeAgentStatus
+    status: AttemptStatus
     failed_step_id: str | None = None
     failure_fingerprint: str | None = None
     changed_files: list[str] = Field(default_factory=list)
 
 
 class RunSummary(StrictModel):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     task_id: str
-    status: NativeAgentStatus
+    workflow_state: WorkflowState
+    native_status: NativeStatus | None = None
+    last_completed_stage: str | None = None
     attempts: list[AttemptSummary] = Field(default_factory=list)
+    primary_failure: FailureRecord | None = None
+    terminal_blocker: FailureRecord | None = None
+    resume: ResumeMetadata
+    parent_run: ParentRun | None = None
     message: str
+
+    @property
+    def status(self) -> str:
+        if self.native_status is not None:
+            return self.native_status
+        if self.primary_failure is not None and self.primary_failure.code in {
+            "REQUEST_INCOMPLETE",
+            "ROUTING_UNRESOLVED",
+            "BLOCKED_ENVIRONMENT",
+            "PLAN_INVALID",
+            "CASE_GENERATION_FAILED",
+        }:
+            return self.primary_failure.code
+        return self.workflow_state.value
 
 
 class NativeAgentOutcome(StrictModel):
-    status: NativeAgentStatus
     run_dir: Path
     summary: RunSummary
+
+    @property
+    def status(self) -> str:
+        return self.summary.status

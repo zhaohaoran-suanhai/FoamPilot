@@ -7,6 +7,12 @@ knowledge_type: physics_model
 solvers: []
 models: [scalarTransport, passive-scalar, function-object, advection, diffusion]
 tags: [scalartransport, function-object, tracer, diffusion, passive-scalar]
+activation_terms:
+  - scalarTransport
+  - passive scalar
+  - scalar transport
+  - tracer
+  - advection diffusion
 applicability:
   conditions:
     - A Foundation v10 flow solver must also advance a passive or bounded volScalarField.

@@ -15,6 +15,9 @@ dist/
 *.whl
 
 .foampilot/
+!tests/fixtures/artifact-replay/**/case/.foampilot/
+!tests/fixtures/artifact-replay/**/case/.foampilot/logs/
+!tests/fixtures/artifact-replay/**/case/.foampilot/logs/**
 runs/
 evaluation/runs/
 

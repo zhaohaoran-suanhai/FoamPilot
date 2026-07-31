@@ -2,6 +2,7 @@
 
 from .models import (
     QualificationMetric,
+    QualificationAggregates,
     QualificationReport,
     QualificationResult,
 )
@@ -27,6 +28,7 @@ from .suites import (
 __all__ = [
     "CASE_ORDER",
     "QualificationMetric",
+    "QualificationAggregates",
     "QualificationReport",
     "QualificationResult",
     "QualificationSuite",

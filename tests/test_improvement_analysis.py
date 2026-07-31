@@ -17,6 +17,12 @@ from foampilot.qualification.models import (
     QualificationReport,
     QualificationResult,
 )
+from foampilot.workflow import (
+    FailureDomain,
+    FailureRecord,
+    ResumeMetadata,
+    WorkflowState,
+)
 
 
 def _finalized_run(
@@ -26,7 +32,8 @@ def _finalized_run(
     run_dir = store.create_run()
     summary = RunSummary(
         task_id="multiphase-dam-break",
-        status="SOLVER_FAILED",
+        workflow_state=WorkflowState.FAILED,
+        native_status="SOLVER_FAILED",
         attempts=[
             AttemptSummary(
                 attempt=1,
@@ -35,6 +42,16 @@ def _finalized_run(
                 failure_fingerprint="FOAM FATAL IO ERROR",
             )
         ],
+        primary_failure=FailureRecord(
+            domain=FailureDomain.SOLVER,
+            code="SOLVER_FAILED",
+            step_id="solve",
+            detail="Solver rejected the generated numerical dictionary.",
+        ),
+        resume=ResumeMetadata(
+            allowed=False,
+            reason="failure is not resumable",
+        ),
         message="Solver rejected the generated numerical dictionary.",
     )
     (run_dir / "summary.json").write_text(

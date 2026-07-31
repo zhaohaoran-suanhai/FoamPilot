@@ -1,0 +1,11 @@
+{
+  "advisories": [],
+  "issues": [],
+  "observed_patches": [
+    "frontAndBack",
+    "inlet",
+    "lowerWall",
+    "outlet",
+    "upperWall"
+  ]
+}

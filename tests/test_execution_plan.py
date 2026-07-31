@@ -9,6 +9,12 @@ from foampilot.plans import (
     NativeCommand,
     validate_execution_plan,
 )
+from foampilot.manifests import (
+    CaseField,
+    CaseManifest,
+    CaseModels,
+    CaseRegion,
+)
 from foampilot.tasks import TaskSpec
 
 
@@ -47,7 +53,32 @@ def task() -> TaskSpec:
 
 def valid_plan() -> ExecutionPlan:
     return ExecutionPlan(
-        schema_version=2,
+        schema_version=3,
+        manifest=CaseManifest(
+            solver_executable="icoFoam",
+            solver_family="incompressible-laminar",
+            regime="transient",
+            physics_family="fluid",
+            mesh_family="blockMesh",
+            dimensionality="2d",
+            regions=[
+                CaseRegion(
+                    name="default",
+                    kind="fluid",
+                    path_prefix="",
+                )
+            ],
+            fields=[
+                CaseField(
+                    name="U",
+                    region="default",
+                    path="0/U",
+                    role="velocity",
+                    created_by="author",
+                )
+            ],
+            models=CaseModels(transport="Newtonian"),
+        ),
         files=[
             GeneratedFile(
                 path="system/controlDict",
@@ -61,6 +92,7 @@ def valid_plan() -> ExecutionPlan:
         commands=[
             NativeCommand(
                 step_id="mesh",
+                stage="mesh",
                 executable="blockMesh",
                 args=[],
                 mpi_ranks=1,
@@ -68,6 +100,7 @@ def valid_plan() -> ExecutionPlan:
             ),
             NativeCommand(
                 step_id="initialize",
+                stage="initialize",
                 executable="potentialFoam",
                 args=[],
                 mpi_ranks=2,
@@ -75,6 +108,7 @@ def valid_plan() -> ExecutionPlan:
             ),
             NativeCommand(
                 step_id="solve-a",
+                stage="solve",
                 executable="icoFoam",
                 args=[],
                 mpi_ranks=1,
@@ -82,6 +116,7 @@ def valid_plan() -> ExecutionPlan:
             ),
             NativeCommand(
                 step_id="solve-b",
+                stage="solve",
                 executable="icoFoam",
                 args=["-latestTime"],
                 mpi_ranks=1,

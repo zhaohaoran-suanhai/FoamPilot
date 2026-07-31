@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 
 from foampilot.agent import load_agent_context
+from foampilot.environment import CommandFact, EnvironmentSnapshot
 from foampilot.knowledge import load_knowledge_corpus
 from foampilot.qualification.runner import qualification_data_path
+from foampilot.routing import route_capability
 from foampilot.tasks import load_task_spec
 
 
@@ -27,6 +29,40 @@ EXPECTED_SOLVER_GUIDES = {
     "potential-cylinder": "of10.solver.potentialfoam-contract",
     "rans-pitzdaily": "of10.solver.simplefoam-rans-contract",
 }
+
+
+def _context(task):
+    corpus = load_knowledge_corpus(
+        PACKAGE_ROOT / "src/foampilot/knowledge/openfoam10"
+    )
+    solvers = sorted(
+        {
+            solver
+            for entry in corpus
+            for solver in entry.solvers
+        }
+    )
+    environment = EnvironmentSnapshot(
+        schema_version=1,
+        distribution="foundation",
+        version="10",
+        openfoam_root=Path("/opt/openfoam10"),
+        tutorial_root=Path("/private/tutorials"),
+        workspace_root=Path("/runs"),
+        workspace_writable=True,
+        commands=[
+            CommandFact(
+                name=solver,
+                path=Path("/opt/openfoam10/bin") / solver,
+            )
+            for solver in solvers
+        ],
+        mpi_launcher=Path("/usr/bin/mpirun"),
+        gmsh=None,
+        max_mpi_ranks=16,
+    )
+    capability = route_capability(task, environment, corpus)
+    return load_agent_context(task, capability)
 
 
 def test_native_qualification_has_exactly_six_safe_task_specs() -> None:
@@ -55,7 +91,7 @@ def test_native_qualification_has_exactly_six_safe_task_specs() -> None:
 def test_each_qualification_task_retrieves_its_public_solver_contract() -> None:
     for path in sorted(TASK_ROOT.glob("*.yaml")):
         task = load_task_spec(path)
-        context = load_agent_context(task)
+        context = _context(task)
 
         assert EXPECTED_SOLVER_GUIDES[task.task_id] in (
             context.selected_knowledge_ids
@@ -67,14 +103,14 @@ def test_scalar_transport_task_retrieves_foundation_v10_solver_contract() -> Non
     task = load_task_spec(
         qualification_data_path("tasks", "scalar-transport-pitzdaily")
     )
-    context = load_agent_context(task)
+    context = _context(task)
 
     assert "of10.solver.scalartransportfoam-contract" in (
         context.selected_knowledge_ids
     )
 
 
-def test_native_authoring_skill_uses_only_execution_plan_v2_fields() -> None:
+def test_native_authoring_skill_uses_only_execution_plan_v3_fields() -> None:
     skill = (
         PACKAGE_ROOT
         / "src"

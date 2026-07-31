@@ -14,7 +14,12 @@ import yaml
 
 from foampilot.agent import NativeAgent
 from foampilot.artifacts import ArtifactStore, NativeAgentOutcome
-from foampilot.models import CodexOAuthModelClient, load_codex_access_token
+from foampilot.models import (
+    CodexOAuthProviderClient,
+    ModelGateway,
+    SharedCircuitBreaker,
+    load_codex_access_token,
+)
 from foampilot.runtime import RuntimeConfig
 from foampilot.tasks import load_task_spec
 
@@ -166,6 +171,9 @@ def qualify_outcome(
         "metrics": metrics,
         "duration_seconds": duration_seconds,
         "message": message,
+        "expected_application": load_private_validation(
+            case_id
+        ).expected_application,
     }
 
 
@@ -173,8 +181,7 @@ def _run_one(
     case_id: str,
     *,
     run_root: Path,
-    model_name: str,
-    access_token: str,
+    gateway: ModelGateway,
 ) -> dict[str, object]:
     task = load_task_spec(qualification_data_path("tasks", case_id))
     config = RuntimeConfig.local_foundation_v10().model_copy(
@@ -183,10 +190,7 @@ def _run_one(
     store = ArtifactStore(run_root / case_id)
     started = time.monotonic()
     outcome = NativeAgent(
-        model=CodexOAuthModelClient(
-            model=model_name,
-            access_token=access_token,
-        ),
+        gateway=gateway,
         runtime_config=config,
         artifact_store=store,
     ).solve(task)
@@ -224,7 +228,8 @@ def run_qualification_suite(
     run_root: Path,
     workers: int,
     model_name: str,
-    auth: Path,
+    auth: Path | None,
+    gateway: ModelGateway | None = None,
 ) -> QualificationReport:
     """Run one strict suite through the existing native qualification path."""
 
@@ -237,7 +242,21 @@ def run_qualification_suite(
             "qualification inputs are invalid: " + "; ".join(issues)
         )
 
-    access_token = load_codex_access_token(auth)
+    active_gateway = gateway
+    if active_gateway is None:
+        if auth is None:
+            raise ValueError(
+                "auth is required when gateway is not injected"
+            )
+        access_token = load_codex_access_token(auth)
+        provider = CodexOAuthProviderClient(
+            model=model_name,
+            access_token=access_token,
+        )
+        active_gateway = ModelGateway(
+            provider=provider,
+            circuit_breaker=SharedCircuitBreaker(),
+        )
     raw_results: list[dict[str, object]] = []
     parallel = [
         item.case_id
@@ -252,8 +271,7 @@ def run_qualification_suite(
                 _run_one,
                 case_id,
                 run_root=run_root,
-                model_name=model_name,
-                access_token=access_token,
+                gateway=active_gateway,
             ): case_id
             for case_id in parallel
         }
@@ -266,8 +284,7 @@ def run_qualification_suite(
             _run_one(
                 item.case_id,
                 run_root=run_root,
-                model_name=model_name,
-                access_token=access_token,
+                gateway=active_gateway,
             )
         )
 

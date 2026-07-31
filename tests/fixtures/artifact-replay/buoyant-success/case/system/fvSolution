@@ -1,0 +1,134 @@
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    object      fvSolution;
+}
+
+solvers
+{
+    p_rgh
+    {
+        solver          GAMG;
+        tolerance       1e-9;
+        relTol          0.03;
+        smoother        DICGaussSeidel;
+        cacheAgglomeration true;
+        agglomerator    faceAreaPair;
+        nCellsInCoarsestLevel 20;
+        mergeLevels     1;
+    }
+
+    p_rghFinal
+    {
+        $p_rgh;
+        tolerance       1e-10;
+        relTol          0;
+    }
+
+    U
+    {
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-9;
+        relTol          0.05;
+        nSweeps         1;
+    }
+
+    UFinal
+    {
+        $U;
+        tolerance       1e-10;
+        relTol          0;
+    }
+
+    h
+    {
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-9;
+        relTol          0.03;
+        nSweeps         1;
+    }
+
+    hFinal
+    {
+        $h;
+        tolerance       1e-10;
+        relTol          0;
+    }
+
+    k
+    {
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-9;
+        relTol          0.05;
+        nSweeps         1;
+    }
+
+    kFinal
+    {
+        $k;
+        tolerance       1e-10;
+        relTol          0;
+    }
+
+    omega
+    {
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-9;
+        relTol          0.05;
+        nSweeps         1;
+    }
+
+    omegaFinal
+    {
+        $omega;
+        tolerance       1e-10;
+        relTol          0;
+    }
+
+    rho
+    {
+        solver          diagonal;
+    }
+}
+
+PIMPLE
+{
+    momentumPredictor       yes;
+    nOuterCorrectors        1;
+    nCorrectors             2;
+    nNonOrthogonalCorrectors 0;
+
+    pRefCell                0;
+    pRefValue               100000;
+
+    residualControl
+    {
+        p_rgh               1e-30;
+        U                   1e-30;
+        h                   1e-30;
+        k                   1e-30;
+        omega               1e-30;
+    }
+}
+
+relaxationFactors
+{
+    fields
+    {
+        p_rgh           0.3;
+        rho             0.7;
+    }
+
+    equations
+    {
+        U               0.45;
+        h               0.65;
+        k               0.5;
+        omega           0.5;
+    }
+}

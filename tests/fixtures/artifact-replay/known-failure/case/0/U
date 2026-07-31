@@ -1,0 +1,44 @@
+FoamFile
+{
+    format      ascii;
+    class       volVectorField;
+    object      U;
+}
+
+dimensions      [0 1 -1 0 0 0 0];
+
+internalField   uniform (0 0 0);
+
+boundaryField
+{
+    left
+    {
+        type            noSlip;
+    }
+
+    right
+    {
+        type            noSlip;
+    }
+
+    lower
+    {
+        type            noSlip;
+    }
+
+    atmosphere
+    {
+        type            pressureInletOutletVelocity;
+        value           uniform (0 0 0);
+    }
+
+    obstacle
+    {
+        type            noSlip;
+    }
+
+    empty
+    {
+        type            empty;
+    }
+}

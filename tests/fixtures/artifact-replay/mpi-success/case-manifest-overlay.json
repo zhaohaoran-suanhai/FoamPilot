@@ -1,0 +1,19 @@
+{
+  "solver_executable": "simpleFoam",
+  "solver_family": "incompressible-rans",
+  "regime": "steady",
+  "physics_family": "fluid",
+  "mesh_family": "blockMesh",
+  "dimensionality": "2d",
+  "regions": [
+    {"name": "default", "kind": "fluid", "path_prefix": ""}
+  ],
+  "fields": [
+    {"name": "U", "region": "default", "path": "0/U", "role": "velocity", "created_by": "author"},
+    {"name": "p", "region": "default", "path": "0/p", "role": "kinematic_pressure", "created_by": "author"},
+    {"name": "k", "region": "default", "path": "0/k", "role": "turbulence_kinetic_energy", "created_by": "author"},
+    {"name": "nut", "region": "default", "path": "0/nut", "role": "turbulent_viscosity", "created_by": "author"}
+  ],
+  "patches": [],
+  "models": {"turbulence": "RANS", "transport": "Newtonian"}
+}

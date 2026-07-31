@@ -98,6 +98,7 @@ class KnowledgeEntry(StrictModel):
     solvers: list[NonEmpty] = Field(default_factory=list)
     models: list[NonEmpty] = Field(default_factory=list)
     tags: Annotated[list[LowerToken], Field(min_length=1)]
+    activation_terms: list[NonEmpty] = Field(default_factory=list)
     applicability: KnowledgeApplicability
     source: KnowledgeSource
     leakage: KnowledgeLeakage
@@ -109,6 +110,7 @@ class KnowledgeEntry(StrictModel):
             ("solvers", self.solvers),
             ("models", self.models),
             ("tags", self.tags),
+            ("activation_terms", self.activation_terms),
         ):
             if len(values) != len(set(values)):
                 raise ValueError(f"{label} must be unique")

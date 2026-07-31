@@ -1,0 +1,10 @@
+{
+  "advisories": [],
+  "issues": [],
+  "observed_patches": [
+    "cold",
+    "frontAndBack",
+    "hot",
+    "topAndBottom"
+  ]
+}

@@ -1,0 +1,16 @@
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    object      phaseProperties;
+}
+
+type            immiscibleIncompressibleTwoPhaseMixture;
+
+phases
+(
+    water
+    air
+);
+
+sigma           0.07;

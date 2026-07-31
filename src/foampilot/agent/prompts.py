@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from foampilot.environment import EnvironmentSnapshot
+from foampilot.routing import CapabilityProfile
 from foampilot.tasks import TaskSpec
 
 
@@ -18,6 +19,18 @@ Do not add function objects, sampling, extrema, or residualControl solely to pro
 The evaluator derives measurements from solver logs and written fields after a successful solve.
 Do not assume access to a tutorial, golden result, private evaluator, shell, or
 deterministic case renderer.
+
+Return ExecutionPlan schema_version 3. In manifest, declare the solver and
+solver family, physics family, regime, mesh family, dimensionality, every
+region, authored or generated field, patch, and active physical model. Every
+typed command must declare exactly one stage: mesh, check, initialize,
+decompose, solve, reconstruct, or postprocess. Region paths and field paths
+must match the files in the same response. For an ordinary single-region
+case, declare exactly one region named "default" with an empty path_prefix,
+and use region "default" for every field and patch. For a multi-region case,
+every field and patch region must exactly match one declared region name.
+Region names, region path_prefix values, and region-scoped field or patch
+identities must be unique.
 
 Commands execute with cwd=/case. Return executable and argv separately; never
 return shell syntax, an Allrun script, or external paths. Keep MPI ranks and
@@ -37,6 +50,7 @@ def _json(value: object) -> str:
 def bundle_request_text(
     task: TaskSpec,
     environment: EnvironmentSnapshot,
+    capability: CapabilityProfile,
     knowledge_text: str,
     skills_text: str,
 ) -> tuple[str, str]:
@@ -44,6 +58,10 @@ def bundle_request_text(
         (
             "PUBLIC TASK\n" + _json(task.agent_payload()),
             "INSTALLED ENVIRONMENT\n" + _json(environment.agent_payload()),
+            (
+                "SYSTEM-ROUTED CAPABILITY PROFILE\n"
+                + _json(capability.model_dump(mode="json"))
+            ),
             "DYNAMIC PUBLIC KNOWLEDGE\n" + knowledge_text,
             "PORTABLE WORKFLOW SKILL\n" + skills_text,
         )

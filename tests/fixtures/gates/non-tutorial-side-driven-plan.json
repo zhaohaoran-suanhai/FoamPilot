@@ -1,0 +1,94 @@
+{
+  "commands": [
+    {
+      "args": [],
+      "executable": "blockMesh",
+      "mpi_ranks": 1,
+      "stage": "mesh",
+      "step_id": "mesh",
+      "timeout_seconds": 20
+    },
+    {
+      "args": [],
+      "executable": "checkMesh",
+      "mpi_ranks": 1,
+      "stage": "check",
+      "step_id": "check-mesh",
+      "timeout_seconds": 20
+    },
+    {
+      "args": [],
+      "executable": "icoFoam",
+      "mpi_ranks": 1,
+      "stage": "solve",
+      "step_id": "solve",
+      "timeout_seconds": 260
+    }
+  ],
+  "files": [
+    {
+      "content": "FoamFile\n{\n    version     2.0;\n    format      ascii;\n    class       volVectorField;\n    location    \"0\";\n    object      U;\n}\n\ndimensions      [0 1 -1 0 0 0 0];\n\ninternalField   uniform (0 0 0);\n\nboundaryField\n{\n    left\n    {\n        type            fixedValue;\n        value           uniform (0 0.05 0);\n    }\n\n    right\n    {\n        type            fixedValue;\n        value           uniform (0 0 0);\n    }\n\n    top\n    {\n        type            fixedValue;\n        value           uniform (0 0 0);\n    }\n\n    bottom\n    {\n        type            fixedValue;\n        value           uniform (0 0 0);\n    }\n\n    frontAndBack\n    {\n        type            empty;\n    }\n}\n",
+      "path": "0/U"
+    },
+    {
+      "content": "FoamFile\n{\n    version     2.0;\n    format      ascii;\n    class       volScalarField;\n    location    \"0\";\n    object      p;\n}\n\ndimensions      [0 2 -2 0 0 0 0];\n\ninternalField   uniform 0;\n\nboundaryField\n{\n    left\n    {\n        type            zeroGradient;\n    }\n\n    right\n    {\n        type            zeroGradient;\n    }\n\n    top\n    {\n        type            zeroGradient;\n    }\n\n    bottom\n    {\n        type            zeroGradient;\n    }\n\n    frontAndBack\n    {\n        type            empty;\n    }\n}\n",
+      "path": "0/p"
+    },
+    {
+      "content": "FoamFile\n{\n    version     2.0;\n    format      ascii;\n    class       dictionary;\n    location    \"constant\";\n    object      physicalProperties;\n}\n\nnu              [0 2 -1 0 0 0 0] 1.0e-4;\n",
+      "path": "constant/physicalProperties"
+    },
+    {
+      "content": "FoamFile\n{\n    version     2.0;\n    format      ascii;\n    class       dictionary;\n    location    \"system\";\n    object      blockMeshDict;\n}\n\nconvertToMeters 1;\n\nvertices\n(\n    (0    0    0)\n    (0.10 0    0)\n    (0.10 0.06 0)\n    (0    0.06 0)\n    (0    0    0.001)\n    (0.10 0    0.001)\n    (0.10 0.06 0.001)\n    (0    0.06 0.001)\n);\n\nblocks\n(\n    hex (0 1 2 3 4 5 6 7) (40 24 1) simpleGrading (1 1 1)\n);\n\nedges\n(\n);\n\nboundary\n(\n    left\n    {\n        type wall;\n        faces\n        (\n            (0 4 7 3)\n        );\n    }\n\n    right\n    {\n        type wall;\n        faces\n        (\n            (1 2 6 5)\n        );\n    }\n\n    top\n    {\n        type wall;\n        faces\n        (\n            (3 7 6 2)\n        );\n    }\n\n    bottom\n    {\n        type wall;\n        faces\n        (\n            (0 1 5 4)\n        );\n    }\n\n    frontAndBack\n    {\n        type empty;\n        faces\n        (\n            (0 3 2 1)\n            (4 5 6 7)\n        );\n    }\n);\n\nmergePatchPairs\n(\n);\n",
+      "path": "system/blockMeshDict"
+    },
+    {
+      "content": "FoamFile\n{\n    version     2.0;\n    format      ascii;\n    class       dictionary;\n    location    \"system\";\n    object      controlDict;\n}\n\napplication     icoFoam;\n\nstartFrom       startTime;\nstartTime       0;\nstopAt          endTime;\nendTime         1.0;\ndeltaT          0.002;\n\nwriteControl    runTime;\nwriteInterval   0.2;\npurgeWrite      0;\nwriteFormat     ascii;\nwritePrecision  10;\nwriteCompression off;\ntimeFormat      general;\ntimePrecision   6;\n\nrunTimeModifiable true;\nadjustTimeStep  false;\n",
+      "path": "system/controlDict"
+    },
+    {
+      "content": "FoamFile\n{\n    version     2.0;\n    format      ascii;\n    class       dictionary;\n    location    \"system\";\n    object      fvSchemes;\n}\n\nddtSchemes\n{\n    default         Euler;\n}\n\ngradSchemes\n{\n    default         Gauss linear;\n}\n\ndivSchemes\n{\n    default         none;\n    div(phi,U)      Gauss linear;\n}\n\nlaplacianSchemes\n{\n    default         Gauss linear corrected;\n}\n\ninterpolationSchemes\n{\n    default         linear;\n}\n\nsnGradSchemes\n{\n    default         corrected;\n}\n",
+      "path": "system/fvSchemes"
+    },
+    {
+      "content": "FoamFile\n{\n    version     2.0;\n    format      ascii;\n    class       dictionary;\n    location    \"system\";\n    object      fvSolution;\n}\n\nsolvers\n{\n    p\n    {\n        solver          PCG;\n        preconditioner  DIC;\n        tolerance       1e-10;\n        relTol          0.05;\n    }\n\n    pFinal\n    {\n        solver          PCG;\n        preconditioner  DIC;\n        tolerance       1e-10;\n        relTol          0;\n    }\n\n    U\n    {\n        solver          smoothSolver;\n        smoother        symGaussSeidel;\n        tolerance       1e-10;\n        relTol          0;\n    }\n}\n\nPISO\n{\n    nCorrectors             2;\n    nNonOrthogonalCorrectors 0;\n    pRefCell                0;\n    pRefValue               0;\n}\n",
+      "path": "system/fvSolution"
+    }
+  ],
+  "manifest": {
+    "solver_executable": "icoFoam",
+    "solver_family": "incompressible-laminar",
+    "regime": "transient",
+    "physics_family": "fluid",
+    "mesh_family": "blockMesh",
+    "dimensionality": "2d",
+    "regions": [
+      {
+        "name": "default",
+        "kind": "fluid",
+        "path_prefix": ""
+      }
+    ],
+    "fields": [
+      {
+        "name": "U",
+        "region": "default",
+        "path": "0/U",
+        "role": "velocity",
+        "created_by": "author"
+      },
+      {
+        "name": "p",
+        "region": "default",
+        "path": "0/p",
+        "role": "kinematic_pressure",
+        "created_by": "author"
+      }
+    ],
+    "patches": [],
+    "models": {
+      "transport": "Newtonian"
+    }
+  },
+  "schema_version": 3
+}

@@ -1,0 +1,74 @@
+{
+  "case_dir": "case",
+  "failed_step_id": null,
+  "steps": [
+    {
+      "command": [
+        "blockMesh"
+      ],
+      "finished_at": "2026-07-30T03:26:04.909533Z",
+      "return_code": 0,
+      "started_at": "2026-07-30T03:26:04.745558Z",
+      "stderr_path": "case/.foampilot/logs/01-build_mesh.stderr.log",
+      "stdout_path": "case/.foampilot/logs/01-build_mesh.stdout.log",
+      "step_id": "build_mesh",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "checkMesh",
+        "-allGeometry",
+        "-allTopology"
+      ],
+      "finished_at": "2026-07-30T03:26:05.174071Z",
+      "return_code": 0,
+      "started_at": "2026-07-30T03:26:04.909794Z",
+      "stderr_path": "case/.foampilot/logs/02-check_mesh.stderr.log",
+      "stdout_path": "case/.foampilot/logs/02-check_mesh.stdout.log",
+      "step_id": "check_mesh",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "decomposePar"
+      ],
+      "finished_at": "2026-07-30T03:26:05.338263Z",
+      "return_code": 0,
+      "started_at": "2026-07-30T03:26:05.174254Z",
+      "stderr_path": "case/.foampilot/logs/03-decompose.stderr.log",
+      "stdout_path": "case/.foampilot/logs/03-decompose.stdout.log",
+      "step_id": "decompose",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "mpirun",
+        "-n",
+        "4",
+        "simpleFoam",
+        "-parallel"
+      ],
+      "finished_at": "2026-07-30T03:26:14.515985Z",
+      "return_code": 0,
+      "started_at": "2026-07-30T03:26:05.338458Z",
+      "stderr_path": "case/.foampilot/logs/04-solve.stderr.log",
+      "stdout_path": "case/.foampilot/logs/04-solve.stdout.log",
+      "step_id": "solve",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "reconstructPar",
+        "-latestTime"
+      ],
+      "finished_at": "2026-07-30T03:26:14.730336Z",
+      "return_code": 0,
+      "started_at": "2026-07-30T03:26:14.516235Z",
+      "stderr_path": "case/.foampilot/logs/05-reconstruct.stderr.log",
+      "stdout_path": "case/.foampilot/logs/05-reconstruct.stdout.log",
+      "step_id": "reconstruct",
+      "timed_out": false
+    }
+  ],
+  "timed_out": false
+}

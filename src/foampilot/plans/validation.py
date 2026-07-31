@@ -12,6 +12,7 @@ from .models import ExecutionPlan, PlanIssue
 _SHELL_TOKENS = {"&&", "||", ";", "|", "<", ">"}
 _SHELL_MARKERS = ("$(", "`", "\n", "\r", "\0")
 _MPI_HOST_OPTIONS = {"--host", "--hostfile", "-host", "-hostfile"}
+_MPI_LAUNCHERS = {"mpirun", "mpiexec", "orterun"}
 
 
 def _issue(code: str, location: str, detail: str) -> PlanIssue:
@@ -131,6 +132,15 @@ def validate_execution_plan(
 
     for index, command in enumerate(plan.commands):
         location = f"commands[{index}]"
+        if command.executable in _MPI_LAUNCHERS:
+            issues.append(
+                _issue(
+                    "MPI_LAUNCHER_UNNORMALIZED",
+                    f"{location}.executable",
+                    "the Runner owns MPI launch; an ambiguous launcher "
+                    "command cannot execute",
+                )
+            )
         if command.executable not in available_executables:
             issues.append(
                 _issue(

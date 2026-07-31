@@ -9,7 +9,8 @@ import pytest
 from foampilot.agent import NativeAgent
 from foampilot.artifacts import ArtifactStore
 from foampilot.models import (
-    CodexOAuthModelClient,
+    CodexOAuthProviderClient,
+    ModelGateway,
     load_codex_access_token,
 )
 from foampilot.runtime import RuntimeConfig
@@ -24,7 +25,11 @@ TASKS = (
 )
 
 
-@pytest.mark.parametrize("task_path", TASKS)
+@pytest.mark.parametrize(
+    "task_path",
+    TASKS,
+    ids=("side-driven-box", "two-phase-column"),
+)
 def test_real_native_task_contracts_are_valid(task_path: Path) -> None:
     task = load_task_spec(task_path)
 
@@ -47,7 +52,11 @@ def test_two_phase_public_prompt_does_not_prescribe_application() -> None:
     os.environ.get("OFKIT_RUN_REAL_MODEL") != "1",
     reason="real model/OpenFOAM integration is opt-in",
 )
-@pytest.mark.parametrize("task_path", TASKS)
+@pytest.mark.parametrize(
+    "task_path",
+    TASKS,
+    ids=("side-driven-box", "two-phase-column"),
+)
 def test_real_model_authors_and_solves_native_case(
     tmp_path: Path,
     task_path: Path,
@@ -61,10 +70,11 @@ def test_real_model_authors_and_solves_native_case(
     model_name = os.environ.get("OFKIT_CODEX_MODEL", "gpt-5.6-sol")
     config = RuntimeConfig.local_foundation_v10()
     outcome = NativeAgent(
-        model=CodexOAuthModelClient(
-            model=model_name,
-            access_token=load_codex_access_token(auth_path),
-            timeout_seconds=600,
+        gateway=ModelGateway(
+            provider=CodexOAuthProviderClient(
+                model=model_name,
+                access_token=load_codex_access_token(auth_path),
+            ),
         ),
         runtime_config=config,
         artifact_store=ArtifactStore(tmp_path / "runs"),

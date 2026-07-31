@@ -1,0 +1,21 @@
+{
+  "solver_executable": "chtMultiRegionFoam",
+  "solver_family": "conjugate-heat-transfer",
+  "regime": "transient",
+  "physics_family": "conjugate_heat_transfer",
+  "mesh_family": "splitMeshRegions",
+  "dimensionality": "3d",
+  "regions": [
+    {"name": "fluid", "kind": "fluid", "path_prefix": "fluid"},
+    {"name": "solid", "kind": "solid", "path_prefix": "solid"}
+  ],
+  "fields": [
+    {"name": "U", "region": "fluid", "path": "0/fluid/U", "role": "velocity", "created_by": "initialize"},
+    {"name": "p", "region": "fluid", "path": "0/fluid/p", "role": "pressure", "created_by": "initialize"},
+    {"name": "p_rgh", "region": "fluid", "path": "0/fluid/p_rgh", "role": "reduced_pressure", "created_by": "initialize"},
+    {"name": "T", "region": "fluid", "path": "0/fluid/T", "role": "temperature", "created_by": "initialize"},
+    {"name": "T", "region": "solid", "path": "0/solid/T", "role": "temperature", "created_by": "initialize"}
+  ],
+  "patches": [],
+  "models": {"thermophysical": "fluid_solid_conjugate"}
+}

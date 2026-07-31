@@ -84,8 +84,14 @@ def _command(
     mpi_ranks: int = 1,
     timeout_seconds: int = 30,
 ) -> NativeCommand:
+    stages = {
+        "mesh": "mesh",
+        "check": "check",
+        "reconstruct": "reconstruct",
+    }
     return NativeCommand(
         step_id=step_id,
+        stage=stages.get(step_id, "solve"),
         executable=executable or step_id,
         args=args or [],
         mpi_ranks=mpi_ranks,

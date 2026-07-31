@@ -1,0 +1,12 @@
+{
+  "advisories": [],
+  "issues": [],
+  "observed_patches": [
+    "fluid_to_solid",
+    "frontAndBack",
+    "inlet",
+    "outlet",
+    "solid_to_fluid",
+    "topAndBottom"
+  ]
+}

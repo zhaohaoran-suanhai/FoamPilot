@@ -21,12 +21,14 @@ The canonical workflow is:
 
 ```text
 public TaskSpec
--> dynamic public knowledge and Skills
--> one complete model-authored case bundle
--> typed command and resource checks
+-> evidence-based CapabilityProfile
+-> slot-bounded public knowledge and routed Skills
+-> one complete model-authored ExecutionPlan v3
+-> safe MPI normalization, typed policy, and semantic inspection
 -> networkless native OpenFOAM execution
 -> evaluator-owned checks
 -> at most one evidence-scoped repair
+-> strict child continuation after retryable provider interruption
 -> immutable artifacts and SHA256 manifest
 ```
 
@@ -89,6 +91,16 @@ Verify a frozen result:
 foampilot report /tmp/foampilot-runs/RUN_DIR --json
 ```
 
+Resume a retryable generation or repair interruption without mutating the
+parent:
+
+```bash
+foampilot resume /tmp/foampilot-runs/PARENT_RUN \
+  --run-root /tmp/foampilot-runs \
+  --model-name gpt-5.6-sol \
+  --json
+```
+
 The default authentication path is `~/.codex/auth.json`. A task may allow
 serial or bounded MPI execution. The model declares `mpi_ranks`; the Runner,
 not the model, owns the MPI launcher.
@@ -110,6 +122,12 @@ foampilot skill validate \
 The package contains one general native authoring Skill plus benchmark,
 buoyant-flow, and `rhoCentralFoam` solver-family Skills. These are public
 guidance, not deterministic case templates.
+
+Routing confidence is system-owned. An explicit installed solver may route
+with high confidence; one compatible public solver-family candidate may route
+with medium confidence; an ambiguous or physically incomplete request stops
+before case generation. The model may suggest a route candidate but cannot
+assign its confidence.
 
 ## Controlled qualification
 
@@ -188,6 +206,8 @@ generalized principles, and leakage family instead of copying the case.
 
 FoamPilot reports:
 
+- `REQUEST_INCOMPLETE`;
+- `ROUTING_UNRESOLVED`;
 - `BLOCKED_ENVIRONMENT`;
 - `CASE_GENERATION_FAILED`;
 - `PLAN_INVALID`;
@@ -195,6 +215,11 @@ FoamPilot reports:
 - `SOLVER_FAILED`;
 - `PUBLIC_VALIDATION_FAILED`;
 - `PUBLIC_VALIDATION_PASS`.
+
+RunSummary v2 also reports workflow state (`COMPLETED`, `FAILED`, or
+`DEFERRED`), an optional native status, a primary failure, and a terminal
+blocker. A repair-time provider outage can therefore preserve
+`SOLVER_FAILED` while independently reporting a retryable provider blocker.
 
 `PUBLIC_VALIDATION_PASS` covers the checks declared by the public task. A
 separate qualification layer may still reject a completed solve against
@@ -212,12 +237,15 @@ from deterministic unit tests.
 
 ## Documentation
 
+- [架构、运行流程与功能边界](docs/system-overview.md)
 - [Architecture](docs/architecture.md)
-- [Independent quickstart](docs/independent-agent-quickstart.md)
+- [快速开始](docs/independent-agent-quickstart.md)
 - [Agent integration](docs/agent-integration.md)
 - [Knowledge governance](docs/knowledge-governance.md)
-- [Qualification](docs/qualification.md)
+- [受控评测](docs/qualification.md)
 - [Controlled-learning 15-case report](docs/reports/2026-07-30-controlled-learning-15.md)
+- [Stage A provider/workflow acceptance](docs/reports/2026-07-31-stage-a-acceptance.md)
+- [Stage B routing/semantic acceptance](docs/reports/2026-07-31-stage-b-acceptance.md)
 - [Delivery readiness report](docs/reports/2026-07-30-delivery-readiness.md)
 - [Standalone real-case gate](docs/reports/2026-07-29-standalone-real-gate.md)
 - [License](LICENSE)

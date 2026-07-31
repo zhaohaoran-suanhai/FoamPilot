@@ -1,0 +1,24 @@
+{
+  "attempts": [
+    {
+      "attempt": 1,
+      "changed_files": [
+        "system/fvSchemes"
+      ],
+      "failed_step_id": "solve",
+      "failure_fingerprint": "cc19785088866257e91263048c7d29a86a994c2da91022785385a0979560f383",
+      "status": "SOLVER_FAILED"
+    },
+    {
+      "attempt": 2,
+      "changed_files": [],
+      "failed_step_id": null,
+      "failure_fingerprint": null,
+      "status": "PUBLIC_VALIDATION_PASS"
+    }
+  ],
+  "message": "All evaluator-owned public checks pass.",
+  "schema_version": 1,
+  "status": "PUBLIC_VALIDATION_PASS",
+  "task_id": "rans-pitzdaily"
+}

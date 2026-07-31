@@ -1,0 +1,200 @@
+
+Solving for solid region solid
+DICPCG:  Solving for e, Initial residual = 0.0017321055, Final residual = 2.7550922e-05, No Iterations 2
+DICPCG:  Solving for e, Initial residual = 0.0014750345, Final residual = 8.5827512e-11, No Iterations 9
+Min/max T:363.63085 365.26661
+
+Solving for fluid region fluid
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+smoothSolver:  Solving for Ux, Initial residual = 0.0012670954, Final residual = 1.7337055e-10, No Iterations 2
+smoothSolver:  Solving for Uy, Initial residual = 0.0027791741, Final residual = 3.1415463e-10, No Iterations 2
+smoothSolver:  Solving for e, Initial residual = 0.00040099835, Final residual = 1.0237414e-10, No Iterations 2
+Min/max T:297 365.04927
+GAMG:  Solving for p_rgh, Initial residual = 0.013002006, Final residual = 0.00052290089, No Iterations 2
+GAMG:  Solving for p_rgh, Initial residual = 0.0057448797, Final residual = 0.00014670294, No Iterations 2
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+time step continuity errors : sum local = 4.3421124e-09, global = 7.112414e-11, cumulative = 7.112414e-11
+GAMG:  Solving for p_rgh, Initial residual = 0.0043338861, Final residual = 7.3743799e-05, No Iterations 2
+GAMG:  Solving for p_rgh, Initial residual = 0.0037804058, Final residual = 3.9651237e-09, No Iterations 11
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+time step continuity errors : sum local = 1.1738001e-13, global = 6.8708262e-15, cumulative = 7.1131011e-11
+smoothSolver:  Solving for omega, Initial residual = 9.9664666e-05, Final residual = 3.7171412e-11, No Iterations 2
+smoothSolver:  Solving for k, Initial residual = 0.0012300657, Final residual = 1.0706179e-10, No Iterations 2
+ExecutionTime = 121.1342 s  ClockTime = 121 s
+
+Region: fluid Courant Number mean: 0.027115837 max: 0.18867893
+Region: solid Diffusion Number mean: 1.4393358 max: 19.965551
+deltaT = 0.00076923077
+Time = 19.996154s
+
+
+Solving for solid region solid
+DICPCG:  Solving for e, Initial residual = 0.0017315643, Final residual = 2.7616526e-05, No Iterations 2
+DICPCG:  Solving for e, Initial residual = 0.0014748065, Final residual = 8.6836361e-11, No Iterations 9
+Min/max T:363.63101 365.26676
+
+Solving for fluid region fluid
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+smoothSolver:  Solving for Ux, Initial residual = 0.0012632162, Final residual = 1.7272169e-10, No Iterations 2
+smoothSolver:  Solving for Uy, Initial residual = 0.0027784225, Final residual = 3.1532562e-10, No Iterations 2
+smoothSolver:  Solving for e, Initial residual = 0.00040128504, Final residual = 1.0208386e-10, No Iterations 2
+Min/max T:297 365.04944
+GAMG:  Solving for p_rgh, Initial residual = 0.0098564609, Final residual = 0.00024119971, No Iterations 2
+GAMG:  Solving for p_rgh, Initial residual = 0.0047775264, Final residual = 8.5027804e-05, No Iterations 2
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+time step continuity errors : sum local = 2.5177014e-09, global = -2.3929713e-11, cumulative = -2.3929713e-11
+GAMG:  Solving for p_rgh, Initial residual = 0.0038611393, Final residual = 5.9615206e-05, No Iterations 2
+GAMG:  Solving for p_rgh, Initial residual = 0.003507496, Final residual = 8.5564326e-09, No Iterations 10
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+time step continuity errors : sum local = 2.5339083e-13, global = 3.0441656e-14, cumulative = -2.3899271e-11
+smoothSolver:  Solving for omega, Initial residual = 9.9748061e-05, Final residual = 3.7263066e-11, No Iterations 2
+smoothSolver:  Solving for k, Initial residual = 0.0012290949, Final residual = 1.0702327e-10, No Iterations 2
+ExecutionTime = 121.1392 s  ClockTime = 121 s
+
+Region: fluid Courant Number mean: 0.02711607 max: 0.18870178
+Region: solid Diffusion Number mean: 1.4393358 max: 19.965551
+deltaT = 0.00076923077
+Time = 19.996923s
+
+
+Solving for solid region solid
+DICPCG:  Solving for e, Initial residual = 0.0017325608, Final residual = 2.7576856e-05, No Iterations 2
+DICPCG:  Solving for e, Initial residual = 0.0014751777, Final residual = 8.5873193e-11, No Iterations 9
+Min/max T:363.63117 365.26692
+
+Solving for fluid region fluid
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+smoothSolver:  Solving for Ux, Initial residual = 0.0012609797, Final residual = 1.7204033e-10, No Iterations 2
+smoothSolver:  Solving for Uy, Initial residual = 0.0027787305, Final residual = 3.1520924e-10, No Iterations 2
+smoothSolver:  Solving for e, Initial residual = 0.0004015777, Final residual = 1.0181288e-10, No Iterations 2
+Min/max T:297 365.04962
+GAMG:  Solving for p_rgh, Initial residual = 0.012693398, Final residual = 0.00037575386, No Iterations 2
+GAMG:  Solving for p_rgh, Initial residual = 0.0058362867, Final residual = 0.00012737381, No Iterations 2
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+time step continuity errors : sum local = 3.7690282e-09, global = -9.2257218e-11, cumulative = -9.2257218e-11
+GAMG:  Solving for p_rgh, Initial residual = 0.0042708491, Final residual = 7.6008598e-05, No Iterations 2
+GAMG:  Solving for p_rgh, Initial residual = 0.0037996486, Final residual = 9.292134e-09, No Iterations 10
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+time step continuity errors : sum local = 2.7485427e-13, global = 1.0555345e-14, cumulative = -9.2246662e-11
+smoothSolver:  Solving for omega, Initial residual = 9.984891e-05, Final residual = 3.7362187e-11, No Iterations 2
+smoothSolver:  Solving for k, Initial residual = 0.0012279697, Final residual = 1.0694451e-10, No Iterations 2
+ExecutionTime = 121.1432 s  ClockTime = 121 s
+
+Region: fluid Courant Number mean: 0.027116215 max: 0.18872383
+Region: solid Diffusion Number mean: 1.4393358 max: 19.965551
+deltaT = 0.00076923077
+Time = 19.997692s
+
+
+Solving for solid region solid
+DICPCG:  Solving for e, Initial residual = 0.0017319965, Final residual = 2.7641099e-05, No Iterations 2
+DICPCG:  Solving for e, Initial residual = 0.0014749379, Final residual = 8.6877423e-11, No Iterations 9
+Min/max T:363.63133 365.26708
+
+Solving for fluid region fluid
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+smoothSolver:  Solving for Ux, Initial residual = 0.0012646595, Final residual = 1.709201e-10, No Iterations 2
+smoothSolver:  Solving for Uy, Initial residual = 0.002780454, Final residual = 3.1289385e-10, No Iterations 2
+smoothSolver:  Solving for e, Initial residual = 0.00040190185, Final residual = 1.0155837e-10, No Iterations 2
+Min/max T:297 365.0498
+GAMG:  Solving for p_rgh, Initial residual = 0.0087058901, Final residual = 0.00024031355, No Iterations 2
+GAMG:  Solving for p_rgh, Initial residual = 0.0049159539, Final residual = 9.4481755e-05, No Iterations 2
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+time step continuity errors : sum local = 2.7935819e-09, global = -8.6356738e-11, cumulative = -8.6356738e-11
+GAMG:  Solving for p_rgh, Initial residual = 0.0037281646, Final residual = 5.8612803e-05, No Iterations 2
+GAMG:  Solving for p_rgh, Initial residual = 0.0034159728, Final residual = 9.070572e-09, No Iterations 11
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+time step continuity errors : sum local = 2.6817349e-13, global = 1.9403162e-14, cumulative = -8.6337335e-11
+smoothSolver:  Solving for omega, Initial residual = 9.994144e-05, Final residual = 3.7497004e-11, No Iterations 2
+smoothSolver:  Solving for k, Initial residual = 0.0012268259, Final residual = 1.0670902e-10, No Iterations 2
+ExecutionTime = 121.1482 s  ClockTime = 121 s
+
+Region: fluid Courant Number mean: 0.027116189 max: 0.18874581
+Region: solid Diffusion Number mean: 1.4393358 max: 19.965551
+deltaT = 0.00076923077
+Time = 19.998462s
+
+
+Solving for solid region solid
+DICPCG:  Solving for e, Initial residual = 0.0017330002, Final residual = 2.7603116e-05, No Iterations 2
+DICPCG:  Solving for e, Initial residual = 0.0014753041, Final residual = 8.5921159e-11, No Iterations 9
+Min/max T:363.63149 365.26724
+
+Solving for fluid region fluid
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+smoothSolver:  Solving for Ux, Initial residual = 0.0012645366, Final residual = 1.7038763e-10, No Iterations 2
+smoothSolver:  Solving for Uy, Initial residual = 0.0027819366, Final residual = 3.132286e-10, No Iterations 2
+smoothSolver:  Solving for e, Initial residual = 0.00040219564, Final residual = 1.0132628e-10, No Iterations 2
+Min/max T:297 365.04997
+GAMG:  Solving for p_rgh, Initial residual = 0.0081106783, Final residual = 0.00020815164, No Iterations 2
+GAMG:  Solving for p_rgh, Initial residual = 0.0046198526, Final residual = 8.9023279e-05, No Iterations 2
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+time step continuity errors : sum local = 2.6331101e-09, global = -1.0012441e-10, cumulative = -1.0012441e-10
+GAMG:  Solving for p_rgh, Initial residual = 0.003594831, Final residual = 5.5463783e-05, No Iterations 2
+GAMG:  Solving for p_rgh, Initial residual = 0.003270128, Final residual = 4.8688382e-09, No Iterations 10
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+time step continuity errors : sum local = 1.4399088e-13, global = -1.7256871e-15, cumulative = -1.0012613e-10
+smoothSolver:  Solving for omega, Initial residual = 0.00010004642, Final residual = 3.7643181e-11, No Iterations 2
+smoothSolver:  Solving for k, Initial residual = 0.0012259799, Final residual = 1.0641544e-10, No Iterations 2
+ExecutionTime = 121.15319 s  ClockTime = 121 s
+
+Region: fluid Courant Number mean: 0.02711605 max: 0.1887675
+Region: solid Diffusion Number mean: 1.4393358 max: 19.965551
+deltaT = 0.00076923077
+Time = 19.999231s
+
+
+Solving for solid region solid
+DICPCG:  Solving for e, Initial residual = 0.001732426, Final residual = 2.7665893e-05, No Iterations 2
+DICPCG:  Solving for e, Initial residual = 0.0014750528, Final residual = 8.692035e-11, No Iterations 9
+Min/max T:363.63165 365.2674
+
+Solving for fluid region fluid
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+smoothSolver:  Solving for Ux, Initial residual = 0.0012643641, Final residual = 1.6965858e-10, No Iterations 2
+smoothSolver:  Solving for Uy, Initial residual = 0.0027825089, Final residual = 3.1286957e-10, No Iterations 2
+smoothSolver:  Solving for e, Initial residual = 0.00040245603, Final residual = 1.0110109e-10, No Iterations 2
+Min/max T:297 365.05015
+GAMG:  Solving for p_rgh, Initial residual = 0.0084159053, Final residual = 0.00021471489, No Iterations 2
+GAMG:  Solving for p_rgh, Initial residual = 0.004676708, Final residual = 8.8980057e-05, No Iterations 2
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+time step continuity errors : sum local = 2.6343072e-09, global = -1.1231128e-10, cumulative = -1.1231128e-10
+GAMG:  Solving for p_rgh, Initial residual = 0.003592013, Final residual = 5.7325507e-05, No Iterations 2
+GAMG:  Solving for p_rgh, Initial residual = 0.0032682362, Final residual = 4.4931343e-09, No Iterations 10
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+time step continuity errors : sum local = 1.3299391e-13, global = -2.9905233e-15, cumulative = -1.1231427e-10
+smoothSolver:  Solving for omega, Initial residual = 0.00010019017, Final residual = 3.7794811e-11, No Iterations 2
+smoothSolver:  Solving for k, Initial residual = 0.0012251745, Final residual = 1.0610496e-10, No Iterations 2
+ExecutionTime = 121.1572 s  ClockTime = 121 s
+
+Region: fluid Courant Number mean: 0.027115913 max: 0.18878886
+Region: solid Diffusion Number mean: 1.4393358 max: 19.965551
+deltaT = 0.00076923077
+Time = 20s
+
+
+Solving for solid region solid
+DICPCG:  Solving for e, Initial residual = 0.0017334244, Final residual = 2.762976e-05, No Iterations 2
+DICPCG:  Solving for e, Initial residual = 0.0014754159, Final residual = 8.5973391e-11, No Iterations 9
+Min/max T:363.63181 365.26756
+
+Solving for fluid region fluid
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+smoothSolver:  Solving for Ux, Initial residual = 0.0012640397, Final residual = 1.6912507e-10, No Iterations 2
+smoothSolver:  Solving for Uy, Initial residual = 0.0027827893, Final residual = 3.1240646e-10, No Iterations 2
+smoothSolver:  Solving for e, Initial residual = 0.00040276936, Final residual = 1.0091052e-10, No Iterations 2
+Min/max T:297 365.05033
+GAMG:  Solving for p_rgh, Initial residual = 0.0097471749, Final residual = 0.00024598243, No Iterations 2
+GAMG:  Solving for p_rgh, Initial residual = 0.0049070991, Final residual = 9.2976189e-05, No Iterations 2
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+time step continuity errors : sum local = 2.7563612e-09, global = -8.1286753e-11, cumulative = -8.1286753e-11
+GAMG:  Solving for p_rgh, Initial residual = 0.0036415303, Final residual = 5.99249e-05, No Iterations 2
+GAMG:  Solving for p_rgh, Initial residual = 0.0033024498, Final residual = 6.2126118e-09, No Iterations 11
+diagonal:  Solving for rho, Initial residual = 0, Final residual = 0, No Iterations 0
+time step continuity errors : sum local = 1.8418089e-13, global = 2.0035393e-14, cumulative = -8.1266718e-11
+smoothSolver:  Solving for omega, Initial residual = 0.00010034317, Final residual = 3.7951398e-11, No Iterations 2
+smoothSolver:  Solving for k, Initial residual = 0.0012240404, Final residual = 1.0582701e-10, No Iterations 2
+ExecutionTime = 121.1662 s  ClockTime = 121 s
+
+End
+

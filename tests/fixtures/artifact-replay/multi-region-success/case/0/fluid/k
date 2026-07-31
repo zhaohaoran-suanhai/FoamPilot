@@ -1,0 +1,35 @@
+FoamFile
+{
+    format      ascii;
+    class       volScalarField;
+    object      k;
+}
+
+dimensions      [0 2 -2 0 0 0 0];
+internalField   uniform 1e-4;
+
+boundaryField
+{
+    inlet
+    {
+        type            fixedValue;
+        value           uniform 1e-4;
+    }
+    outlet
+    {
+        type            zeroGradient;
+    }
+    topAndBottom
+    {
+        type            zeroGradient;
+    }
+    frontAndBack
+    {
+        type            empty;
+    }
+    fluid_to_solid
+    {
+        type            kqRWallFunction;
+        value           uniform 1e-10;
+    }
+}

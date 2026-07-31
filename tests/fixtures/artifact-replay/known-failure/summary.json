@@ -1,0 +1,24 @@
+{
+  "attempts": [
+    {
+      "attempt": 1,
+      "changed_files": [
+        "system/fvSolution"
+      ],
+      "failed_step_id": "solve",
+      "failure_fingerprint": "4ddc03840bab56cbc7cd75680edabbe3f65f5de9e45024df44ac8d7e125154f3",
+      "status": "SOLVER_FAILED"
+    },
+    {
+      "attempt": 2,
+      "changed_files": [],
+      "failed_step_id": null,
+      "failure_fingerprint": "eba5c3436d6186dd436c7ab93d23aca03f654dfe8aa3567813c8023addd31c1d",
+      "status": "PUBLIC_VALIDATION_FAILED"
+    }
+  ],
+  "message": "Repair stopped: BUDGET_EXHAUSTED.",
+  "schema_version": 1,
+  "status": "PUBLIC_VALIDATION_FAILED",
+  "task_id": "multiphase-dam-break"
+}

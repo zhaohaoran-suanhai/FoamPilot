@@ -10,14 +10,16 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from foampilot.models import (
-    ModelClient,
+    ModelBudgetWindow,
+    ModelGateway,
     ModelRequest,
-    generate_with_retry,
+    ModelTraceSink,
 )
 from foampilot.plans import (
     ExecutionPlan,
     GeneratedFile,
     NativeCommand,
+    normalize_execution_plan,
     validate_execution_plan,
 )
 from foampilot.tasks import TaskSpec
@@ -198,8 +200,13 @@ def validate_repair_decision(
             "commands": revised_commands,
         }
     )
-    plan_issues = validate_execution_plan(
+    normalized = normalize_execution_plan(
         revised,
+        task,
+        available_executables,
+    )
+    plan_issues = validate_execution_plan(
+        normalized.plan,
         task,
         available_executables,
     )
@@ -224,7 +231,9 @@ def request_repair(
     current_files: dict[str, str],
     knowledge_text: str,
     skills_text: str,
-    client: ModelClient,
+    gateway: ModelGateway,
+    budget: ModelBudgetWindow,
+    trace: ModelTraceSink,
 ) -> RepairDecision:
     payload: dict[str, Any] = {
         "task": task.agent_payload(),
@@ -250,8 +259,7 @@ def request_repair(
         protected in user_prompt for protected in task.protected_paths
     ):
         raise ValueError("repair prompt contains a protected path")
-    return generate_with_retry(
-        client,
+    return gateway.generate_structured(
         ModelRequest(
             purpose="repair-openfoam-attempt",
             system_prompt=(
@@ -262,4 +270,6 @@ def request_repair(
             user_prompt=user_prompt,
         ),
         RepairDecision,
-    )
+        budget=budget,
+        trace=trace,
+    ).value

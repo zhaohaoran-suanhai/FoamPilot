@@ -1,0 +1,560 @@
+schema_version: 1
+fixtures:
+- fixture_id: buoyant-success
+  kind: buoyant_success
+  source_manifest_sha256: 4d453c2c09079a4ccd62936b76cc0b0b20b1da531a665b3ca2cd960b4eaaaf00
+  expected:
+    artifact_valid: true
+    native_status: PUBLIC_VALIDATION_PASS
+  files:
+  - path: case-manifest-overlay.json
+    bytes: 1281
+    sha256: 92f8ac09a05c73296f8e5645dff5c8c9fe97bae0d091f55e0c9264968a75c32d
+  - path: case/.foampilot/logs/01-mesh.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/01-mesh.stdout.log
+    bytes: 2074
+    sha256: 95f169774ac564d87c5785707c36c7b39b519f635e165516983d7b2cdf235579
+  - path: case/.foampilot/logs/02-mesh_check.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/02-mesh_check.stdout.log
+    bytes: 3646
+    sha256: 3e5db54f7225beab89afd29a56d7297ef74a0cbdbb990f2a73c2ad24fafd4ab4
+  - path: case/.foampilot/logs/03-decompose.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/03-decompose.stdout.log
+    bytes: 6168
+    sha256: b61b1725641d0dc1aae90b637a318be626e04a3312b48ee2f74a293de41e7596
+  - path: case/.foampilot/logs/04-solve.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/04-solve.stdout.log
+    bytes: 16307
+    sha256: 52015aac8bcd9f1b231bd22c84ca1422614cd3fe74f885293d12af0f6dfe7d5b
+  - path: case/.foampilot/logs/05-reconstruct.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/05-reconstruct.stdout.log
+    bytes: 1305
+    sha256: c43756f5dffdc463b29cb0acc6f6a654f532ca8a5d025d0010c525f0e887fceb
+  - path: case/0/T
+    bytes: 500
+    sha256: 3ac86d7fc1b14160fb304caa7482d59c2537891a6641a6914c38d374c5aafa0e
+  - path: case/0/U
+    bytes: 405
+    sha256: dc1a7fc7d4449669a4d0fc0694298b7e818b41c515409eb41c9fba35ac229ca1
+  - path: case/0/alphat
+    bytes: 769
+    sha256: fb85d9a4685234ef0b8503be0ccad9e5568525ea1143a297be97f60ca341502e
+  - path: case/0/k
+    bytes: 605
+    sha256: 79763c6a5328c76838f1aee0ee3c651da92d5fa8fc640c8d09abc5f385f96bc2
+  - path: case/0/nut
+    bytes: 581
+    sha256: 8bedc9a547b77fa89cfc22230ab46e6133718fcab0ce51275b45dd25750b1d56
+  - path: case/0/omega
+    bytes: 602
+    sha256: 5845da6f627449522e5b8a93b61e1ca949c93c8f38421898f2af9c8626f9e7ea
+  - path: case/0/p
+    bytes: 581
+    sha256: 8f60066ccaa95b34b9c592fb9dd9e3f96cad5a2c0c7d4b4db4a8bedc462d4c85
+  - path: case/0/p_rgh
+    bytes: 588
+    sha256: ba853a395d093d89a5f5b340b0eb643a27eae66a5e01cbc04e145fa381a5df17
+  - path: case/constant/g
+    bytes: 166
+    sha256: 695a532df3a49d794458abc13ba42d5e634961e37aa287736afbdb07733852c9
+  - path: case/constant/momentumTransport
+    bytes: 209
+    sha256: 0702f168f27f10d239c630233031284a7f52d46d4b218b28df8053f664e9f9e8
+  - path: case/constant/physicalProperties
+    bytes: 585
+    sha256: 83b032357a46cc4314c8e5a37a55b370fa094430c3b03807920bbe5cf2cd6119
+  - path: case/constant/thermophysicalTransport
+    bytes: 199
+    sha256: 173cff90c4fab9134befff4e87bcd74fc386bedb9390f1d683b5058318431b5e
+  - path: case/system/blockMeshDict
+    bytes: 906
+    sha256: c65a4326f866180457272df493635bbb75288b7242d0677345bba1f110db6d09
+  - path: case/system/controlDict
+    bytes: 453
+    sha256: 7822ae6b4a801c5ca8d7de86d1afd73a5918aa47c40a6e20257421c9e90af334
+  - path: case/system/decomposeParDict
+    bytes: 246
+    sha256: a33a76326781dacf3913cac9afe7d5c0617299d1e57e7424b34f0fccde70aa5f
+  - path: case/system/fvSchemes
+    bytes: 1127
+    sha256: 1b26295848c36bc80b660ee78c57c6cbe9c2e9fe06c7bc18a23cb24dc5913a69
+  - path: case/system/fvSolution
+    bytes: 2334
+    sha256: cd57ad83712d788c502d981eff31e40d29d121a26185dc713c8cf5370bcc7966
+  - path: execution-plan.json
+    bytes: 13555
+    sha256: c63d8688044b539d41ecea0975b16887e76fb574368fc9b7d2c3cc44812685fd
+  - path: public-validation.json
+    bytes: 2347
+    sha256: 91b06f52465374fd0c8a76f3edc1742e4b7e12100177e3a7d7753f2d6cbc560c
+  - path: run-result.json
+    bytes: 2143
+    sha256: d61e44a269bed5be504d29517cb4c4353265dd33a0e7ee7b7b4b930cdc816c72
+  - path: static-inspection.json
+    bytes: 130
+    sha256: 8b0ae87dd4d54977cbcc99637d03b1a163f24d6bf6bea14918335f20cebc0f38
+  - path: summary.json
+    bytes: 584
+    sha256: 7261b64e1ec6314e4d74d8c28269a47ed38132d4872be882b1a7f88d5e93e952
+- fixture_id: include-success
+  kind: include_success
+  source_manifest_sha256: 0e809889a2fdaf12d7717f54050286b4c9d9bc1f1eec5551ea8273689a49fa1c
+  expected:
+    artifact_valid: true
+    native_status: PUBLIC_VALIDATION_PASS
+  files:
+  - path: case-manifest-overlay.json
+    bytes: 555
+    sha256: e986f6ab8f6cac392acec6cca91ec0ab9a35e5c43317641e333ec493070eef47
+  - path: case/.foampilot/logs/solve.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/solve.stdout.log
+    bytes: 13
+    sha256: 947b805f72cb26ae2c900bf13678aca5a52841272b6526035145bfea03fba568
+  - path: case/0/U
+    bytes: 400
+    sha256: b89ab121f54efc01b6f5be0db4b94fd87b8690b8d7c67bd43e5827d8d3a463e4
+  - path: case/0/p
+    bytes: 361
+    sha256: 908bdba9627ca33a3c2a72fd9c1495ef5cff60ce5a7eb7adf340a9367079e595
+  - path: case/constant/physicalProperties
+    bytes: 167
+    sha256: f0c0a6a245a40de33fb1e20f1fec9a2c76035cb826080050d710b6f6a09f390a
+  - path: case/system/blockMeshDict
+    bytes: 792
+    sha256: 86d7fbc7075495ab78864fb23aa629dc413a45d06ddbacd10bb6eb6967fc0807
+  - path: case/system/controlDict
+    bytes: 443
+    sha256: 64029ad61abc31a6b2b43287793a6e1d4b6d91ab867102cf83cc338998a7d38c
+  - path: case/system/fvSchemes
+    bytes: 433
+    sha256: 954c448bf5489ce58b60c3c4c4ba651621c727e6de1db092636f28abe4af8136
+  - path: case/system/fvSolution
+    bytes: 639
+    sha256: db184d2b5e130f13ddb35f7fb28550dd319e01cb8bdc1cff176fcf3a3c4ad3ad
+  - path: case/system/timeControls.inc
+    bytes: 14
+    sha256: fe58438a1a7727acef1a001e182a85638c1d64cbacbd2c7956de3dae7b0f236f
+  - path: execution-plan.json
+    bytes: 4364
+    sha256: 5e92f5b361fe325269a86e98363c6089f42a85055f68e5874daffc8d78710986
+  - path: public-validation.json
+    bytes: 381
+    sha256: 2a1f6701b307d1f8946442a5c5947a48cc22bcb8c65f6c4505003a568cadc4bc
+  - path: run-result.json
+    bytes: 451
+    sha256: 36af624cd753efc27bdcfc7ef8b3c459c5c7af74a3170708bda154fb5709684a
+  - path: static-inspection.json
+    bytes: 65
+    sha256: e7c9289ffff1a50172bae8db3a44f7edec7ca6dfdeba170a49df9893c2e82d27
+  - path: summary.json
+    bytes: 626
+    sha256: e48abb9e139544d3ec12b62617053754dcde5b3f2d8b3ec42589d4c729f68d2b
+- fixture_id: known-failure
+  kind: known_failure
+  source_manifest_sha256: 9eee26a7dfef2357d630527eadbf7f0da6080c377f9e35a52a758b695c75ffa7
+  expected:
+    artifact_valid: true
+    native_status: PUBLIC_VALIDATION_FAILED
+  files:
+  - path: case-manifest-overlay.json
+    bytes: 726
+    sha256: a134eca3401a7157429e93dda256585db68d1f50f1d73644e91adc68a7e0127e
+  - path: case/.foampilot/logs/01-mesh.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/01-mesh.stdout.log
+    bytes: 2602
+    sha256: 89ec5ee80edff4fa4f8002710170106df374ada55adb467bc25561b600e87982
+  - path: case/.foampilot/logs/02-mesh-check.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/02-mesh-check.stdout.log
+    bytes: 4199
+    sha256: 570d22a96498648b7e614f4fc03396ebef8948990f461333e48f23bf1ee1aa11
+  - path: case/.foampilot/logs/03-initialize-water.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/03-initialize-water.stdout.log
+    bytes: 1212
+    sha256: 88236d058b67ca8066ecb1791ecbaf4d7f65ae0e59dc568420b1a7046d6d44ce
+  - path: case/.foampilot/logs/04-solve.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/04-solve.stdout.log
+    bytes: 12517
+    sha256: b5ef81a6d623759583b9ad9c6a9aebb96a450970bee2fc834d698742d3f409d6
+  - path: case/0/U
+    bytes: 572
+    sha256: 0af5171d8d851bb26a351f2deadfd8446721c60b1c0772d3ec824568df63a319
+  - path: case/0/alpha.water
+    bytes: 5743
+    sha256: ba9b54c9b71970b21ab498d399019ec09fc3fa3d8d42fcabb22ec4c62c9d2f87
+  - path: case/0/p_rgh
+    bytes: 774
+    sha256: 41ffd7659debd09bd0b27ade1f9135e88b756c35088598107ef18d418456174b
+  - path: case/constant/g
+    bytes: 166
+    sha256: 695a532df3a49d794458abc13ba42d5e634961e37aa287736afbdb07733852c9
+  - path: case/constant/momentumTransport
+    bytes: 125
+    sha256: 4a9c760a66408a6f2f8c4995994a14630b864a33f9d94bc4968f4cdda5b9dbd4
+  - path: case/constant/phaseProperties
+    bytes: 209
+    sha256: b8bee5aa5fa6ce110ef24e11f20fef468e4770496dab1138c32ff491f48bbe84
+  - path: case/constant/physicalProperties.air
+    bytes: 210
+    sha256: 11b283912d6b926910a02d9017fccb8b805c0ea8128bcb2ed99aa4735c026b3a
+  - path: case/constant/physicalProperties.water
+    bytes: 212
+    sha256: ced7f9b957eb43c451274d6436f384ace14a1e6141b99daa50eabc0a2bf8155f
+  - path: case/system/blockMeshDict
+    bytes: 2298
+    sha256: 3b4e8ac6290d81837b99c50ddc703265c46924df963eb6937c0587c346a07975
+  - path: case/system/controlDict
+    bytes: 1781
+    sha256: 13ade8027272a9eb3a908a443fbdab4b18de874fdd5283fcf65d08217af19f9c
+  - path: case/system/fvSchemes
+    bytes: 746
+    sha256: cf5d89d0035660e7a00b7eddf036d89fe1ab8296deee3d2b7ac4482ee26fb5e5
+  - path: case/system/fvSolution
+    bytes: 1323
+    sha256: 4a75bfef335a749b3ee641687eccf4e18a7bc19394f4f164d2272a565154db23
+  - path: case/system/setFieldsDict
+    bytes: 325
+    sha256: 0ab9711d25cd68c889b1a7dbfba3fa33296ca828feedaa61094e1fdbf9ff8ff0
+  - path: execution-plan.json
+    bytes: 11498
+    sha256: ecb3c38931ae1b0067b9403ae735cb2a6ad54fb2ef9b3009ee139f9fe25fd331
+  - path: public-validation.json
+    bytes: 2621
+    sha256: acd62ec769f9cbb8bbdf2d95c3a66198fd20491648acb69d33e60451ace00a48
+  - path: run-result.json
+    bytes: 1659
+    sha256: 024cbf6726721138f8905abb7de9f7774fa09b7d39368ea151e709d5b76012d2
+  - path: static-inspection.json
+    bytes: 132
+    sha256: cb582d798a0aa68a0588bd76b41cc44341a205de46ab43335d08afc8d8690b80
+  - path: summary.json
+    bytes: 660
+    sha256: 878327effcc562d6b78ba8d54fe37b0806a96c6b342e7965f8d02f697b7f66ad
+- fixture_id: mpi-success
+  kind: mpi_success
+  source_manifest_sha256: aad7a3d01da1f7b88b4058912da2ac78a5b9a3abbe46439e29ef332cb9deda2b
+  expected:
+    artifact_valid: true
+    native_status: PUBLIC_VALIDATION_PASS
+  files:
+  - path: case-manifest-overlay.json
+    bytes: 804
+    sha256: 6f0881df7025f2a92b51d435a816ef0169273c29961e0d57bae751b56ebcb229
+  - path: case/.foampilot/logs/01-build_mesh.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/01-build_mesh.stdout.log
+    bytes: 2947
+    sha256: 7b84f85a720da6839356bf8183811cb7e44a86fa4582038ab57ff6a3adee22bd
+  - path: case/.foampilot/logs/02-check_mesh.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/02-check_mesh.stdout.log
+    bytes: 4169
+    sha256: 744c8934df656ca46156380c7ad9d5c5e855dd3649e29991c133c0f1ea0ba15d
+  - path: case/.foampilot/logs/03-decompose.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/03-decompose.stdout.log
+    bytes: 2473
+    sha256: c1cc5f4fe938bc4fee52988fb51a552c9877ab0b607c84e507c73895cee14791
+  - path: case/.foampilot/logs/04-solve.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/04-solve.stdout.log
+    bytes: 14343
+    sha256: face607cd8cfa988bd2ba648b0acc1482a1e5a26f820dc87ae42320b1b3adb9d
+  - path: case/.foampilot/logs/05-reconstruct.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/05-reconstruct.stdout.log
+    bytes: 1268
+    sha256: 323b9823e50dd66fadbd62e8bb679a55f2638b8fdb7d5e7a0f2b9d9b92c46b4b
+  - path: case/0/U
+    bytes: 515
+    sha256: 9a08e9be734364a127c8fe214190319929bbce7e120e1abdad83605c0c970ceb
+  - path: case/0/epsilon
+    bytes: 624
+    sha256: 00b520c08e56bedbd0f149bd7fdb9886200073e4a9708808d35c5785977b78c8
+  - path: case/0/k
+    bytes: 606
+    sha256: a3ca57798379a884a1895a8d9e0bf6418af093f820e4ec330c46e0824ebbbc03
+  - path: case/0/nut
+    bytes: 627
+    sha256: 17cd6ce805153038ded9313f8ac13395c3ddab9308645a7a59aff13d15fa48f2
+  - path: case/0/p
+    bytes: 514
+    sha256: 52603731fd97723534706f703bea14293d36e27ef3e2d7e26bf0051f8e2c6934
+  - path: case/constant/momentumTransport
+    bytes: 208
+    sha256: 676309b58f64f82c46abfe13b2623086d2ab70472fd1d6946e6cb77da611ac7f
+  - path: case/constant/physicalProperties
+    bytes: 150
+    sha256: 72d47ca998d3b5d774189191dae90ff5fa428093d92e26f1446f27d1bae9fe03
+  - path: case/system/blockMeshDict
+    bytes: 2265
+    sha256: e4aa46f809f772722b97d331ddd946628874eefd1f4434cf0cc19a0bb2a3ec9f
+  - path: case/system/controlDict
+    bytes: 435
+    sha256: 83e42c144fda959f68ec3693c3f7dfbd80ddebfecb2d31f8a010c53c8f48e977
+  - path: case/system/decomposeParDict
+    bytes: 252
+    sha256: 749246a9b04c4f8236317d83c1c1e1f1960ee4c101055a40961ed24ee14190d0
+  - path: case/system/fvSchemes
+    bytes: 807
+    sha256: a1e69add26b785a336b707f79cbc0196fdfa7ef260217cd8b7b3adca947439b5
+  - path: case/system/fvSolution
+    bytes: 1189
+    sha256: b0395be38c7d8130ad92915d1a410c92fc546f97409d400fefdbe2ef81ebc519
+  - path: execution-plan.json
+    bytes: 10375
+    sha256: 624d585006228cadc83b617d156e6d9a465853930076ac49b467dce1e2b38e5d
+  - path: public-validation.json
+    bytes: 1142
+    sha256: 5aab4852918a353fd97d5001c647879353d521395383502f4f1e4fd76588faed
+  - path: run-result.json
+    bytes: 2141
+    sha256: 380d7d6e48c251bc690d43234f21648510742d9ef685f9b41d4b528fd6a0391d
+  - path: static-inspection.json
+    bytes: 148
+    sha256: 062e7719b6d7c355530e9354b3259c6d64efb43ca02f6991e0674ad95a304ad5
+  - path: summary.json
+    bytes: 593
+    sha256: f89cef25714fd5ebf6723d7b640b03615ce40c20dff1b84b9120622115970246
+- fixture_id: multi-region-success
+  kind: multi_region_success
+  source_manifest_sha256: 301da001792fdf5e62b1c266c3e3453befb5eff89ff98ab6229e3dd27e2a3b2c
+  expected:
+    artifact_valid: true
+    native_status: PUBLIC_VALIDATION_PASS
+  files:
+  - path: case-manifest-overlay.json
+    bytes: 1025
+    sha256: f9b6c5d2a05a1627ce4041de62c81705aa2b100509ef44b6110029d9abba8245
+  - path: case/.foampilot/logs/01-blockmesh.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/01-blockmesh.stdout.log
+    bytes: 4338
+    sha256: 5b3c5c182b3379280430923543f67200b8bf3e6c04a9b889fca65a776a579553
+  - path: case/.foampilot/logs/02-check-parent-mesh.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/02-check-parent-mesh.stdout.log
+    bytes: 2882
+    sha256: 0f76b0e2b2ec400cd6b92aa906ee6e4c6fdcebdfbd67fcf32beec8569496452f
+  - path: case/.foampilot/logs/03-create-solid-zone.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/03-create-solid-zone.stdout.log
+    bytes: 1357
+    sha256: 094bcc702a2ae319803484c10a1fef8b99aa148c2293c8f19108847b724daa8c
+  - path: case/.foampilot/logs/04-split-regions.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/04-split-regions.stdout.log
+    bytes: 2511
+    sha256: d47502f0577d26363f82b0c12164599f545af90638004d86c7acb99c91d8d386
+  - path: case/.foampilot/logs/05-check-fluid-mesh.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/05-check-fluid-mesh.stdout.log
+    bytes: 2985
+    sha256: 4003a2ca908cf090bc1e26a087fb1b6df9f4b5198df93b6687b7f1a092a2efe8
+  - path: case/.foampilot/logs/06-check-solid-mesh.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/06-check-solid-mesh.stdout.log
+    bytes: 2782
+    sha256: 65b9302ca9723426413890d9629eb558604129e496c0d3094fad97880fb00b79
+  - path: case/.foampilot/logs/07-solve-cht.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/07-solve-cht.stdout.log
+    bytes: 13881
+    sha256: 4ebdf864394197005803606de421e2823e7d1ab98045fe2afdb467530c518d70
+  - path: case/0/fluid/T
+    bytes: 662
+    sha256: 86942b619dc19c7e7913bb4529e9ebc05be09716c7f7b52c0137749c6932a9a6
+  - path: case/0/fluid/U
+    bytes: 563
+    sha256: 99fef77c6dc6dd8d36dfd7be0756b08c4023ccfcfa7561d02c70be0bec3526f9
+  - path: case/0/fluid/alphat
+    bytes: 675
+    sha256: 534bb57c63a938083fd47f7c7fd5ef4d27f9f094d029bf9c14c6b5f368396485
+  - path: case/0/fluid/k
+    bytes: 566
+    sha256: 630d5c124deb0c0264657299f545050693d1a88618725747e74204d6a1776c46
+  - path: case/0/fluid/nut
+    bytes: 625
+    sha256: 7f73f4fc391214667b584cddb56b0c09c33e06709cf42f198d455f0b3b238e14
+  - path: case/0/fluid/omega
+    bytes: 565
+    sha256: e3dbfe55bf8559b4aaf96640e78f62eda6623dcff118a4338911964719a2096c
+  - path: case/0/fluid/p
+    bytes: 643
+    sha256: 975d99edc23148c78cdbf62df51bd166690c98af2b4d1044779faa186b1422f0
+  - path: case/0/fluid/p_rgh
+    bytes: 603
+    sha256: 7da8aa3b24e384de2227cfd0ab07ea466756231026db07a3836afc5091537cf2
+  - path: case/0/solid/T
+    bytes: 439
+    sha256: a7d939a401f82f963d192383a4b48f2f754b051c3369a618bb3f2bd9c01247b0
+  - path: case/constant/fluid/fvConstraints
+    bytes: 95
+    sha256: a8e2b025b56cba5eedf71f7f2cbc35964ccef04048e12e1272992c8a3db27515
+  - path: case/constant/fluid/fvModels
+    bytes: 90
+    sha256: 25ee9d7ac561444a924bca7be4cd66e09234004d9fdacb1c6b23f63f27686920
+  - path: case/constant/fluid/g
+    bytes: 162
+    sha256: 954004a2bd410b086e39dca5c666df8ca95895ca84dc61a8114ab2da6755011e
+  - path: case/constant/fluid/momentumTransport
+    bytes: 208
+    sha256: a94db69a77be472c059d976b87ac801e4dee5bd37d18104d989bf2ac9b332bfa
+  - path: case/constant/fluid/physicalProperties
+    bytes: 628
+    sha256: ed9158d6041001afb74c82912d455f097893fa3b4e4f78d9712e9925043a900e
+  - path: case/constant/fluid/radiationProperties
+    bytes: 124
+    sha256: 9667d5992886b9a33f0c37702a08a94c38405d05c2847b9c8078cfa38b9a060e
+  - path: case/constant/fluid/thermophysicalTransport
+    bytes: 198
+    sha256: b78ee49cb0be2aca6d5fa573e1101ad5326afd0a2ddcbee764cc96019fd9cbf0
+  - path: case/constant/regionProperties
+    bytes: 148
+    sha256: bb0a1c455c50e89bbd7fecc1dec67ea8b180ac397a1ef2e3fd00b2e1c53c5575
+  - path: case/constant/solid/fvConstraints
+    bytes: 95
+    sha256: a8e2b025b56cba5eedf71f7f2cbc35964ccef04048e12e1272992c8a3db27515
+  - path: case/constant/solid/fvModels
+    bytes: 195
+    sha256: f44942c4c2d130d7083a6565a0b3e60d2e50377b49c0efd560589a484c6c9a94
+  - path: case/constant/solid/physicalProperties
+    bytes: 601
+    sha256: 583b10eb1d2a8dac67ce3484cb00f4a15e88b00edf4d7c7bbc0b8a3701e671a7
+  - path: case/constant/solid/radiationProperties
+    bytes: 124
+    sha256: 9667d5992886b9a33f0c37702a08a94c38405d05c2847b9c8078cfa38b9a060e
+  - path: case/system/blockMeshDict
+    bytes: 3049
+    sha256: 556f48638fce452b1953fc4df1e1bf42b8bd310eecf85ac19473edf20444417c
+  - path: case/system/controlDict
+    bytes: 531
+    sha256: c682f6caa586d0d273cc1a54216ff7ef2b72bf272cca084446faaedbdbd50c60
+  - path: case/system/fluid/fvSchemes
+    bytes: 1006
+    sha256: 65056915285a2cf999194690f25872e62724710fcaa0726054bbd1481c439e3e
+  - path: case/system/fluid/fvSolution
+    bytes: 1559
+    sha256: c0636237205b1ca63cddd5ec75985313f7f82537713f71253da72c2a06b6dc92
+  - path: case/system/fvSolution
+    bytes: 203
+    sha256: 985c7bdb5541c79ca1508db0584ffde92beac1eda02190230179b450ebcde045
+  - path: case/system/solid/fvSchemes
+    bytes: 401
+    sha256: d972bd89894aa5fb5fc48fb7e4c82fe6c8b52e23bf0436dd462c88e6c1e83dc9
+  - path: case/system/solid/fvSolution
+    bytes: 436
+    sha256: 4c71a4acc8acd46f0d20067a2cbcf32e15c9f56e0caf868c3afb9f913cd8f8d4
+  - path: case/system/topoSetDict
+    bytes: 455
+    sha256: 5b814f8c48094c491936ccf73dd99a24a5642b444819dc53b775032fd85c2240
+  - path: execution-plan.json
+    bytes: 19922
+    sha256: 41dbb94d332725b1acba8d42f70e1383eb618cd32bd25e5c8685bf09eb085439
+  - path: public-validation.json
+    bytes: 2601
+    sha256: e46b71a9a13dd4d33cb0b3da922e669d82e11e5e824677c5d6c2244342b03f1a
+  - path: run-result.json
+    bytes: 3036
+    sha256: 3387afaf25061773315c09269473300c8314775424d1b54e6b5243051aaa2da3
+  - path: static-inspection.json
+    bytes: 178
+    sha256: 728ee8426e0200368ded24681244d637f57ce0a62acd91e7cdff01724c80b159
+  - path: summary.json
+    bytes: 605
+    sha256: 9cc55a6df3ae4600fceb4d9254ebcd97944c3ab47ee062be5e5780b8f450c2ab
+- fixture_id: single-region-success
+  kind: single_region_success
+  source_manifest_sha256: 2b28af0200a5cee407e51bd604b180f7291aa20a6913ec4c104195c4d2ec5428
+  expected:
+    artifact_valid: true
+    native_status: PUBLIC_VALIDATION_PASS
+  files:
+  - path: case-manifest-overlay.json
+    bytes: 555
+    sha256: e986f6ab8f6cac392acec6cca91ec0ab9a35e5c43317641e333ec493070eef47
+  - path: case/.foampilot/logs/01-generate-mesh.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/01-generate-mesh.stdout.log
+    bytes: 1944
+    sha256: 217dfa6beaa997442552b02ccb608c5da22438a8e5cdf9ea2d1d4af5b5dddff0
+  - path: case/.foampilot/logs/02-check-mesh.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/02-check-mesh.stdout.log
+    bytes: 2750
+    sha256: 0b91e33a128ee13a54ccefb5b552ee41b40e900144ab40b340e910284728a3fd
+  - path: case/.foampilot/logs/03-solve.stderr.log
+    bytes: 0
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  - path: case/.foampilot/logs/03-solve.stdout.log
+    bytes: 16323
+    sha256: 04ed201d3e5fdef68ee7eb3ab6190cf8f9dda20e9fd7a2aac33391d4cbd14190
+  - path: case/0/U
+    bytes: 400
+    sha256: b89ab121f54efc01b6f5be0db4b94fd87b8690b8d7c67bd43e5827d8d3a463e4
+  - path: case/0/p
+    bytes: 361
+    sha256: 908bdba9627ca33a3c2a72fd9c1495ef5cff60ce5a7eb7adf340a9367079e595
+  - path: case/constant/physicalProperties
+    bytes: 167
+    sha256: f0c0a6a245a40de33fb1e20f1fec9a2c76035cb826080050d710b6f6a09f390a
+  - path: case/system/blockMeshDict
+    bytes: 792
+    sha256: 86d7fbc7075495ab78864fb23aa629dc413a45d06ddbacd10bb6eb6967fc0807
+  - path: case/system/controlDict
+    bytes: 438
+    sha256: a3cdf3d161c8d4987dc59a013344edf825a4a651d8f16fa5a2d1a604ebb131bb
+  - path: case/system/fvSchemes
+    bytes: 433
+    sha256: 954c448bf5489ce58b60c3c4c4ba651621c727e6de1db092636f28abe4af8136
+  - path: case/system/fvSolution
+    bytes: 639
+    sha256: db184d2b5e130f13ddb35f7fb28550dd319e01cb8bdc1cff176fcf3a3c4ad3ad
+  - path: execution-plan.json
+    bytes: 4423
+    sha256: 4fd869876aaf3950dae8e3c7a5715d0c62f5dacca04b389f71464c922c5a26bc
+  - path: public-validation.json
+    bytes: 1794
+    sha256: 98ba7e00e395a251fe51155cf4969533e1f36e7acd26eecd998c4faa50fbeaea
+  - path: run-result.json
+    bytes: 1234
+    sha256: 8f0c45d4fe7236063082bbaad40a7e63931ab1d96cdfb0131af569462a03a480
+  - path: static-inspection.json
+    bytes: 103
+    sha256: 1a5039d328f3e6df5ca68ca4ec5fb398abee19260821bdec2f90f68b9e8b41ae
+  - path: summary.json
+    bytes: 337
+    sha256: 7db40d39e9c8551147acbd7e3ce1930769702979a4ce7a4281659250d931320a

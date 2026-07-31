@@ -8,11 +8,13 @@ import tempfile
 
 from foampilot.environment import EnvironmentSnapshot
 from foampilot.models import (
-    ModelClient,
+    ModelBudgetWindow,
+    ModelGateway,
     ModelRequest,
-    generate_with_retry,
+    ModelTraceSink,
 )
 from foampilot.plans import ExecutionPlan
+from foampilot.routing import CapabilityProfile
 from foampilot.tasks import TaskSpec
 
 from .prompts import bundle_request_text
@@ -21,27 +23,33 @@ from .prompts import bundle_request_text
 def author_case_bundle(
     task: TaskSpec,
     environment: EnvironmentSnapshot,
-    client: ModelClient,
+    capability: CapabilityProfile,
+    gateway: ModelGateway,
     knowledge_text: str,
     skills_text: str,
+    *,
+    budget: ModelBudgetWindow,
+    trace: ModelTraceSink,
 ) -> ExecutionPlan:
     """Ask the model once for every case file and typed command."""
 
     system, user = bundle_request_text(
         task,
         environment,
+        capability,
         knowledge_text,
         skills_text,
     )
-    return generate_with_retry(
-        client,
+    return gateway.generate_structured(
         ModelRequest(
             purpose="author-openfoam-case-bundle",
             system_prompt=system,
             user_prompt=user,
         ),
         ExecutionPlan,
-    )
+        budget=budget,
+        trace=trace,
+    ).value
 
 
 def _safe_relative(relative: str) -> bool:

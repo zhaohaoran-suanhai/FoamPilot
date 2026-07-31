@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from foampilot.environment import CommandFact, EnvironmentSnapshot
 from foampilot.knowledge import (
     KnowledgeQuery,
     load_knowledge_corpus,
@@ -9,12 +10,49 @@ from foampilot.knowledge import (
     verify_knowledge_manifest,
 )
 from foampilot.agent.context import load_agent_context
+from foampilot.routing import route_capability
 from foampilot.tasks import load_task_spec
 
 
 PROJECT = Path(__file__).parents[1]
 CORPUS = PROJECT / "src/foampilot/knowledge/openfoam10"
 MANIFEST = PROJECT / "src/foampilot/knowledge/knowledge-manifest.json"
+
+
+def _context_for_task(task):
+    corpus = load_knowledge_corpus(CORPUS)
+    solvers = sorted(
+        {
+            solver
+            for entry in corpus
+            for solver in entry.solvers
+        }
+    )
+    environment = EnvironmentSnapshot(
+        schema_version=1,
+        distribution="foundation",
+        version="10",
+        openfoam_root=Path("/opt/openfoam10"),
+        tutorial_root=Path("/private/tutorials"),
+        workspace_root=Path("/runs"),
+        workspace_writable=True,
+        commands=[
+            CommandFact(
+                name=solver,
+                path=Path("/opt/openfoam10/bin") / solver,
+            )
+            for solver in solvers
+        ],
+        mpi_launcher=Path("/usr/bin/mpirun"),
+        gmsh=None,
+        max_mpi_ranks=16,
+    )
+    capability = route_capability(task, environment, corpus)
+    return load_agent_context(
+        task,
+        capability,
+        package_root=PROJECT / "src/foampilot",
+    )
 
 
 def test_reviewed_corpus_is_complete_frozen_and_has_no_target_solution() -> None:
@@ -174,10 +212,7 @@ def test_maxwell_pimple_task_retrieves_its_solver_family_contract() -> None:
         / "laminar-planar-poiseuille.yaml"
     )
 
-    context = load_agent_context(
-        task,
-        package_root=PROJECT / "src/foampilot",
-    )
+    context = _context_for_task(task)
 
     assert (
         "of10.solver.pimplefoam-maxwell-contract"
@@ -192,10 +227,7 @@ def test_blocked_channel_retrieves_volume_fraction_source_contract() -> None:
         / "compressible-blocked-channel.yaml"
     )
 
-    context = load_agent_context(
-        task,
-        package_root=PROJECT / "src/foampilot",
-    )
+    context = _context_for_task(task)
 
     assert (
         "of10.physics.volume-fraction-source"
@@ -218,10 +250,7 @@ def test_srf_and_mhd_tasks_retrieve_exact_solver_contracts() -> None:
             / f"{case_id}.yaml"
         )
 
-        context = load_agent_context(
-            task,
-            package_root=PROJECT / "src/foampilot",
-        )
+        context = _context_for_task(task)
 
         assert entry_id in context.selected_knowledge_ids
 
@@ -233,10 +262,7 @@ def test_solid_task_retrieves_foundation_v10_solver_contract() -> None:
         / "solid-plate-hole.yaml"
     )
 
-    context = load_agent_context(
-        task,
-        package_root=PROJECT / "src/foampilot",
-    )
+    context = _context_for_task(task)
 
     assert (
         "of10.solver.soliddisplacementfoam-contract"
@@ -251,10 +277,7 @@ def test_porous_task_retrieves_foundation_v10_solver_contract() -> None:
         / "porous-angled-duct.yaml"
     )
 
-    context = load_agent_context(
-        task,
-        package_root=PROJECT / "src/foampilot",
-    )
+    context = _context_for_task(task)
 
     assert (
         "of10.solver.poroussimplefoam-contract"
@@ -269,10 +292,7 @@ def test_cht_task_retrieves_foundation_v10_multiregion_contract() -> None:
         / "cht-cooling-cylinder.yaml"
     )
 
-    context = load_agent_context(
-        task,
-        package_root=PROJECT / "src/foampilot",
-    )
+    context = _context_for_task(task)
 
     assert (
         "of10.solver.chtmultiregionfoam-contract"

@@ -1,0 +1,200 @@
+    min() of alpha.water = -3.323378777e-07 at location (0.03173913043 0.4882855285 0.0073) in cell 1120
+
+volFieldValue alphaWaterMaximum write:
+    max() of alpha.water = 1.000000002 at location (0.006347826085 0.002999935 0.0073) in cell 0
+
+volFieldValue waterVolume write:
+    volIntegrate() of alpha.water = 0.0006375316145
+
+Courant Number mean: 0.1178615288 max: 0.4799867129
+Interface Courant Number mean: 0.01481592751 max: 0.3721775992
+deltaT = 0.001438492063
+Time = 0.99424603s
+
+smoothSolver:  Solving for alpha.water, Initial residual = 0.001643259846, Final residual = 2.47340168e-09, No Iterations 2
+Phase-1 volume fraction = 0.1284665371  Min(alpha.water) = -7.142285628e-09  Max(alpha.water) = 1.000000002
+Applying the previous iteration compression flux
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+Phase-1 volume fraction = 0.1284665469  Min(alpha.water) = -1.953461991e-07  Max(alpha.water) = 1.000000002
+smoothSolver:  Solving for alpha.water, Initial residual = 0.001646850647, Final residual = 2.477799574e-09, No Iterations 2
+Phase-1 volume fraction = 0.1284657731  Min(alpha.water) = -3.862056256e-09  Max(alpha.water) = 1.000000002
+Applying the previous iteration compression flux
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+Phase-1 volume fraction = 0.1284657862  Min(alpha.water) = -2.485745215e-07  Max(alpha.water) = 1.000000002
+smoothSolver:  Solving for Ux, Initial residual = 0.01085992491, Final residual = 6.597410934e-10, No Iterations 3
+smoothSolver:  Solving for Uy, Initial residual = 0.01434178848, Final residual = 8.258524882e-10, No Iterations 3
+GAMG:  Solving for p_rgh, Initial residual = 0.01339869802, Final residual = 0.000163504652, No Iterations 1
+time step continuity errors : sum local = 4.78888985e-05, global = -1.605011655e-06, cumulative = 0.0008895661814
+GAMG:  Solving for p_rgh, Initial residual = 0.0009880468926, Final residual = 1.815184969e-05, No Iterations 2
+time step continuity errors : sum local = 5.319893647e-06, global = -3.36497597e-07, cumulative = 0.0008892296838
+GAMG:  Solving for p_rgh, Initial residual = 0.0001005228882, Final residual = 7.231291327e-09, No Iterations 18
+time step continuity errors : sum local = 2.118842997e-09, global = -1.2181457e-09, cumulative = 0.0008892284657
+ExecutionTime = 10.313355 s  ClockTime = 10 s
+
+volFieldValue alphaWaterMinimum write:
+    min() of alpha.water = -2.485745215e-07 at location (0.1079130435 0.5138093876 0.0073) in cell 1172
+
+volFieldValue alphaWaterMaximum write:
+    max() of alpha.water = 1.000000002 at location (0.006347826085 0.002999935 0.0073) in cell 0
+
+volFieldValue waterVolume write:
+    volIntegrate() of alpha.water = 0.0006375241985
+
+Courant Number mean: 0.1175095968 max: 0.4792485059
+Interface Courant Number mean: 0.01446401982 max: 0.3219080746
+deltaT = 0.001438492063
+Time = 0.99568452s
+
+smoothSolver:  Solving for alpha.water, Initial residual = 0.001642205875, Final residual = 2.55624375e-09, No Iterations 2
+Phase-1 volume fraction = 0.1284649676  Min(alpha.water) = -2.247207662e-07  Max(alpha.water) = 1.000000002
+Applying the previous iteration compression flux
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+Phase-1 volume fraction = 0.1284649832  Min(alpha.water) = -2.551009246e-07  Max(alpha.water) = 1.000000002
+smoothSolver:  Solving for alpha.water, Initial residual = 0.001642866241, Final residual = 2.555181185e-09, No Iterations 2
+Phase-1 volume fraction = 0.1284641343  Min(alpha.water) = -1.829447962e-07  Max(alpha.water) = 1.000000002
+Applying the previous iteration compression flux
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+Phase-1 volume fraction = 0.1284641494  Min(alpha.water) = -4.965354756e-07  Max(alpha.water) = 1.000000002
+smoothSolver:  Solving for Ux, Initial residual = 0.01077505626, Final residual = 7.352065512e-10, No Iterations 3
+smoothSolver:  Solving for Uy, Initial residual = 0.01424258508, Final residual = 8.678448108e-10, No Iterations 3
+GAMG:  Solving for p_rgh, Initial residual = 0.01340253147, Final residual = 0.0001724052644, No Iterations 1
+time step continuity errors : sum local = 5.221144896e-05, global = -4.638810351e-06, cumulative = 0.0008845896553
+GAMG:  Solving for p_rgh, Initial residual = 0.000911125463, Final residual = 2.081854862e-05, No Iterations 2
+time step continuity errors : sum local = 6.298211129e-06, global = -6.490952376e-07, cumulative = 0.0008839405601
+GAMG:  Solving for p_rgh, Initial residual = 9.233773749e-05, Final residual = 9.719459557e-09, No Iterations 19
+time step continuity errors : sum local = 2.94068702e-09, global = -1.772785654e-09, cumulative = 0.0008839387873
+ExecutionTime = 10.320355 s  ClockTime = 10 s
+
+volFieldValue alphaWaterMinimum write:
+    min() of alpha.water = -4.965354756e-07 at location (0.04443478261 0.5265713172 0.0073) in cell 1190
+
+volFieldValue alphaWaterMaximum write:
+    max() of alpha.water = 1.000000002 at location (0.006347826085 0.002999935 0.0073) in cell 0
+
+volFieldValue waterVolume write:
+    volIntegrate() of alpha.water = 0.0006375160761
+
+Courant Number mean: 0.1171424174 max: 0.4786898849
+Interface Courant Number mean: 0.01429204062 max: 0.3204310943
+deltaT = 0.001438492063
+Time = 0.99712302s
+
+smoothSolver:  Solving for alpha.water, Initial residual = 0.00163551754, Final residual = 2.615403362e-09, No Iterations 2
+Phase-1 volume fraction = 0.128463239  Min(alpha.water) = -1.443869672e-07  Max(alpha.water) = 1.000000002
+Applying the previous iteration compression flux
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+Phase-1 volume fraction = 0.1284632419  Min(alpha.water) = -1.211646514e-06  Max(alpha.water) = 1.000000002
+smoothSolver:  Solving for alpha.water, Initial residual = 0.001631519795, Final residual = 2.604916212e-09, No Iterations 2
+Phase-1 volume fraction = 0.1284622766  Min(alpha.water) = -1.092793434e-07  Max(alpha.water) = 1.000000002
+Applying the previous iteration compression flux
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+Phase-1 volume fraction = 0.1284622394  Min(alpha.water) = -2.171010164e-07  Max(alpha.water) = 1.000000002
+smoothSolver:  Solving for Ux, Initial residual = 0.01070208852, Final residual = 8.036888119e-10, No Iterations 3
+smoothSolver:  Solving for Uy, Initial residual = 0.01405490876, Final residual = 8.741024379e-10, No Iterations 3
+GAMG:  Solving for p_rgh, Initial residual = 0.01363338565, Final residual = 0.000185724357, No Iterations 1
+time step continuity errors : sum local = 5.58225942e-05, global = 1.709263867e-06, cumulative = 0.0008856480512
+GAMG:  Solving for p_rgh, Initial residual = 0.0008930101501, Final residual = 1.642894764e-05, No Iterations 2
+time step continuity errors : sum local = 4.925053128e-06, global = 1.210359785e-06, cumulative = 0.000886858411
+GAMG:  Solving for p_rgh, Initial residual = 8.836451931e-05, Final residual = 7.679157403e-09, No Iterations 19
+time step continuity errors : sum local = 2.302786356e-09, global = -1.216933105e-09, cumulative = 0.000886857194
+ExecutionTime = 10.32835 s  ClockTime = 10 s
+
+volFieldValue alphaWaterMinimum write:
+    min() of alpha.water = -2.171010164e-07 at location (0.03173913043 0.4755235991 0.0073) in cell 1097
+
+volFieldValue alphaWaterMaximum write:
+    max() of alpha.water = 1.000000002 at location (0.006347826085 0.002999935 0.0073) in cell 0
+
+volFieldValue waterVolume write:
+    volIntegrate() of alpha.water = 0.0006375065974
+
+Courant Number mean: 0.1167768131 max: 0.4783766926
+Interface Courant Number mean: 0.01442676271 max: 0.3190393341
+deltaT = 0.001438492063
+Time = 0.99856151s
+
+smoothSolver:  Solving for alpha.water, Initial residual = 0.001629218983, Final residual = 2.659202029e-09, No Iterations 2
+Phase-1 volume fraction = 0.1284611812  Min(alpha.water) = -7.702196178e-08  Max(alpha.water) = 1.000000002
+Applying the previous iteration compression flux
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+Phase-1 volume fraction = 0.1284611406  Min(alpha.water) = -1.907522973e-07  Max(alpha.water) = 1.000000002
+smoothSolver:  Solving for alpha.water, Initial residual = 0.001630985299, Final residual = 2.650629202e-09, No Iterations 2
+Phase-1 volume fraction = 0.1284600258  Min(alpha.water) = -4.748220254e-08  Max(alpha.water) = 1.000000002
+Applying the previous iteration compression flux
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+Phase-1 volume fraction = 0.1284599945  Min(alpha.water) = -1.725034057e-07  Max(alpha.water) = 1.000000002
+smoothSolver:  Solving for Ux, Initial residual = 0.01062704631, Final residual = 8.243805443e-10, No Iterations 3
+smoothSolver:  Solving for Uy, Initial residual = 0.01386908341, Final residual = 9.110932806e-10, No Iterations 3
+GAMG:  Solving for p_rgh, Initial residual = 0.01331902632, Final residual = 0.0001807770503, No Iterations 1
+time step continuity errors : sum local = 5.386170469e-05, global = 7.003515343e-07, cumulative = 0.0008875575456
+GAMG:  Solving for p_rgh, Initial residual = 0.0008692767287, Final residual = 1.706116323e-05, No Iterations 2
+time step continuity errors : sum local = 5.069376369e-06, global = 5.910749079e-07, cumulative = 0.0008881486205
+GAMG:  Solving for p_rgh, Initial residual = 8.946453855e-05, Final residual = 7.546040807e-09, No Iterations 19
+time step continuity errors : sum local = 2.243948605e-09, global = -1.32091262e-09, cumulative = 0.0008881472996
+ExecutionTime = 10.336355 s  ClockTime = 10 s
+
+volFieldValue alphaWaterMinimum write:
+    min() of alpha.water = -1.725034057e-07 at location (0.03173913043 0.4755235991 0.0073) in cell 1097
+
+volFieldValue alphaWaterMaximum write:
+    max() of alpha.water = 1.000000002 at location (0.006347826085 0.002999935 0.0073) in cell 0
+
+volFieldValue waterVolume write:
+    volIntegrate() of alpha.water = 0.0006374954566
+
+Courant Number mean: 0.1164138517 max: 0.4777445107
+Interface Courant Number mean: 0.01457153627 max: 0.3177870554
+deltaT = 0.001438492063
+Time = 1s
+
+smoothSolver:  Solving for alpha.water, Initial residual = 0.001630336429, Final residual = 2.708099617e-09, No Iterations 2
+Phase-1 volume fraction = 0.1284588405  Min(alpha.water) = -2.021106793e-08  Max(alpha.water) = 1.000000002
+Applying the previous iteration compression flux
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+Phase-1 volume fraction = 0.1284588278  Min(alpha.water) = -7.299975942e-07  Max(alpha.water) = 1.000000002
+smoothSolver:  Solving for alpha.water, Initial residual = 0.00163023395, Final residual = 2.692379707e-09, No Iterations 2
+Phase-1 volume fraction = 0.128457669  Min(alpha.water) = -3.421082516e-10  Max(alpha.water) = 1.000000002
+Applying the previous iteration compression flux
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+MULES: Correcting alpha.water
+Phase-1 volume fraction = 0.1284576644  Min(alpha.water) = -2.570049316e-07  Max(alpha.water) = 1.000000002
+smoothSolver:  Solving for Ux, Initial residual = 0.01052382087, Final residual = 8.020582651e-10, No Iterations 3
+smoothSolver:  Solving for Uy, Initial residual = 0.01373274808, Final residual = 9.253802141e-10, No Iterations 3
+GAMG:  Solving for p_rgh, Initial residual = 0.01303636966, Final residual = 0.0001707465995, No Iterations 1
+time step continuity errors : sum local = 5.068306904e-05, global = 4.576544428e-07, cumulative = 0.000888604954
+GAMG:  Solving for p_rgh, Initial residual = 0.0008504805487, Final residual = 1.490876683e-05, No Iterations 2
+time step continuity errors : sum local = 4.410197397e-06, global = 4.227975557e-07, cumulative = 0.0008890277516
+GAMG:  Solving for p_rgh, Initial residual = 8.672031987e-05, Final residual = 9.366621018e-09, No Iterations 18
+time step continuity errors : sum local = 2.773289016e-09, global = -1.652645627e-09, cumulative = 0.0008890260989
+ExecutionTime = 10.348356 s  ClockTime = 10 s
+
+volFieldValue alphaWaterMinimum write:
+    min() of alpha.water = -2.570049316e-07 at location (0.1079130435 0.5265713171 0.0073) in cell 1195
+
+volFieldValue alphaWaterMaximum write:
+    max() of alpha.water = 1.000000002 at location (0.006347826085 0.002999935 0.0073) in cell 0
+
+volFieldValue waterVolume write:
+    volIntegrate() of alpha.water = 0.0006374838935
+
+End
+

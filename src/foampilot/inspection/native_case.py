@@ -13,6 +13,7 @@ from foampilot.plans import (
 from foampilot.tasks import TaskSpec
 
 from .models import InspectionIssue, InspectionReport
+from .semantic import inspect_semantics
 
 
 _COMMENTS = re.compile(r"/\*.*?\*/|//.*?$", re.DOTALL | re.MULTILINE)
@@ -349,6 +350,10 @@ def inspect_native_case(
                 shell.relative_to(root).as_posix(),
             )
         )
+
+    semantic = inspect_semantics(root, task, plan)
+    issues.extend(semantic.issues)
+    advisories.extend(semantic.advisories)
 
     return InspectionReport(
         issues=issues,

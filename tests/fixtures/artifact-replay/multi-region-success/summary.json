@@ -1,0 +1,24 @@
+{
+  "attempts": [
+    {
+      "attempt": 1,
+      "changed_files": [
+        "system/controlDict"
+      ],
+      "failed_step_id": "solve-cht",
+      "failure_fingerprint": "3c30288aff16154d8738cd75d366380431c7c931db0c869e103659551c1921b4",
+      "status": "SOLVER_FAILED"
+    },
+    {
+      "attempt": 2,
+      "changed_files": [],
+      "failed_step_id": null,
+      "failure_fingerprint": null,
+      "status": "PUBLIC_VALIDATION_PASS"
+    }
+  ],
+  "message": "All evaluator-owned public checks pass.",
+  "schema_version": 1,
+  "status": "PUBLIC_VALIDATION_PASS",
+  "task_id": "cht-cooling-cylinder"
+}

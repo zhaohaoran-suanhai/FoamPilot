@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 
 from foampilot.agent import NativeAgent
 from foampilot.agent.repair import RepairDecision
 from foampilot.artifacts import ArtifactStore
-from foampilot.models import TransportError
+from foampilot.models import (
+    GatewayRequestError,
+    ProviderError,
+    ProviderFailureKind,
+)
 from foampilot.plans import GeneratedFile
 from foampilot.runtime import (
     PlanRunResult,
@@ -88,7 +93,7 @@ def _agent(
     runner: SequencePlanRunner,
 ) -> NativeAgent:
     return NativeAgent(
-        model=model,
+        gateway=model,
         runtime_config=_runtime_config(),
         artifact_store=ArtifactStore(tmp_path / "runs"),
         environment_snapshot=_environment("blockMesh", "icoFoam"),
@@ -116,7 +121,24 @@ def test_native_agent_reaches_public_validation_pass(
     assert (run_dir / "task.yaml").is_file()
     assert (run_dir / "environment.json").is_file()
     assert (run_dir / "agent-context.json").is_file()
+    capability = json.loads(
+        (run_dir / "capability-profile.json").read_text(encoding="utf-8")
+    )
+    assert capability["solver_executable"] == "icoFoam"
+    assert capability["confidence"] == "high"
+    agent_context = json.loads(
+        (run_dir / "agent-context.json").read_text(encoding="utf-8")
+    )
+    assert agent_context["knowledge_slots"]["solver_family_contract"]
+    assert agent_context["skill_names"] == [
+        "openfoam-author-native-case"
+    ]
+    assert (run_dir / "authored-execution-plan.json").is_file()
+    assert (run_dir / "plan-normalization.json").is_file()
     assert (run_dir / "execution-plan.json").is_file()
+    assert json.loads(
+        (run_dir / "execution-plan.json").read_text(encoding="utf-8")
+    )["schema_version"] == 3
     assert (run_dir / "attempt-01/execution-plan.json").is_file()
     assert (
         run_dir / "attempt-01/case/system/controlDict"
@@ -133,6 +155,71 @@ def test_native_agent_reaches_public_validation_pass(
     assert not (run_dir / "draft-plan.json").exists()
     assert not (run_dir / "plan-review.json").exists()
     assert not (run_dir / "reviewed-plan.json").exists()
+    workflow_events = (
+        run_dir / "workflow-events.jsonl"
+    ).read_text(encoding="utf-8")
+    assert '"stage":"OPENFOAM_STEP_STARTED"' in workflow_events
+    assert '"stage":"OPENFOAM_STEP_COMPLETE"' in workflow_events
+    assert '"stage":"ROUTING_READY"' in workflow_events
+
+
+def test_native_agent_normalizes_simple_mpi_launcher_before_policy(
+    tmp_path: Path,
+) -> None:
+    plan = _plan()
+    plan.commands[-1].executable = "mpirun"
+    plan.commands[-1].args = ["-n", "1", "icoFoam", "-parallel"]
+    model = RecordingModel([plan])
+    runner = SequencePlanRunner([(0, "Time = 1\nEnd\n", "")])
+
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=model,
+        runner=runner,
+    ).solve(_task())
+
+    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    raw = json.loads(
+        (outcome.run_dir / "authored-execution-plan.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    normalized = json.loads(
+        (outcome.run_dir / "execution-plan.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    records = json.loads(
+        (outcome.run_dir / "plan-normalization.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert raw["commands"][-1]["executable"] == "mpirun"
+    assert normalized["commands"][-1]["executable"] == "icoFoam"
+    assert records[0]["original_launcher"] == "mpirun"
+
+
+def test_native_agent_rejects_incomplete_public_route_before_generation(
+    tmp_path: Path,
+) -> None:
+    task = _task().model_copy(
+        update={
+            "prompt": "Calculate a requested field with OpenFOAM.",
+        }
+    )
+    model = RecordingModel([])
+
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=model,
+        runner=SequencePlanRunner([]),
+    ).solve(task)
+
+    assert outcome.summary.primary_failure is not None
+    assert outcome.summary.primary_failure.code == "REQUEST_INCOMPLETE"
+    assert (outcome.run_dir / "capability-profile.json").is_file()
+    assert not (outcome.run_dir / "execution-plan.json").exists()
+    assert model.requests == []
 
 
 def test_native_agent_applies_one_evidence_scoped_repair(
@@ -311,37 +398,74 @@ def test_native_agent_does_not_repair_environment_failure(
     assert model.replies == []
 
 
-class TransportBlockedModel:
-    model = "transport-blocked"
-
-    def generate_structured(self, request, schema):
-        del request, schema
-        raise TransportError("network unavailable")
+def _transport_failure() -> GatewayRequestError:
+    return GatewayRequestError(
+        failure=ProviderError(
+            kind=ProviderFailureKind.NETWORK_UNAVAILABLE,
+            provider="recording",
+            model="transport-blocked",
+            purpose="generation",
+            detail="network unavailable",
+            retryable=True,
+        ),
+        logical_request_id="blocked",
+        transport_attempts=3,
+        deadline_reason=None,
+    )
 
 
 def test_native_agent_classifies_exhausted_model_transport_as_environment(
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
-    def blocked(*args, **kwargs):
-        del args, kwargs
-        raise TransportError("network unavailable")
-
-    monkeypatch.setattr(
-        "foampilot.agent.generation.generate_with_retry",
-        blocked,
-    )
     runner = SequencePlanRunner([])
 
     outcome = _agent(
         tmp_path=tmp_path,
-        model=TransportBlockedModel(),
+        model=RecordingModel([_transport_failure()]),
         runner=runner,
     ).solve(_task())
 
-    assert outcome.status == "BLOCKED_ENVIRONMENT"
+    assert outcome.status == "DEFERRED"
+    assert outcome.summary.workflow_state == "DEFERRED"
+    assert outcome.summary.native_status is None
+    assert outcome.summary.primary_failure is None
+    assert (
+        outcome.summary.terminal_blocker.code
+        == "PROVIDER_NETWORK_UNAVAILABLE"
+    )
     assert outcome.summary.attempts == []
     assert runner.calls == 0
+
+
+def test_solver_failure_survives_repair_provider_blocker(
+    tmp_path: Path,
+) -> None:
+    model = RecordingModel([_plan(), _transport_failure()])
+    runner = SequencePlanRunner(
+        [(1, "", "FOAM FATAL ERROR: missing keyword")]
+    )
+
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=model,
+        runner=runner,
+    ).solve(_task())
+
+    assert outcome.status == "SOLVER_FAILED"
+    assert outcome.summary.workflow_state == "DEFERRED"
+    assert outcome.summary.native_status == "SOLVER_FAILED"
+    assert outcome.summary.primary_failure.domain == "solver"
+    assert outcome.summary.primary_failure.step_id == "solve"
+    assert outcome.summary.terminal_blocker.domain == "provider"
+    assert (
+        outcome.summary.terminal_blocker.code
+        == "PROVIDER_NETWORK_UNAVAILABLE"
+    )
+    assert outcome.summary.resume.allowed
+    assert (
+        outcome.summary.resume.from_stage
+        == "MODEL_REPAIR_STARTED"
+    )
 
 
 def test_native_agent_preserves_invalid_plan_issues_without_json_crash(

@@ -1,0 +1,53 @@
+{
+  "checks": [
+    {
+      "detail": "A successful checkMesh step reports Mesh OK.",
+      "limits": {
+        "return_code": 0
+      },
+      "name": "mesh-quality",
+      "observed": {
+        "diagnostic": null,
+        "mesh_ok_marker": true
+      },
+      "passed": true
+    },
+    {
+      "detail": "simpleFoam executed successfully.",
+      "limits": {
+        "return_code": 0
+      },
+      "name": "rans-solver",
+      "observed": {
+        "executable": "simpleFoam",
+        "matched": true
+      },
+      "passed": true
+    },
+    {
+      "detail": "All commands succeeded and a solver reports normal completion.",
+      "limits": {
+        "normal_solver_end": true
+      },
+      "name": "normal-completion",
+      "observed": {
+        "all_commands_successful": true,
+        "normal_solver_end": true
+      },
+      "passed": true
+    },
+    {
+      "detail": "No non-finite marker is present.",
+      "limits": {
+        "non_finite": false
+      },
+      "name": "finite-fields",
+      "observed": {
+        "non_finite": false
+      },
+      "passed": true
+    }
+  ],
+  "failed_step_id": null,
+  "failure_layer": null
+}

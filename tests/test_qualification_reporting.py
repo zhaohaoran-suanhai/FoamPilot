@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from foampilot.artifacts import (
+    ArtifactStore,
     AttemptSummary,
     NativeAgentOutcome,
     RunSummary,
@@ -17,6 +18,14 @@ from foampilot.qualification.reporting import (
     classify_qualification,
     markdown_report,
     native_case_dir,
+    run_metadata,
+)
+from foampilot.workflow import (
+    FailureDomain,
+    FailureRecord,
+    ParentRun,
+    ResumeMetadata,
+    WorkflowState,
 )
 
 
@@ -26,14 +35,51 @@ def _outcome(
     status: str,
     attempts: list[AttemptSummary] | None = None,
 ) -> NativeAgentOutcome:
+    native_status = (
+        status
+        if status
+        in {
+            "STATIC_INSPECTION_FAILED",
+            "MESH_FAILED",
+            "INITIALIZATION_FAILED",
+            "SOLVER_FAILED",
+            "POSTPROCESS_FAILED",
+            "PUBLIC_VALIDATION_FAILED",
+            "PUBLIC_VALIDATION_PASS",
+        }
+        else None
+    )
+    completed = status == "PUBLIC_VALIDATION_PASS"
+    domains = {
+        "BLOCKED_ENVIRONMENT": FailureDomain.ENVIRONMENT,
+        "PLAN_INVALID": FailureDomain.PLAN,
+        "SOLVER_FAILED": FailureDomain.SOLVER,
+    }
     summary = RunSummary(
         task_id="laminar-cavity",
-        status=status,
+        workflow_state=(
+            WorkflowState.COMPLETED
+            if completed
+            else WorkflowState.FAILED
+        ),
+        native_status=native_status,
         attempts=attempts or [],
+        primary_failure=(
+            None
+            if completed
+            else FailureRecord(
+                domain=domains.get(status, FailureDomain.LEGACY),
+                code=status,
+                detail="test",
+            )
+        ),
+        resume=ResumeMetadata(
+            allowed=False,
+            reason="test outcome is not resumable",
+        ),
         message="test",
     )
     return NativeAgentOutcome(
-        status=status,
         run_dir=tmp_path / "run-1",
         summary=summary,
     )
@@ -115,6 +161,42 @@ def test_classification_preserves_failure_layers(tmp_path: Path) -> None:
     )
 
 
+def test_classification_distinguishes_provider_deferred(
+    tmp_path: Path,
+) -> None:
+    summary = RunSummary(
+        task_id="laminar-cavity",
+        workflow_state=WorkflowState.DEFERRED,
+        native_status="SOLVER_FAILED",
+        attempts=[
+            AttemptSummary(attempt=1, status="SOLVER_FAILED")
+        ],
+        primary_failure=FailureRecord(
+            domain=FailureDomain.SOLVER,
+            code="SOLVER_FAILED",
+            detail="solver failed",
+        ),
+        terminal_blocker=FailureRecord(
+            domain=FailureDomain.PROVIDER,
+            code="PROVIDER_OVERLOADED",
+            retryable=True,
+            detail="provider overloaded",
+        ),
+        resume=ResumeMetadata(
+            allowed=True,
+            from_stage="MODEL_REPAIR_STARTED",
+            reason="retryable provider failure",
+        ),
+        message="repair deferred",
+    )
+    outcome = NativeAgentOutcome(
+        run_dir=tmp_path / "run-deferred",
+        summary=summary,
+    )
+
+    assert classify_qualification(outcome, [], []) == "DEFERRED_PROVIDER"
+
+
 def test_report_preserves_protocol_order_and_mpi_rendering(
     tmp_path: Path,
 ) -> None:
@@ -161,6 +243,130 @@ def test_report_preserves_protocol_order_and_mpi_rendering(
         ]
     ]
     assert report.counts["FAIL_AGENT"] == 1
+
+
+def test_run_metadata_recognizes_target_solver_inside_mpi_launcher(
+    tmp_path: Path,
+) -> None:
+    outcome = _outcome(
+        tmp_path,
+        status="PUBLIC_VALIDATION_PASS",
+        attempts=[
+            AttemptSummary(
+                attempt=1,
+                status="PUBLIC_VALIDATION_PASS",
+            )
+        ],
+    )
+    attempt = outcome.run_dir / "attempt-01"
+    attempt.mkdir(parents=True)
+    (attempt / "run-result.json").write_text(
+        json.dumps(
+            {
+                "case_dir": "case",
+                "failed_step_id": None,
+                "timed_out": False,
+                "steps": [
+                    {
+                        "step_id": "solve",
+                        "command": [
+                            "mpirun",
+                            "-n",
+                            "4",
+                            "simpleFoam",
+                            "-parallel",
+                        ],
+                        "return_code": 0,
+                        "timed_out": False,
+                        "started_at": "2026-07-31T00:00:00Z",
+                        "finished_at": "2026-07-31T00:00:01Z",
+                        "stdout_path": "stdout.log",
+                        "stderr_path": "stderr.log",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    metadata = run_metadata(
+        outcome,
+        expected_application="simpleFoam",
+    )
+
+    assert metadata["target_solver_started"] is True
+    assert metadata["solver_normal_completion"] is True
+
+
+def test_run_metadata_accumulates_parent_child_model_usage(
+    tmp_path: Path,
+) -> None:
+    store = ArtifactStore(tmp_path / "runs")
+    parent_dir = store.create_run()
+    parent_summary = RunSummary(
+        task_id="laminar-cavity",
+        workflow_state=WorkflowState.DEFERRED,
+        terminal_blocker=FailureRecord(
+            domain=FailureDomain.PROVIDER,
+            code="PROVIDER_OVERLOADED",
+            retryable=True,
+            detail="deferred",
+        ),
+        resume=ResumeMetadata(
+            allowed=True,
+            from_stage="MODEL_GENERATION_STARTED",
+            reason="retryable",
+        ),
+        message="deferred",
+    )
+    (parent_dir / "summary.json").write_text(
+        parent_summary.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    (parent_dir / "model-configuration.json").write_text(
+        json.dumps(
+            {
+                "logical_model_requests": 1,
+                "transport_attempts": 3,
+                "model_time_seconds": 12.5,
+            }
+        ),
+        encoding="utf-8",
+    )
+    store.finalize(parent_dir)
+
+    child_dir = store.create_run()
+    child_summary = RunSummary(
+        task_id="laminar-cavity",
+        workflow_state=WorkflowState.COMPLETED,
+        native_status="PUBLIC_VALIDATION_PASS",
+        parent_run=ParentRun(
+            run_id=parent_dir.name,
+            manifest_sha256=store.manifest_sha256(parent_dir),
+        ),
+        resume=ResumeMetadata(allowed=False, reason="completed"),
+        message="passed",
+    )
+    (child_dir / "model-configuration.json").write_text(
+        json.dumps(
+            {
+                "logical_model_requests": 1,
+                "transport_attempts": 1,
+                "model_time_seconds": 2.5,
+            }
+        ),
+        encoding="utf-8",
+    )
+    outcome = NativeAgentOutcome(
+        run_dir=child_dir,
+        summary=child_summary,
+    )
+
+    metadata = run_metadata(outcome)
+
+    assert metadata["logical_model_requests"] == 2
+    assert metadata["transport_attempts"] == 4
+    assert metadata["model_time_seconds"] == 15
 
 
 def test_report_accepts_generic_protocol_and_case_order(

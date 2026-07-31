@@ -1,0 +1,37 @@
+FoamFile
+{
+    format      ascii;
+    class       volScalarField;
+    object      p;
+}
+
+dimensions      [1 -1 -2 0 0 0 0];
+
+internalField   uniform 100000;
+
+boundaryField
+{
+    cold
+    {
+        type            calculated;
+        value           uniform 100000;
+    }
+
+    hot
+    {
+        type            calculated;
+        value           uniform 100000;
+    }
+
+    topAndBottom
+    {
+        type            calculated;
+        value           uniform 100000;
+    }
+
+    frontAndBack
+    {
+        type            calculated;
+        value           uniform 100000;
+    }
+}

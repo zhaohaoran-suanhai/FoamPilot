@@ -1,0 +1,18 @@
+{
+  "solver_executable": "interFoam",
+  "solver_family": "incompressible-vof",
+  "regime": "transient",
+  "physics_family": "multiphase_fluid",
+  "mesh_family": "blockMesh",
+  "dimensionality": "2d",
+  "regions": [
+    {"name": "default", "kind": "fluid", "path_prefix": ""}
+  ],
+  "fields": [
+    {"name": "U", "region": "default", "path": "0/U", "role": "velocity", "created_by": "author"},
+    {"name": "p_rgh", "region": "default", "path": "0/p_rgh", "role": "reduced_pressure", "created_by": "author"},
+    {"name": "alpha.water", "region": "default", "path": "0/alpha.water", "role": "phase_fraction", "created_by": "initialize"}
+  ],
+  "patches": [],
+  "models": {"transport": "two_incompressible_immiscible_fluids"}
+}

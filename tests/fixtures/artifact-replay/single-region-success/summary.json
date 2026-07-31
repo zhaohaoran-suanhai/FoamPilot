@@ -1,0 +1,15 @@
+{
+  "attempts": [
+    {
+      "attempt": 1,
+      "changed_files": [],
+      "failed_step_id": null,
+      "failure_fingerprint": null,
+      "status": "PUBLIC_VALIDATION_PASS"
+    }
+  ],
+  "message": "All evaluator-owned public checks pass.",
+  "schema_version": 1,
+  "status": "PUBLIC_VALIDATION_PASS",
+  "task_id": "laminar-cavity"
+}

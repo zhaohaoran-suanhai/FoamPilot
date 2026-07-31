@@ -65,6 +65,7 @@ class QualificationMetric(StrictModel):
 QualificationStatus = Literal[
     "PASS",
     "FAIL_AGENT",
+    "DEFERRED_PROVIDER",
     "BLOCKED_ENVIRONMENT",
     "INVALID_QUALIFICATION",
 ]
@@ -73,10 +74,28 @@ QualificationStatus = Literal[
 class QualificationResult(StrictModel):
     case_id: str
     status: QualificationStatus
-    native_status: str
+    workflow_state: str = "FAILED"
+    native_status: str | None
     run_dir: Path
     attempts: int
     model_calls: int = 0
+    logical_model_requests: int = 0
+    transport_attempts: int = 0
+    model_time_seconds: float = Field(default=0, ge=0)
+    provider_deferred: bool = False
+    generation_success: bool = False
+    native_execution_started: bool = False
+    mesh_generation_pass: bool | None = None
+    check_mesh_pass: bool | None = None
+    target_solver_started: bool = False
+    solver_normal_completion: bool = False
+    public_validation_pass: bool = False
+    physics_qualification_pass: bool = False
+    time_to_first_openfoam_command: float | None = Field(
+        default=None,
+        ge=0,
+    )
+    openfoam_time_seconds: float = Field(default=0, ge=0)
     selected_knowledge_ids: list[str] = Field(default_factory=list)
     openfoam_commands: list[list[str]] = Field(default_factory=list)
     manifest_issues: list[str] = Field(default_factory=list)
@@ -85,8 +104,25 @@ class QualificationResult(StrictModel):
     message: str
 
 
+class QualificationAggregates(StrictModel):
+    task_count: int = Field(default=0, ge=0)
+    logical_model_requests: int = Field(default=0, ge=0)
+    transport_attempts: int = Field(default=0, ge=0)
+    provider_deferred_count: int = Field(default=0, ge=0)
+    generation_success_count: int = Field(default=0, ge=0)
+    native_execution_started_count: int = Field(default=0, ge=0)
+    mesh_generation_pass_count: int = Field(default=0, ge=0)
+    check_mesh_pass_count: int = Field(default=0, ge=0)
+    target_solver_started_count: int = Field(default=0, ge=0)
+    solver_normal_completion_count: int = Field(default=0, ge=0)
+    public_validation_pass_count: int = Field(default=0, ge=0)
+    physics_qualification_pass_count: int = Field(default=0, ge=0)
+    model_time_seconds: float = Field(default=0, ge=0)
+    openfoam_time_seconds: float = Field(default=0, ge=0)
+
+
 class QualificationReport(StrictModel):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     protocol_id: str = Field(
         default="official-six-v1",
         pattern=r"^[a-z0-9][a-z0-9._-]*$",
@@ -94,6 +130,9 @@ class QualificationReport(StrictModel):
     created_at: datetime
     model_name: str
     counts: dict[QualificationStatus, int]
+    aggregates: QualificationAggregates = Field(
+        default_factory=QualificationAggregates
+    )
     results: list[QualificationResult]
 
 

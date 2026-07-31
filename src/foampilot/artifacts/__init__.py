@@ -4,6 +4,7 @@ from .models import (
     AttemptSummary,
     NativeAgentOutcome,
     NativeAgentStatus,
+    NativeStatus,
     RunSummary,
 )
 from .store import ArtifactStore, redact_text
@@ -13,6 +14,7 @@ __all__ = [
     "AttemptSummary",
     "NativeAgentOutcome",
     "NativeAgentStatus",
+    "NativeStatus",
     "RunSummary",
     "redact_text",
 ]

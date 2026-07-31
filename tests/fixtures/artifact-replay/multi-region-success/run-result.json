@@ -1,0 +1,99 @@
+{
+  "case_dir": "case",
+  "failed_step_id": null,
+  "steps": [
+    {
+      "command": [
+        "blockMesh"
+      ],
+      "finished_at": "2026-07-30T04:59:04.067605Z",
+      "return_code": 0,
+      "started_at": "2026-07-30T04:59:03.953694Z",
+      "stderr_path": "case/.foampilot/logs/01-blockmesh.stderr.log",
+      "stdout_path": "case/.foampilot/logs/01-blockmesh.stdout.log",
+      "step_id": "blockmesh",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "checkMesh"
+      ],
+      "finished_at": "2026-07-30T04:59:04.181912Z",
+      "return_code": 0,
+      "started_at": "2026-07-30T04:59:04.067846Z",
+      "stderr_path": "case/.foampilot/logs/02-check-parent-mesh.stderr.log",
+      "stdout_path": "case/.foampilot/logs/02-check-parent-mesh.stdout.log",
+      "step_id": "check-parent-mesh",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "topoSet"
+      ],
+      "finished_at": "2026-07-30T04:59:04.296073Z",
+      "return_code": 0,
+      "started_at": "2026-07-30T04:59:04.182144Z",
+      "stderr_path": "case/.foampilot/logs/03-create-solid-zone.stderr.log",
+      "stdout_path": "case/.foampilot/logs/03-create-solid-zone.stdout.log",
+      "step_id": "create-solid-zone",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "splitMeshRegions",
+        "-cellZones",
+        "-defaultRegionName",
+        "fluid",
+        "-overwrite"
+      ],
+      "finished_at": "2026-07-30T04:59:04.410333Z",
+      "return_code": 0,
+      "started_at": "2026-07-30T04:59:04.296317Z",
+      "stderr_path": "case/.foampilot/logs/04-split-regions.stderr.log",
+      "stdout_path": "case/.foampilot/logs/04-split-regions.stdout.log",
+      "step_id": "split-regions",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "checkMesh",
+        "-region",
+        "fluid"
+      ],
+      "finished_at": "2026-07-30T04:59:04.524509Z",
+      "return_code": 0,
+      "started_at": "2026-07-30T04:59:04.410523Z",
+      "stderr_path": "case/.foampilot/logs/05-check-fluid-mesh.stderr.log",
+      "stdout_path": "case/.foampilot/logs/05-check-fluid-mesh.stdout.log",
+      "step_id": "check-fluid-mesh",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "checkMesh",
+        "-region",
+        "solid"
+      ],
+      "finished_at": "2026-07-30T04:59:04.638779Z",
+      "return_code": 0,
+      "started_at": "2026-07-30T04:59:04.524741Z",
+      "stderr_path": "case/.foampilot/logs/06-check-solid-mesh.stderr.log",
+      "stdout_path": "case/.foampilot/logs/06-check-solid-mesh.stdout.log",
+      "step_id": "check-solid-mesh",
+      "timed_out": false
+    },
+    {
+      "command": [
+        "chtMultiRegionFoam"
+      ],
+      "finished_at": "2026-07-30T05:01:06.010282Z",
+      "return_code": 0,
+      "started_at": "2026-07-30T04:59:04.639012Z",
+      "stderr_path": "case/.foampilot/logs/07-solve-cht.stderr.log",
+      "stdout_path": "case/.foampilot/logs/07-solve-cht.stdout.log",
+      "step_id": "solve-cht",
+      "timed_out": false
+    }
+  ],
+  "timed_out": false
+}

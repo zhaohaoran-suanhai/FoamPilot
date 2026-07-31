@@ -152,6 +152,14 @@
   "additionalProperties": false,
   "description": "One focused, provenance-bearing Foundation v10 knowledge topic.",
   "properties": {
+    "activation_terms": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Activation Terms",
+      "type": "array"
+    },
     "applicability": {
       "$ref": "#/$defs/KnowledgeApplicability"
     },

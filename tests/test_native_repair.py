@@ -7,6 +7,7 @@ from foampilot.agent.repair import (
     should_stop_repair,
     validate_repair_decision,
 )
+from foampilot.models import InMemoryModelTraceSink, ModelStage
 from foampilot.plans import GeneratedFile, NativeCommand
 from foampilot.validation.models import (
     PublicValidationCheck,
@@ -15,7 +16,10 @@ from foampilot.validation.models import (
 
 from tests.test_execution_plan import task as task_fixture
 from tests.test_execution_plan import valid_plan
-from tests.test_native_case_generation import RecordingModel
+from tests.test_native_case_generation import (
+    RecordingModel,
+    _model_window,
+)
 
 
 def _report() -> PublicValidationReport:
@@ -158,6 +162,7 @@ def test_repair_validation_allows_safe_new_files_but_rejects_unsafe_changes(
         changed_commands=[
             NativeCommand(
                 step_id="solve-a",
+                stage="solve",
                 executable="madeUpFoam",
                 args=[],
                 mpi_ranks=1,
@@ -192,7 +197,9 @@ def test_repair_request_contains_only_failed_public_evidence() -> None:
             "For strict VOF bounds, first reduce the time-step family."
         ),
         skills_text="Change one causal family per repair.",
-        client=model,
+        gateway=model,
+        budget=_model_window(ModelStage.REPAIR),
+        trace=InMemoryModelTraceSink(),
     )
 
     assert decision.cause == "The transient time step is too large."

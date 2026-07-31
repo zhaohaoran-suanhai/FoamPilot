@@ -3,6 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from foampilot.inspection import inspect_native_case
+from foampilot.manifests import (
+    CaseField,
+    CaseManifest,
+    CaseRegion,
+)
 from foampilot.plans import (
     ExecutionPlan,
     GeneratedFile,
@@ -45,7 +50,38 @@ def _task() -> TaskSpec:
 
 def _plan() -> ExecutionPlan:
     return ExecutionPlan(
-        schema_version=2,
+        schema_version=3,
+        manifest=CaseManifest(
+            solver_executable="icoFoam",
+            solver_family="incompressible-laminar",
+            regime="transient",
+            physics_family="fluid",
+            mesh_family="blockMesh",
+            dimensionality="2d",
+            regions=[
+                CaseRegion(
+                    name="default",
+                    kind="fluid",
+                    path_prefix="",
+                )
+            ],
+            fields=[
+                CaseField(
+                    name="U",
+                    region="default",
+                    path="0/U",
+                    role="velocity",
+                    created_by="author",
+                ),
+                CaseField(
+                    name="p",
+                    region="default",
+                    path="0/p",
+                    role="kinematic_pressure",
+                    created_by="author",
+                ),
+            ],
+        ),
         files=[
             GeneratedFile(
                 path="system/controlDict",
@@ -56,13 +92,30 @@ def _plan() -> ExecutionPlan:
                 content=_header("blockMeshDict"),
             ),
             GeneratedFile(
+                path="system/fvSchemes",
+                content=_header("fvSchemes"),
+            ),
+            GeneratedFile(
+                path="system/fvSolution",
+                content=_header("fvSolution"),
+            ),
+            GeneratedFile(
+                path="constant/physicalProperties",
+                content=_header("physicalProperties"),
+            ),
+            GeneratedFile(
                 path="0/U",
                 content=_header("U", klass="volVectorField"),
+            ),
+            GeneratedFile(
+                path="0/p",
+                content=_header("p", klass="volScalarField"),
             ),
         ],
         commands=[
             NativeCommand(
                 step_id="mesh",
+                stage="mesh",
                 executable="blockMesh",
                 args=[],
                 mpi_ranks=1,
@@ -70,6 +123,7 @@ def _plan() -> ExecutionPlan:
             ),
             NativeCommand(
                 step_id="solve",
+                stage="solve",
                 executable="icoFoam",
                 args=[],
                 mpi_ranks=1,
@@ -97,6 +151,7 @@ def _write_declared_case(
     control_suffix: str = "",
 ) -> None:
     (root / "system").mkdir(parents=True)
+    (root / "constant").mkdir()
     (root / "0").mkdir()
     (root / "system/controlDict").write_text(
         _header("controlDict")
@@ -123,6 +178,18 @@ boundary
 """,
         encoding="utf-8",
     )
+    (root / "system/fvSchemes").write_text(
+        _header("fvSchemes"),
+        encoding="utf-8",
+    )
+    (root / "system/fvSolution").write_text(
+        _header("fvSolution"),
+        encoding="utf-8",
+    )
+    (root / "constant/physicalProperties").write_text(
+        _header("physicalProperties"),
+        encoding="utf-8",
+    )
     (root / "0/U").write_text(
         _header("U", klass="volVectorField")
         + """
@@ -139,6 +206,19 @@ boundaryField
     {
         type noSlip;
     }
+}
+""",
+        encoding="utf-8",
+    )
+    (root / "0/p").write_text(
+        _header("p", klass="volScalarField")
+        + """
+dimensions [0 2 -2 0 0 0 0];
+internalField uniform 0;
+boundaryField
+{
+    movingWall { type zeroGradient; }
+    fixedWalls { type zeroGradient; }
 }
 """,
         encoding="utf-8",
@@ -211,7 +291,7 @@ def test_inspection_accepts_headerless_include_fragments(
     tmp_path: Path,
 ) -> None:
     _write_declared_case(tmp_path)
-    (tmp_path / "constant").mkdir()
+    (tmp_path / "constant").mkdir(exist_ok=True)
     fragment = "constant/values.inc"
     (tmp_path / fragment).write_text(
         "uniform 0;\n",

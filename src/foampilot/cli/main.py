@@ -36,10 +36,18 @@ from foampilot.physics import (
     solve_ideal_gas_riemann,
 )
 from foampilot.models import (
-    CodexOAuthModelClient,
+    CodexOAuthProviderClient,
+    JsonlModelTraceSink,
+    ModelBudgetLedger,
+    ModelGateway,
+    ModelStage,
     load_codex_access_token,
 )
-from foampilot.plans import ExecutionPlan, validate_execution_plan
+from foampilot.plans import (
+    ExecutionPlan,
+    normalize_execution_plan,
+    validate_execution_plan,
+)
 from foampilot.qualification import (
     QualificationReport,
     load_qualification_suite,
@@ -50,6 +58,7 @@ from foampilot.runtime import (
     RuntimeConfig,
     run_preflight,
 )
+from foampilot.routing import route_capability
 from foampilot.skills import (
     load_skill_scenarios,
     validate_skill,
@@ -61,6 +70,7 @@ COMMANDS = (
     "validate",
     "plan",
     "solve",
+    "resume",
     "inspect",
     "report",
     "preflight",
@@ -117,6 +127,18 @@ def _parser() -> argparse.ArgumentParser:
     native_solve.add_argument("--model-name", default="gpt-5.2-codex")
     native_solve.add_argument("--max-mpi-ranks", type=int, default=1)
     native_solve.add_argument("--json", action="store_true")
+
+    native_resume = subparsers.add_parser("resume")
+    native_resume.add_argument("parent_run", type=Path)
+    native_resume.add_argument("--run-root", required=True, type=Path)
+    native_resume.add_argument(
+        "--auth",
+        type=Path,
+        default=Path.home() / ".codex/auth.json",
+    )
+    native_resume.add_argument("--model-name", default="gpt-5.2-codex")
+    native_resume.add_argument("--max-mpi-ranks", type=int, default=1)
+    native_resume.add_argument("--json", action="store_true")
 
     native_inspect = subparsers.add_parser("inspect")
     native_inspect.add_argument("task", type=Path)
@@ -279,10 +301,12 @@ def _emit(payload: object, *, as_json: bool, human: str) -> None:
         print(human)
 
 
-def _native_model(arguments: argparse.Namespace) -> CodexOAuthModelClient:
-    return CodexOAuthModelClient(
-        model=arguments.model_name,
-        access_token=load_codex_access_token(arguments.auth),
+def _native_gateway(arguments: argparse.Namespace) -> ModelGateway:
+    return ModelGateway(
+        provider=CodexOAuthProviderClient(
+            model=arguments.model_name,
+            access_token=load_codex_access_token(arguments.auth),
+        )
     )
 
 
@@ -303,15 +327,48 @@ def _native_plan(arguments: argparse.Namespace) -> int:
         update={"max_mpi_ranks": task.resource_budget.max_mpi_ranks}
     )
     environment = discover_environment(config, arguments.output.parent)
-    client = _native_model(arguments)
-    context = load_agent_context(task)
+    gateway = _native_gateway(arguments)
+    ledger = ModelBudgetLedger.start()
+    trace = JsonlModelTraceSink(
+        arguments.output.with_suffix(
+            arguments.output.suffix + ".model-attempts.jsonl"
+        )
+    )
+    corpus = load_knowledge_corpus(
+        Path(__file__).resolve().parents[1] / "knowledge/openfoam10"
+    )
+    capability = route_capability(
+        task,
+        environment,
+        corpus,
+        gateway=gateway,
+        budget=ledger.open_stage(
+            ModelStage.ROUTING,
+            request_timeout_seconds=60,
+            stage_deadline_seconds=60,
+            max_transport_attempts=1,
+        ),
+        trace=trace,
+    )
+    context = load_agent_context(task, capability)
     plan = author_case_bundle(
         task,
         environment,
-        client,
+        capability,
+        gateway,
         context.knowledge_text,
         context.skills_text,
+        budget=ledger.open_stage(
+            ModelStage.GENERATION,
+            stage_deadline_seconds=360,
+        ),
+        trace=trace,
     )
+    plan = normalize_execution_plan(
+        plan,
+        task,
+        environment.executable_names,
+    ).plan
     issues = validate_execution_plan(
         plan,
         task,
@@ -346,7 +403,7 @@ def _native_solve(arguments: argparse.Namespace) -> int:
         update={"max_mpi_ranks": arguments.max_mpi_ranks}
     )
     outcome = NativeAgent(
-        model=_native_model(arguments),
+        gateway=_native_gateway(arguments),
         runtime_config=config,
         artifact_store=ArtifactStore(arguments.run_root),
     ).solve(task, public_asset_root=arguments.public_asset_root)
@@ -356,11 +413,36 @@ def _native_solve(arguments: argparse.Namespace) -> int:
         as_json=arguments.json,
         human=f"{outcome.status}: artifacts at {outcome.run_dir}.",
     )
-    if outcome.status == "PUBLIC_VALIDATION_PASS":
+    return _native_outcome_exit_code(outcome)
+
+
+def _native_outcome_exit_code(outcome) -> int:
+    if outcome.summary.native_status == "PUBLIC_VALIDATION_PASS":
         return 0
-    if outcome.status == "BLOCKED_ENVIRONMENT":
+    if (
+        outcome.summary.workflow_state == "DEFERRED"
+        or outcome.status == "BLOCKED_ENVIRONMENT"
+    ):
         return 3
     return 4
+
+
+def _native_resume(arguments: argparse.Namespace) -> int:
+    config = RuntimeConfig.local_foundation_v10().model_copy(
+        update={"max_mpi_ranks": arguments.max_mpi_ranks}
+    )
+    outcome = NativeAgent(
+        gateway=_native_gateway(arguments),
+        runtime_config=config,
+        artifact_store=ArtifactStore(arguments.run_root),
+    ).resume(arguments.parent_run)
+    payload = outcome.model_dump(mode="json")
+    _emit(
+        payload,
+        as_json=arguments.json,
+        human=f"{outcome.status}: artifacts at {outcome.run_dir}.",
+    )
+    return _native_outcome_exit_code(outcome)
 
 
 def _native_inspect(arguments: argparse.Namespace) -> int:
@@ -431,7 +513,10 @@ def _report(arguments: argparse.Namespace) -> int:
         return 4
     if summary.status in {"PASS", "PUBLIC_VALIDATION_PASS"}:
         return 0
-    if summary.status == "BLOCKED_ENVIRONMENT":
+    if (
+        summary.workflow_state == "DEFERRED"
+        or summary.status == "BLOCKED_ENVIRONMENT"
+    ):
         return 3
     return 4
 
@@ -734,6 +819,7 @@ def main(argv: list[str] | None = None) -> int:
             "validate": _native_validate,
             "plan": _native_plan,
             "solve": _native_solve,
+            "resume": _native_resume,
             "inspect": _native_inspect,
             "preflight": _preflight,
             "report": _report,

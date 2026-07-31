@@ -6,6 +6,7 @@ import foampilot
 import pytest
 
 from foampilot.agent.context import load_agent_context
+from foampilot.routing import CapabilityProfile
 from foampilot.tasks import TaskSpec
 
 
@@ -50,8 +51,34 @@ def _task() -> TaskSpec:
     )
 
 
+def _capability() -> CapabilityProfile:
+    return CapabilityProfile.model_validate(
+        {
+            "schema_version": 1,
+            "physics_family": "fluid",
+            "regime": "transient",
+            "compressibility": "incompressible",
+            "phase_family": "vof",
+            "energy": "disabled",
+            "turbulence": "laminar",
+            "solver_family": "incompressible-vof",
+            "solver_executable": "interFoam",
+            "mesh_family": "blockMesh",
+            "parallel_expected": False,
+            "confidence": "high",
+            "evidence": [
+                {
+                    "source": "task.prompt",
+                    "fact": "explicit solver interFoam",
+                }
+            ],
+            "unresolved_questions": [],
+        }
+    )
+
+
 def test_context_dynamically_retrieves_public_vof_knowledge() -> None:
-    context = load_agent_context(_task())
+    context = load_agent_context(_task(), _capability())
 
     assert len(context.selected_knowledge_ids) <= 5
     assert "of10.solver.interfoam-vof-contract" in (
@@ -79,7 +106,7 @@ def test_context_dynamically_retrieves_public_vof_knowledge() -> None:
 
 
 def test_context_excludes_development_only_entries() -> None:
-    context = load_agent_context(_task(), limit=14)
+    context = load_agent_context(_task(), _capability())
 
     assert "development_only" not in context.knowledge_text
 
@@ -88,7 +115,11 @@ def test_context_can_load_from_an_explicit_package_root(
     tmp_path: Path,
 ) -> None:
     with pytest.raises(FileNotFoundError):
-        load_agent_context(_task(), package_root=tmp_path)
+        load_agent_context(
+            _task(),
+            _capability(),
+            package_root=tmp_path,
+        )
 
 
 def test_native_agent_resources_are_installed_inside_the_python_package() -> None:

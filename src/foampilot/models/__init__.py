@@ -1,23 +1,54 @@
 """Independent model-provider boundary."""
 
 from .base import (
-    ModelClient,
-    ModelError,
     ModelRequest,
-    SchemaOutputError,
-    TransportError,
 )
-from .codex_oauth import CodexOAuthModelClient, load_codex_access_token
-from .retry import ModelRetryPolicy, generate_with_retry
-
+from .codex_oauth import (
+    CodexOAuthProviderClient,
+    load_codex_access_token,
+)
+from .budgets import (
+    LineageBudgetExhausted,
+    ModelBudgetLedger,
+    ModelBudgetWindow,
+    ModelStage,
+)
+from .circuit_breaker import (
+    CircuitBreakerKey,
+    CircuitDeferredError,
+    CircuitState,
+    SharedCircuitBreaker,
+)
+from .errors import ProviderError, ProviderFailureKind
+from .gateway import GatewayRequestError, ModelGateway, ModelResult
+from .provider import ProviderClient, ProviderResponse
+from .traces import (
+    InMemoryModelTraceSink,
+    JsonlModelTraceSink,
+    ModelAttemptTrace,
+    ModelTraceSink,
+)
 __all__ = [
-    "CodexOAuthModelClient",
-    "ModelClient",
-    "ModelError",
+    "CodexOAuthProviderClient",
+    "CircuitBreakerKey",
+    "CircuitDeferredError",
+    "CircuitState",
+    "GatewayRequestError",
+    "InMemoryModelTraceSink",
+    "JsonlModelTraceSink",
+    "LineageBudgetExhausted",
+    "ModelAttemptTrace",
+    "ModelBudgetLedger",
+    "ModelBudgetWindow",
+    "ModelGateway",
     "ModelRequest",
-    "ModelRetryPolicy",
-    "SchemaOutputError",
-    "TransportError",
-    "generate_with_retry",
+    "ModelResult",
+    "ModelStage",
+    "ModelTraceSink",
+    "ProviderClient",
+    "ProviderError",
+    "ProviderFailureKind",
+    "ProviderResponse",
+    "SharedCircuitBreaker",
     "load_codex_access_token",
 ]

@@ -10,8 +10,9 @@ Do not use Foam-Agent, LangGraph, FAISS, MCP, a Case renderer, or an `Allrun`
 compatibility path.
 
 OpenFOAM remains the numerical solver. FoamPilot owns TaskSpec validation,
-dynamic public retrieval, model-authored case files, typed execution,
-evaluator checks, one bounded repair, and immutable artifacts.
+evidence-based capability routing, slot-bounded public retrieval,
+model-authored case files, typed execution, evaluator checks, one bounded
+repair, and immutable artifacts.
 
 ## Canonical commands
 
@@ -20,6 +21,7 @@ foampilot preflight --json
 foampilot validate TASK.yaml --json
 foampilot plan TASK.yaml --output PLAN.json --json
 foampilot solve TASK.yaml --run-root RUNS --json
+foampilot resume RUNS/PARENT_RUN --run-root RUNS --json
 foampilot report RUN_DIR --json
 foampilot qualify suite \
   --suite-file \
@@ -47,6 +49,13 @@ editable into the selected Python 3.12 environment.
   solver syntax, and executable names.
 - Retrieve public knowledge dynamically from the task. Do not preselect
   knowledge IDs in the task.
+- Route solver family before retrieval. Treat `CapabilityProfile.confidence`
+  as a deterministic evidence result, never as a model assertion.
+- Author `ExecutionPlan` schema v3. Include one region-aware `CaseManifest`
+  and put `stage` directly on every typed command.
+- For a single-region case, use region `default` with an empty path prefix.
+  For multi-region cases, use explicit fluid/solid region names and matching
+  field paths.
 - Do not read or copy the target tutorial.
 - Do not expose evaluator rules, derived references, protected paths, or
   golden data to the case-authoring or repair model.
@@ -54,6 +63,8 @@ editable into the selected Python 3.12 environment.
   commands.
 - Do not generate shell syntax, `Allrun`, `mpirun`, `orterun`, host files, or
   external paths. The Runner owns MPI launch and resource enforcement.
+- The normalizer may unwrap only the reviewed simple launcher form. It must
+  not guess host selection, unknown arguments, ranks, or solver identity.
 - Do not add optional function objects merely to manufacture evaluator
   evidence. Evaluators inspect solver logs and written fields.
 
@@ -75,7 +86,15 @@ editable into the selected Python 3.12 environment.
 ## Execution and repair
 
 - Run `preflight` before a real solve.
+- Treat missing author/public-asset fields as pre-solve errors. Do not require
+  fields declared as mesh-, initialization-, or solver-created to exist
+  before the command that creates them runs.
 - Preserve every attempt; never edit an immutable attempt in place.
+- Resume retryable generation/repair interruption only through a child run;
+  verify the parent manifest, compatibility fingerprint, native/root failure,
+  terminal blocker, and lineage budget first.
+- Treat code, model, policy, TaskSpec, asset, Knowledge, or Skill changes as a
+  new `rerun_with_changes`, never as strict resume.
 - Classify environment, authoring, plan, static-inspection, solver, public
   validation, and qualification failures separately.
 - Base repair only on the public report, failed command log, active plan,

@@ -1,0 +1,11 @@
+{
+  "issues": [],
+  "observed_patches": [
+    "atmosphere",
+    "empty",
+    "left",
+    "lower",
+    "obstacle",
+    "right"
+  ]
+}

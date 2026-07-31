@@ -1,35 +1,39 @@
-# FoamPilot quickstart
+# FoamPilot 快速开始
 
-## What the lean path does
+## 精简主路径的功能
 
-`foampilot solve` turns one natural-language-oriented public `TaskSpec` into a
-native Foundation OpenFOAM v10 run. FoamPilot is a standalone Python package.
+`foampilot solve` 将一份面向自然语言需求的公开 `TaskSpec` 转换为一次原生
+Foundation OpenFOAM v10 运行。FoamPilot 是独立的 Python 工具包。
 
-The runtime sequence is:
+运行流程如下：
 
-1. validate the public task;
-2. discover the local OpenFOAM environment;
-3. retrieve public knowledge dynamically from the task text;
-4. make one model call for one complete CaseBundle;
-5. validate typed file paths and commands for safety and resource limits;
-6. write the declared files into an empty attempt directory;
-7. statically inspect the case and execute native commands in the Runner;
-8. apply evaluator-owned public checks;
-9. if permitted by the attempt budget, request one evidence-scoped repair;
-10. freeze the run manifest.
+1. 校验公开任务；
+2. 发现本机 OpenFOAM 环境；
+3. 根据公开证据生成由系统负责的 `CapabilityProfile`；
+4. 按语义槽位最多检索一条有界公开知识，将无关槽位留空，并路由 Skills；
+5. 通过具备重试、deadline 和熔断能力的 Gateway，发起一次逻辑模型请求，生成
+   完整 CaseBundle；
+6. 只对无歧义的 MPI wrapper 进行安全规范化，然后执行 typed policy；
+7. 将声明的文件写入空的 attempt 目录；
+8. 检查高置信度跨文件语义，并执行原生命令；
+9. 执行由 evaluator 负责的公开检查；
+10. 如果尝试预算允许，请求一次基于失败证据的定向修复；
+11. 如果可重试的 provider 故障中断生成或修复，将运行固化为 `DEFERRED`，
+    并保存 strict resume 元数据；
+12. 为每个终态运行固化 artifact manifest。
 
-The `ExecutionPlan` v2 schema contains only:
+规范的 `ExecutionPlan` v3 结构为：
 
 ```text
+manifest   = {solver, family, regions, fields, patches, models, ...}
 files[]    = {path, content}
-commands[] = {step_id, executable, args, mpi_ranks, timeout_seconds}
+commands[] = {step_id, stage, executable, args, mpi_ranks, timeout_seconds}
 ```
 
-Solver choice, dictionary structure, numerical methods, initialization, and
-post-processing remain Agent decisions. Deterministic code does not review
-their CFD strategy before execution.
+求解器选择、字典结构、数值方法、初始化和后处理仍由 Agent 决定。确定性代码在
+执行前检查结构、安全和高置信度语义约束，但不会替 Agent 审查完整 CFD 策略。
 
-## Install and preflight
+## 安装和预检
 
 ```bash
 git clone git@github.com:zhaohaoran-suanhai/FoamPilot.git
@@ -38,16 +42,16 @@ python -m pip install -e ".[codex,test]"
 foampilot preflight --json
 ```
 
-The local profile expects:
+当前本机配置使用：
 
-- `/home/edwin/workplace/OpenFOAM-10`;
-- `/usr/local/bin/bwrap`;
-- `/home/edwin/feal-venv-py312/bin/python`.
+- `/home/edwin/workplace/OpenFOAM-10`；
+- `/usr/local/bin/bwrap`；
+- `/home/edwin/feal-venv-py312/bin/python`。
 
-Bubblewrap may be blocked inside an already-restricted development sandbox.
-That is an environment block, not an OpenFOAM capability result.
+如果 FoamPilot 本身运行在已经受限的开发沙箱中，bubblewrap 可能无法再次创建
+namespace。这属于环境阻断，不是 OpenFOAM 能力测试结果。
 
-## Validate, plan, solve, and report
+## 校验、生成计划、求解和报告
 
 ```bash
 foampilot validate examples/tasks/non-tutorial-side-driven-box.yaml --json
@@ -65,22 +69,90 @@ foampilot solve examples/tasks/non-tutorial-side-driven-box.yaml \
 foampilot report /tmp/foampilot-native-runs/RUN_DIR --json
 ```
 
-`plan` and the initial phase of `solve` each use one model call for the whole
-bundle. `solve` returns zero only for `PUBLIC_VALIDATION_PASS`; an environment
-block returns 3 and execution or validation failure returns 4.
+`plan` 和 `solve` 的初始阶段都会针对整个 case bundle 发起一次逻辑模型请求。
+一次逻辑请求内部可以包含次数受限的传输重试。
 
-## Artifact layout
+`solve` 只有在状态为 `PUBLIC_VALIDATION_PASS` 时返回 0；provider 暂缓或环境
+阻断返回 3；执行失败或验证失败返回 4。
 
-Each run contains:
+## Provider 暂缓和续跑
+
+生成阶段中断时尚未产生 native 结果：
+
+```json
+{
+  "workflow_state": "DEFERRED",
+  "native_status": null,
+  "terminal_blocker": {
+    "domain": "provider",
+    "code": "PROVIDER_OVERLOADED",
+    "retryable": true
+  },
+  "resume": {
+    "allowed": true,
+    "from_stage": "MODEL_GENERATION_STARTED"
+  }
+}
+```
+
+修复阶段中断时会保留原始 native 根因：
+
+```json
+{
+  "workflow_state": "DEFERRED",
+  "native_status": "SOLVER_FAILED",
+  "primary_failure": {"domain": "solver"},
+  "terminal_blocker": {
+    "domain": "provider",
+    "code": "PROVIDER_OVERLOADED"
+  },
+  "resume": {
+    "allowed": true,
+    "from_stage": "MODEL_REPAIR_STARTED"
+  }
+}
+```
+
+provider 恢复后执行：
+
+```bash
+foampilot resume /tmp/foampilot-native-runs/PARENT_RUN \
+  --run-root /tmp/foampilot-native-runs \
+  --model-name gpt-5.6-sol \
+  --json
+```
+
+创建 child run 前，`resume` 会校验 parent manifest、兼容性指纹、可重试 blocker、
+continuation 数量、传输尝试预算以及当前 OpenFOAM 能力。strict compatibility 或
+输入被拒绝时返回 2；再次发生 provider/environment 暂缓时返回 3；native 执行
+失败时返回 4。
+
+修改代码、TaskSpec、公开资产、模型、provider policy、Knowledge 或 Skills 后，
+不要使用 strict resume。应重新执行普通 `solve`，并将其记录为
+`rerun_with_changes`，否则两个不同实验会被错误归入同一 lineage。
+
+## 产物目录
+
+每次运行包含：
 
 ```text
 task.yaml
 environment.json
+capability-profile.json
 agent-context.json
+resume-compatibility.json
+authored-execution-plan.json
+plan-normalization.json
 execution-plan.json
+workflow-events.jsonl
+model-attempts.jsonl
 model-configuration.json
 summary.json
 artifact-manifest.json
+checkpoints/
+  active-plan-attempt-01.json
+  public-validation-attempt-01.json
+  repair-evidence-attempt-01.json
 attempt-01/
   execution-plan.json
   generation-trace.json
@@ -88,26 +160,30 @@ attempt-01/
   run-result.json
   public-validation.json
   case/
-    ... generated OpenFOAM files ...
+    ... Agent 生成的 OpenFOAM 文件 ...
     .foampilot/logs/
 ```
 
-A failed attempt is never overwritten. A repaired attempt is materialized
-again from the revised plan. Safe repair may add a missing generated
-dictionary, but it cannot traverse outside the case, overwrite a public asset,
-reference a protected path, introduce a new command step, or bypass the
-resource policy.
+child run 还包含 `continuation.json`；其 summary 会记录 parent run ID 和 parent
+manifest SHA256。应分别验证 parent 和 child：
 
-## Evaluation boundary
+```bash
+foampilot report /tmp/foampilot-native-runs/PARENT_RUN --json
+foampilot report /tmp/foampilot-native-runs/CHILD_RUN --json
+```
 
-The evaluator owns `public_checks`; `TaskSpec.agent_payload()` omits them and
-all protected paths. The Agent receives only the public physical request,
-required outputs, acceptance language, environment inventory, dynamically
-retrieved public knowledge, and the authoring Skill.
+失败的 attempt 不会被覆盖。修复后的 attempt 会根据修改后的计划在新目录中重新
+物化。安全修复可以增加缺失的生成字典，但不能越出 case 目录、覆盖公开资产、
+引用受保护路径、引入新的命令步骤或绕过资源策略。
 
-Official target cases and golden results remain evaluator-only. A formal
-benchmark may compare frozen outputs with private references after the run,
-but that comparison must not influence generation or repair.
+## 评测边界
 
-See [Qualification](qualification.md) for the role-aware 15-case protocol and
-reporting boundary.
+Evaluator 负责 `public_checks`；`TaskSpec.agent_payload()` 会排除这些检查以及所有
+受保护路径。Agent 只能收到公开物理需求、必需输出、验收描述、环境清单、由系统
+路由的 capability profile、按槽位限制的公开知识以及路由后的 Skills。
+
+官方目标 case 和 golden result 始终只对 evaluator 可见。正式 benchmark 可以在
+运行结束后把冻结产物与私有参考进行比较，但这些比较不得影响 case 生成或 repair。
+
+15 题分角色评测协议和报告边界见
+[受控评测](qualification.md)。

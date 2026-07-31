@@ -1,0 +1,24 @@
+{
+  "attempts": [
+    {
+      "attempt": 1,
+      "changed_files": [
+        "0/p_rgh"
+      ],
+      "failed_step_id": "solve",
+      "failure_fingerprint": "123cfb8dd5f4d94ca5160909caadd51562c95b78456676fc3eb4814edb97855a",
+      "status": "SOLVER_FAILED"
+    },
+    {
+      "attempt": 2,
+      "changed_files": [],
+      "failed_step_id": null,
+      "failure_fingerprint": null,
+      "status": "PUBLIC_VALIDATION_PASS"
+    }
+  ],
+  "message": "All evaluator-owned public checks pass.",
+  "schema_version": 1,
+  "status": "PUBLIC_VALIDATION_PASS",
+  "task_id": "buoyant-cavity"
+}

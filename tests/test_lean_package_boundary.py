@@ -29,6 +29,7 @@ SUPPORTED_COMMANDS = (
     "validate",
     "plan",
     "solve",
+    "resume",
     "inspect",
     "report",
     "preflight",

@@ -1,0 +1,23 @@
+{
+  "solver_executable": "buoyantFoam",
+  "solver_family": "compressible-buoyant",
+  "regime": "steady",
+  "physics_family": "buoyant_fluid",
+  "mesh_family": "blockMesh",
+  "dimensionality": "2d",
+  "regions": [
+    {"name": "default", "kind": "fluid", "path_prefix": ""}
+  ],
+  "fields": [
+    {"name": "U", "region": "default", "path": "0/U", "role": "velocity", "created_by": "author"},
+    {"name": "T", "region": "default", "path": "0/T", "role": "temperature", "created_by": "author"},
+    {"name": "p", "region": "default", "path": "0/p", "role": "pressure", "created_by": "author"},
+    {"name": "p_rgh", "region": "default", "path": "0/p_rgh", "role": "reduced_pressure", "created_by": "author"},
+    {"name": "k", "region": "default", "path": "0/k", "role": "turbulence_kinetic_energy", "created_by": "author"},
+    {"name": "omega", "region": "default", "path": "0/omega", "role": "specific_dissipation", "created_by": "author"},
+    {"name": "nut", "region": "default", "path": "0/nut", "role": "turbulent_viscosity", "created_by": "author"},
+    {"name": "alphat", "region": "default", "path": "0/alphat", "role": "turbulent_thermal_diffusivity", "created_by": "author"}
+  ],
+  "patches": [],
+  "models": {"turbulence": "kOmegaSST", "thermophysical": "perfectGas"}
+}
