@@ -1,4 +1,4 @@
-"""Provider-neutral model request contracts."""
+"""与具体后端无关的模型请求契约。"""
 
 from __future__ import annotations
 

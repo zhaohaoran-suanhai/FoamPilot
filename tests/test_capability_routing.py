@@ -130,8 +130,9 @@ def _route_budget():
 
 
 class RecordingRouteGateway:
-    provider_name = "recording"
-    model = "recording-route"
+    primary_backend_id = "recording"
+    primary_model = "recording-route"
+    policy_sha256 = "a" * 64
 
     def __init__(self, suggestion: RouteSuggestion) -> None:
         self.suggestion = suggestion
@@ -145,7 +146,10 @@ class RecordingRouteGateway:
         return ModelResult(
             value=self.suggestion,
             logical_request_id="route-1",
+            backend_id=self.primary_backend_id,
+            model=self.primary_model,
             transport_attempts=1,
+            backend_switches=0,
             elapsed_seconds=0,
         )
 

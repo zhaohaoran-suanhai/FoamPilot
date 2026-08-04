@@ -16,7 +16,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-codex = ["requests>=2.31"]
 test = ["pytest>=8"]
 
 [project.scripts]
@@ -39,5 +38,9 @@ foampilot = [
   "qualification/data/**/*.json",
 ]
 
+[tool.setuptools.data-files]
+"." = ["PROVENANCE.md", "THIRD_PARTY_NOTICES.md", "NOTICE.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]

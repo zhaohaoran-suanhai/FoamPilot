@@ -110,7 +110,7 @@ Learning candidate 与 promotion report 只写入 developer 在 run root 旁选�
 
 ## 单一执行路径
 
-早期 provider/CaseSpec/renderer 与 Agent 编写 `Allrun` 的路径不属于 FoamPilot。
+早期私有模型边界、CaseSpec/renderer 与 Agent 编写 `Allrun` 的路径不属于 FoamPilot。
 所有集成都使用上述原生闭环，不存在 legacy fallback 或兼容命令面。
 
 当前评测边界见[受控评测](qualification.md)。

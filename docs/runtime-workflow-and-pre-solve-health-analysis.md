@@ -1,4 +1,8 @@
-# FoamPilot 单算例工作流与求解前健康度分析
+# FoamPilot 单算例工作流与求解前健康度分析（历史基线）
+
+> 本文记录模型后端重构前的故障证据与架构诊断，文中的旧客户端名称和能力缺口不代表
+> 当前实现。当前流程以 [system-overview.md](system-overview.md)、
+> [architecture.md](architecture.md) 和源码测试为准。
 
 ## 1. 文档目的
 

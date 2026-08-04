@@ -10,15 +10,16 @@ from foampilot.agent import NativeAgent
 from foampilot.agent.repair import RepairDecision
 from foampilot.artifacts import ArtifactStore
 from foampilot.models import (
+    BackendFailureKind,
+    BackendRegistry,
     ModelGateway,
-    ProviderFailureKind,
 )
 from foampilot.plans import ExecutionPlan, GeneratedFile
 from foampilot.runtime import RuntimeConfig
 from foampilot.tasks import load_task_spec
 from tests.support.model_gateway import (
-    ScriptedProvider,
-    provider_error,
+    ScriptedBackend,
+    backend_error,
     valid_response,
 )
 
@@ -32,8 +33,10 @@ PLAN = (
 
 
 def _gateway(events) -> ModelGateway:
+    registry = BackendRegistry()
+    registry.register(ScriptedBackend(events), priority=10)
     return ModelGateway(
-        provider=ScriptedProvider(events),
+        registry=registry,
         sleep=lambda seconds: None,
     )
 
@@ -42,7 +45,7 @@ def _gateway(events) -> ModelGateway:
     os.environ.get("OFKIT_RUN_REAL_OPENFOAM") != "1",
     reason="real OpenFOAM Runner integration is opt-in",
 )
-def test_solver_failure_provider_deferred_resume_repair_real_gate(
+def test_solver_failure_backend_deferred_resume_repair_real_gate(
     tmp_path: Path,
 ) -> None:
     task = load_task_spec(TASK)
@@ -88,8 +91,8 @@ def test_solver_failure_provider_deferred_resume_repair_real_gate(
         stable_control="Mesh, fields, viscosity, and commands are unchanged.",
     )
     overloads = [
-        provider_error(
-            ProviderFailureKind.OVERLOADED,
+        backend_error(
+            BackendFailureKind.OVERLOADED,
             retryable=True,
         )
         for _ in range(3)
@@ -114,7 +117,7 @@ def test_solver_failure_provider_deferred_resume_repair_real_gate(
     assert parent.summary.primary_failure is not None
     assert parent.summary.primary_failure.domain == "solver"
     assert parent.summary.terminal_blocker is not None
-    assert parent.summary.terminal_blocker.domain == "provider"
+    assert parent.summary.terminal_blocker.domain == "backend"
 
     child = NativeAgent(
         gateway=_gateway(

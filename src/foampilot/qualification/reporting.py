@@ -65,9 +65,9 @@ def classify_qualification(
     if (
         summary.workflow_state == WorkflowState.DEFERRED
         and summary.terminal_blocker is not None
-        and summary.terminal_blocker.domain == FailureDomain.PROVIDER
+        and summary.terminal_blocker.domain == FailureDomain.BACKEND
     ):
-        return "DEFERRED_PROVIDER"
+        return "DEFERRED_BACKEND"
     failures = [
         item
         for item in (
@@ -340,7 +340,7 @@ def qualification_result(
         logical_model_requests=metadata["logical_model_requests"],
         transport_attempts=metadata["transport_attempts"],
         model_time_seconds=metadata["model_time_seconds"],
-        provider_deferred=(verdict == "DEFERRED_PROVIDER"),
+        backend_deferred=(verdict == "DEFERRED_BACKEND"),
         generation_success=metadata["generation_success"],
         native_execution_started=metadata[
             "native_execution_started"
@@ -371,6 +371,7 @@ def qualification_result(
 def build_qualification_report(
     raw_results: list[dict[str, Any]],
     *,
+    backend_id: str,
     model_name: str,
     protocol_id: str = "official-six-v1",
     case_order: tuple[str, ...] = CASE_ORDER,
@@ -385,14 +386,16 @@ def build_qualification_report(
     statuses: tuple[QualificationStatus, ...] = (
         "PASS",
         "FAIL_AGENT",
-        "DEFERRED_PROVIDER",
+        "DEFERRED_BACKEND",
         "BLOCKED_ENVIRONMENT",
         "INVALID_QUALIFICATION",
     )
     return QualificationReport(
         protocol_id=protocol_id,
         created_at=datetime.now(timezone.utc),
+        backend_id=backend_id,
         model_name=model_name,
+        automatic_failover=False,
         counts={
             status: sum(item.status == status for item in results)
             for status in statuses
@@ -405,8 +408,8 @@ def build_qualification_report(
             transport_attempts=sum(
                 item.transport_attempts for item in results
             ),
-            provider_deferred_count=sum(
-                item.provider_deferred for item in results
+            backend_deferred_count=sum(
+                item.backend_deferred for item in results
             ),
             generation_success_count=sum(
                 item.generation_success for item in results
@@ -450,7 +453,9 @@ def markdown_report(report: QualificationReport) -> str:
         f"# FoamPilot {report.protocol_id} qualification",
         "",
         f"- Protocol: `{report.protocol_id}`",
+        f"- Backend: `{report.backend_id}`",
         f"- Model: `{report.model_name}`",
+        "- Automatic failover: `false`",
         f"- Created: `{report.created_at.isoformat()}`",
         (
             "- Counts: "

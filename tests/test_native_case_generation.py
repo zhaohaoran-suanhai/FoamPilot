@@ -37,8 +37,9 @@ class RecordingModel:
         self.replies = replies
         self.requests: list[ModelRequest] = []
 
-    provider_name = "recording"
-    model = "recording-model"
+    primary_backend_id = "recording"
+    primary_model = "recording-model"
+    policy_sha256 = "a" * 64
 
     def generate_structured(
         self,
@@ -58,7 +59,10 @@ class RecordingModel:
         return ModelResult(
             value=reply,
             logical_request_id=f"recording-{len(self.requests)}",
+            backend_id=self.primary_backend_id,
+            model=self.primary_model,
             transport_attempts=1,
+            backend_switches=0,
             elapsed_seconds=0,
         )
 

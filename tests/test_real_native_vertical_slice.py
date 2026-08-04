@@ -9,9 +9,8 @@ import pytest
 from foampilot.agent import NativeAgent
 from foampilot.artifacts import ArtifactStore
 from foampilot.models import (
-    CodexOAuthProviderClient,
     ModelGateway,
-    load_codex_access_token,
+    load_backend_registry,
 )
 from foampilot.runtime import RuntimeConfig
 from foampilot.tasks import load_task_spec
@@ -61,20 +60,11 @@ def test_real_model_authors_and_solves_native_case(
     tmp_path: Path,
     task_path: Path,
 ) -> None:
-    auth_path = Path(
-        os.environ.get(
-            "OFKIT_CODEX_AUTH",
-            str(Path.home() / ".codex/auth.json"),
-        )
-    )
     model_name = os.environ.get("OFKIT_CODEX_MODEL", "gpt-5.6-sol")
     config = RuntimeConfig.local_foundation_v10()
     outcome = NativeAgent(
         gateway=ModelGateway(
-            provider=CodexOAuthProviderClient(
-                model=model_name,
-                access_token=load_codex_access_token(auth_path),
-            ),
+            registry=load_backend_registry(None, default_model=model_name),
         ),
         runtime_config=config,
         artifact_store=ArtifactStore(tmp_path / "runs"),
@@ -93,4 +83,5 @@ def test_real_model_authors_and_solves_native_case(
         )
     )
     assert configuration["case_bundle_calls"] == 1
+    assert configuration["backend_id"] == "codex-cli"
     assert not (outcome.run_dir / "plan-review.json").exists()

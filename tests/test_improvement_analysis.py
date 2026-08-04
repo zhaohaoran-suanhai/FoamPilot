@@ -71,6 +71,7 @@ def _finalized_run(
     )
     report = QualificationReport(
         created_at=datetime(2026, 7, 29, tzinfo=timezone.utc),
+        backend_id="test-backend",
         model_name="gpt-test",
         counts={
             "PASS": 0,

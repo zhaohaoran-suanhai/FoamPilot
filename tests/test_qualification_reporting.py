@@ -170,7 +170,7 @@ def test_classification_preserves_failure_layers(tmp_path: Path) -> None:
     )
 
 
-def test_classification_distinguishes_provider_deferred(
+def test_classification_distinguishes_backend_deferred(
     tmp_path: Path,
 ) -> None:
     summary = RunSummary(
@@ -186,15 +186,15 @@ def test_classification_distinguishes_provider_deferred(
             detail="solver failed",
         ),
         terminal_blocker=FailureRecord(
-            domain=FailureDomain.PROVIDER,
-            code="PROVIDER_OVERLOADED",
+            domain=FailureDomain.BACKEND,
+            code="OVERLOADED",
             retryable=True,
-            detail="provider overloaded",
+            detail="backend overloaded",
         ),
         resume=ResumeMetadata(
             allowed=True,
             from_stage="MODEL_REPAIR_STARTED",
-            reason="retryable provider failure",
+            reason="retryable backend failure",
         ),
         message="repair deferred",
     )
@@ -203,7 +203,7 @@ def test_classification_distinguishes_provider_deferred(
         summary=summary,
     )
 
-    assert classify_qualification(outcome, [], []) == "DEFERRED_PROVIDER"
+    assert classify_qualification(outcome, [], []) == "DEFERRED_BACKEND"
 
 
 def test_report_preserves_protocol_order_and_mpi_rendering(
@@ -237,6 +237,7 @@ def test_report_preserves_protocol_order_and_mpi_rendering(
                 "message": "failed",
             }
         ],
+        backend_id="test-backend",
         model_name="gpt-test",
     )
 
@@ -316,8 +317,8 @@ def test_run_metadata_accumulates_parent_child_model_usage(
         task_id="laminar-cavity",
         workflow_state=WorkflowState.DEFERRED,
         terminal_blocker=FailureRecord(
-            domain=FailureDomain.PROVIDER,
-            code="PROVIDER_OVERLOADED",
+            domain=FailureDomain.BACKEND,
+            code="OVERLOADED",
             retryable=True,
             detail="deferred",
         ),
@@ -402,6 +403,7 @@ def test_report_accepts_generic_protocol_and_case_order(
                 "message": "failed",
             },
         ],
+        backend_id="test-backend",
         model_name="gpt-test",
         protocol_id="custom-suite-v1",
         case_order=("second", "first"),

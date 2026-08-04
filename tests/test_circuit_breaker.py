@@ -5,9 +5,9 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from foampilot.models import (
+    BackendFailureKind,
     CircuitBreakerKey,
     CircuitDeferredError,
-    ProviderFailureKind,
     SharedCircuitBreaker,
 )
 
@@ -15,9 +15,9 @@ from tests.support.model_gateway import FakeClock
 
 
 KEY = CircuitBreakerKey(
-    provider="fake",
+    backend_id="fake",
     model="fake-model",
-    account_identity_hash="a" * 64,
+    identity_hash="a" * 64,
 )
 
 
@@ -34,11 +34,11 @@ def test_breaker_opens_after_two_failed_logical_requests() -> None:
     breaker = _breaker(clock)
 
     breaker.before_request(KEY)
-    breaker.record_failure(KEY, ProviderFailureKind.OVERLOADED)
+    breaker.record_failure(KEY, BackendFailureKind.OVERLOADED)
     breaker.before_request(KEY)
     breaker.record_failure(
         KEY,
-        ProviderFailureKind.NETWORK_UNAVAILABLE,
+        BackendFailureKind.NETWORK_UNAVAILABLE,
     )
 
     with pytest.raises(CircuitDeferredError):
@@ -53,7 +53,7 @@ def test_non_breaker_failure_does_not_open_circuit() -> None:
         breaker.before_request(KEY)
         breaker.record_failure(
             KEY,
-            ProviderFailureKind.RATE_LIMITED,
+            BackendFailureKind.RATE_LIMITED,
         )
 
     breaker.before_request(KEY)
@@ -62,8 +62,8 @@ def test_non_breaker_failure_does_not_open_circuit() -> None:
 def test_half_open_allows_only_one_probe() -> None:
     clock = FakeClock()
     breaker = _breaker(clock)
-    breaker.record_failure(KEY, ProviderFailureKind.OVERLOADED)
-    breaker.record_failure(KEY, ProviderFailureKind.OVERLOADED)
+    breaker.record_failure(KEY, BackendFailureKind.OVERLOADED)
+    breaker.record_failure(KEY, BackendFailureKind.OVERLOADED)
     clock.sleep(120)
 
     def attempt() -> str:
@@ -83,8 +83,8 @@ def test_half_open_allows_only_one_probe() -> None:
 def test_half_open_success_closes_circuit() -> None:
     clock = FakeClock()
     breaker = _breaker(clock)
-    breaker.record_failure(KEY, ProviderFailureKind.OVERLOADED)
-    breaker.record_failure(KEY, ProviderFailureKind.OVERLOADED)
+    breaker.record_failure(KEY, BackendFailureKind.OVERLOADED)
+    breaker.record_failure(KEY, BackendFailureKind.OVERLOADED)
     clock.sleep(120)
 
     breaker.before_request(KEY)
@@ -96,12 +96,12 @@ def test_half_open_success_closes_circuit() -> None:
 def test_half_open_failure_reopens_circuit() -> None:
     clock = FakeClock()
     breaker = _breaker(clock)
-    breaker.record_failure(KEY, ProviderFailureKind.OVERLOADED)
-    breaker.record_failure(KEY, ProviderFailureKind.OVERLOADED)
+    breaker.record_failure(KEY, BackendFailureKind.OVERLOADED)
+    breaker.record_failure(KEY, BackendFailureKind.OVERLOADED)
     clock.sleep(120)
 
     breaker.before_request(KEY)
-    breaker.record_failure(KEY, ProviderFailureKind.OVERLOADED)
+    breaker.record_failure(KEY, BackendFailureKind.OVERLOADED)
 
     with pytest.raises(CircuitDeferredError):
         breaker.before_request(KEY)

@@ -9,8 +9,8 @@ def test_root_documents_define_the_foampilot_entrypoint() -> None:
     assert "foampilot solve" in readme
     assert "Foundation OpenFOAM v10" in readme
     assert "foampilot solve" in agents
-    assert "Do not read or copy the target tutorial" in agents
-    assert "Do not commit or push unless the user explicitly asks" in agents
+    assert "禁止读取或复制当前目标 tutorial" in agents
+    assert "未经用户明确要求，不要 commit、push" in agents
 
 
 def test_repository_ignores_runtime_artifacts() -> None:

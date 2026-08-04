@@ -28,6 +28,7 @@ foampilot qualify suite \
     src/foampilot/qualification/data/suites/controlled-learning-15-v1.yaml \
   --run-root /tmp/foampilot-controlled-learning-15 \
   --workers 2 \
+  --backend codex-cli \
   --model-name gpt-5.6-sol \
   --json
 ```
@@ -44,6 +45,7 @@ foampilot qualify suite \
     src/foampilot/qualification/data/suites/official-corpus-30-baseline-v1.yaml \
   --run-root /tmp/foampilot-official-corpus-30 \
   --workers 1 \
+  --backend codex-cli \
   --model-name gpt-5.6-sol \
   --json
 ```
@@ -51,9 +53,9 @@ foampilot qualify suite \
 该 suite 保留原 15 题严格物理 qualification，并增加 15 题公开验证级 solver-family
 广度测试。报告必须分别统计两种 `evaluation_level`；公开验证题不能计入严格物理通过率。
 
-对于相同的 provider、model 和 account identity，所有 worker 共享一个线程安全的
+对于显式固定的 backend、model 和 backend identity，所有 worker 共享一个线程安全的
 模型 Gateway 和 circuit breaker。它们不共享任务 deadline、lineage budget、trace、
-ArtifactStore、case 或 evaluator workspace。如果持续的 provider 过载或网络故障
+ArtifactStore、case 或 evaluator workspace。如果持续的后端过载或网络故障
 打开熔断器，后续任务在 cooldown probe 到来前会直接暂缓，不再发起新的 HTTP
 请求。
 
@@ -77,16 +79,16 @@ Qualification YAML 是 evaluator 配置，不是逐算例的 case 编写适配�
 
 - `PASS`：native 公开验证、manifest 验证以及全部必需外部指标均通过；
 - `FAIL_AGENT`：case 编写、执行、公开验证、manifest 或物理指标失败；
-- `DEFERRED_PROVIDER`：可重试的 provider 故障中断了生成或修复，不属于
+- `DEFERRED_BACKEND`：可重试的模型后端故障中断了生成或修复，不属于
   Agent/CFD 失败；
 - `BLOCKED_ENVIRONMENT`：OpenFOAM、沙箱或其他本地运行依赖不可用；
 - `INVALID_QUALIFICATION`：缺少必需的 evaluator 证据。
 
 仅仅完成求解器执行，不代表 qualification 通过。
 
-`REQUEST_INCOMPLETE` 和 `ROUTING_UNRESOLVED` 发生在生成前，并与 provider、环境、
+`REQUEST_INCOMPLETE` 和 `ROUTING_UNRESOLVED` 发生在生成前，并与模型后端、环境、
 case、求解器和物理 qualification 失败分别报告。模型响应未通过 v3 schema 时记为
-`PROVIDER_SCHEMA_INVALID`；trace 只保存有界的校验位置、类型和消息，不保存原始
+`SCHEMA_INVALID`；trace 只保存有界的校验位置、类型和消息，不保存原始
 响应。
 
 ## 阶段指标
@@ -112,7 +114,7 @@ parent/child lineage 上累计。每个单独运行的产物仍然保持独立�
 
 2026-08-03 的 `official-corpus-30-baseline-v1` 完成 30/30 generation、28/30 目标
 solver 启动、20/30 solver 正常结束、18/30 公开验证通过和 17/30 suite `PASS`。
-provider deferred 与 blocked environment 都为 0。30 个 artifact manifest 全部通过哈希
+backend deferred 与 blocked environment 都为 0。30 个 artifact manifest 全部通过哈希
 校验。该结果证明长批工作流健康度，但新增 15 题只有公开验证级别。
 
 完整数据、逐题失败分层和定向学习证据见

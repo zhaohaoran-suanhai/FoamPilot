@@ -1,0 +1,133 @@
+{
+  "commands": [
+    {
+      "args": [],
+      "executable": "blockMesh",
+      "mpi_ranks": 1,
+      "stage": "mesh",
+      "step_id": "mesh",
+      "timeout_seconds": 10
+    },
+    {
+      "args": [],
+      "executable": "checkMesh",
+      "mpi_ranks": 1,
+      "stage": "check",
+      "step_id": "mesh-check",
+      "timeout_seconds": 10
+    },
+    {
+      "args": [],
+      "executable": "icoFoam",
+      "mpi_ranks": 1,
+      "stage": "solve",
+      "step_id": "solve",
+      "timeout_seconds": 20
+    }
+  ],
+  "files": [
+    {
+      "content": "FoamFile\n{\n    version 2.0;\n    format ascii;\n    class volVectorField;\n    object U;\n}\n\ndimensions [0 1 -1 0 0 0 0];\ninternalField uniform (0 0 0);\nboundaryField\n{\n    fluidGate\n    {\n        type fixedValue;\n        value uniform (0 0 0);\n    }\n    solidGate\n    {\n        type fixedValue;\n        value uniform (0 0 0);\n    }\n    casing\n    {\n        type fixedValue;\n        value uniform (0 0 0);\n    }\n    span\n    {\n        type empty;\n    }\n}\n",
+      "path": "0/fluidZone/U"
+    },
+    {
+      "content": "FoamFile\n{\n    version 2.0;\n    format ascii;\n    class volScalarField;\n    object p;\n}\n\ndimensions [0 2 -2 0 0 0 0];\ninternalField uniform 0;\nboundaryField\n{\n    fluidGate\n    {\n        type fixedValue;\n        value uniform 0;\n    }\n    solidGate\n    {\n        type fixedValue;\n        value uniform 0;\n    }\n    casing\n    {\n        type fixedValue;\n        value uniform 0;\n    }\n    span\n    {\n        type empty;\n    }\n}\n",
+      "path": "0/fluidZone/p"
+    },
+    {
+      "content": "FoamFile\n{\n    version 2.0;\n    format ascii;\n    class volScalarField;\n    object T;\n}\n\ndimensions [0 0 0 1 0 0 0];\ninternalField uniform 300;\nboundaryField\n{\n    fluidGate\n    {\n        type fixedValue;\n        value uniform 300;\n    }\n    solidGate\n    {\n        type fixedValue;\n        value uniform 300;\n    }\n    casing\n    {\n        type fixedValue;\n        value uniform 300;\n    }\n    span\n    {\n        type empty;\n    }\n}\n",
+      "path": "0/solidZone/T"
+    },
+    {
+      "content": "FoamFile\n{\n    version 2.0;\n    format ascii;\n    class dictionary;\n    object physicalProperties;\n}\n\nnu [0 2 -1 0 0 0 0] 0.00001;\n",
+      "path": "constant/physicalProperties"
+    },
+    {
+      "content": "FoamFile\n{\n    version 2.0;\n    format ascii;\n    class dictionary;\n    object blockMeshDict;\n}\n\nscale 1;\nvertices\n(\n    (0 0 0)\n    (0.032 0 0)\n    (0.032 0.024 0)\n    (0 0.024 0)\n    (0 0 0.001)\n    (0.032 0 0.001)\n    (0.032 0.024 0.001)\n    (0 0.024 0.001)\n);\nblocks\n(\n    hex (0 1 2 3 4 5 6 7) (8 6 1) simpleGrading (1 1 1)\n);\nedges ();\nboundary\n(\n    fluidGate\n    {\n        type patch;\n        faces ((0 4 7 3));\n    }\n    solidGate\n    {\n        type patch;\n        faces ((1 2 6 5));\n    }\n    casing\n    {\n        type wall;\n        faces ((0 1 5 4) (3 7 6 2));\n    }\n    span\n    {\n        type empty;\n        faces ((0 3 2 1) (4 5 6 7));\n    }\n);\nmergePatchPairs ();\n",
+      "path": "system/blockMeshDict"
+    },
+    {
+      "content": "FoamFile\n{\n    version 2.0;\n    format ascii;\n    class dictionary;\n    object controlDict;\n}\n\napplication icoFoam;\nstartFrom startTime;\nstartTime 0;\nstopAt endTime;\nendTime 0.02;\ndeltaT 0.01;\nwriteControl timeStep;\nwriteInterval 1;\n",
+      "path": "system/controlDict"
+    },
+    {
+      "content": "FoamFile\n{\n    version 2.0;\n    format ascii;\n    class dictionary;\n    object fvSchemes;\n}\n\nddtSchemes { default Euler; }\ngradSchemes { default Gauss linear; }\ndivSchemes { default none; div(phi,U) Gauss upwind; }\nlaplacianSchemes { default Gauss linear corrected; }\ninterpolationSchemes { default linear; }\nsnGradSchemes { default corrected; }\n",
+      "path": "system/fvSchemes"
+    },
+    {
+      "content": "FoamFile\n{\n    version 2.0;\n    format ascii;\n    class dictionary;\n    object fvSolution;\n}\n\nsolvers\n{\n    p { solver PCG; preconditioner DIC; tolerance 1e-06; relTol 0; }\n    U { solver smoothSolver; smoother symGaussSeidel; tolerance 1e-06; relTol 0; }\n}\nPISO { nCorrectors 2; nNonOrthogonalCorrectors 0; }\n",
+      "path": "system/fvSolution"
+    }
+  ],
+  "manifest": {
+    "dimensionality": "2d",
+    "fields": [
+      {
+        "created_by": "author",
+        "name": "U",
+        "path": "0/fluidZone/U",
+        "region": "fluidZone",
+        "role": "velocity"
+      },
+      {
+        "created_by": "author",
+        "name": "p",
+        "path": "0/fluidZone/p",
+        "region": "fluidZone",
+        "role": "kinematic pressure"
+      },
+      {
+        "created_by": "author",
+        "name": "T",
+        "path": "0/solidZone/T",
+        "region": "solidZone",
+        "role": "temperature"
+      }
+    ],
+    "mesh_family": "synthetic-block",
+    "models": {
+      "thermophysical": null,
+      "transport": "Newtonian",
+      "turbulence": "laminar"
+    },
+    "patches": [
+      {
+        "mesh_type": "patch",
+        "name": "fluidGate",
+        "region": "fluidZone"
+      },
+      {
+        "mesh_type": "patch",
+        "name": "solidGate",
+        "region": "solidZone"
+      },
+      {
+        "mesh_type": "patch",
+        "name": "casing",
+        "region": "fluidZone"
+      },
+      {
+        "mesh_type": "empty",
+        "name": "span",
+        "region": "fluidZone"
+      }
+    ],
+    "physics_family": "synthetic-thermal",
+    "regime": "transient",
+    "regions": [
+      {
+        "kind": "fluid",
+        "name": "fluidZone",
+        "path_prefix": "fluidZone"
+      },
+      {
+        "kind": "solid",
+        "name": "solidZone",
+        "path_prefix": "solidZone"
+      }
+    ],
+    "solver_executable": "icoFoam",
+    "solver_family": "synthetic-incompressible"
+  },
+  "schema_version": 3
+}

@@ -29,7 +29,7 @@ description: Use when creating or revising an OpenFOAM Agent benchmark task, lea
    才进入成功率分母。
 6. 在第一次正式 attempt 前冻结完整协议，而不仅是选中的算例。冻结内容包括所有公开/
    私有 manifest、各 leakage 过滤后的语料状态、知识与 Skill 版本、evaluator/golden
-   hash、环境、Agent 适配器、provider/model 和资源策略。任何漂移都必须产生新的协议版本。
+   hash、环境、Agent 适配器、backend/model 和资源策略。任何漂移都必须产生新的协议版本。
 7. 分配一个新的独占 attempt 目录，记录公开 prompt、生成文件、命令、日志、环境、hash、
    观测、verdict 和 reason code。不得覆盖不可变 attempt，也不得事后改写其标签。
 8. 报告通过、失败、被阻断/无效的排除项、各 gate 通过率和 not-evaluated 指标。失败

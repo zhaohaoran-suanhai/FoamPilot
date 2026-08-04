@@ -19,6 +19,7 @@ from .models import InspectionIssue, InspectionReport
 _APPLICATION = re.compile(
     r"(?m)^\s*application\s+([A-Za-z0-9_.+-]+)\s*;"
 )
+_DIMENSIONS = re.compile(r"(?m)^\s*dimensions\s+\[([^]]+)\]\s*;")
 _COMMAND_STAGE: dict[str, CommandStage] = {
     "blockMesh": CommandStage.MESH,
     "snappyHexMesh": CommandStage.MESH,
@@ -176,6 +177,34 @@ def inspect_semantics(
                     rule=GENERIC_RULES["field"],
                 )
             )
+        if (
+            manifest.solver_executable == "icoFoam"
+            and field.created_by != "solver"
+            and field.name in {"U", "p"}
+        ):
+            expected = {
+                "U": "0 1 -1 0 0 0 0",
+                "p": "0 2 -2 0 0 0 0",
+            }[field.name]
+            content = _text(field_path)
+            match = _DIMENSIONS.search(content or "")
+            observed = (
+                " ".join(match.group(1).split())
+                if match is not None
+                else None
+            )
+            if observed is not None and observed != expected:
+                issues.append(
+                    _semantic_issue(
+                        code="SEMANTIC_FIELD_DIMENSIONS_MISMATCH",
+                        detail=(
+                            f"icoFoam field {field.name} requires dimensions "
+                            f"[{expected}]"
+                        ),
+                        path=field.path,
+                        rule=GENERIC_RULES["field_dimensions"],
+                    )
+                )
 
     block_mesh = _text(root / "system/blockMeshDict")
     if block_mesh is not None and len(regions) == 1:

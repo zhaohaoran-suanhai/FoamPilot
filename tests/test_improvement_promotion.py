@@ -84,6 +84,7 @@ def _report(
     ]
     return QualificationReport(
         created_at=datetime(2026, 7, 29, tzinfo=timezone.utc),
+        backend_id="test-backend",
         model_name=model_name,
         counts={
             "PASS": sum(result.status == "PASS" for result in results),

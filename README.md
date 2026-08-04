@@ -24,7 +24,7 @@ Foundation 版本尚未完成 qualification。模型编写算例具有非确定�
 -> bubblewrap 或 audited host 原生 OpenFOAM 执行
 -> evaluator 负责的检查
 -> 至多一次由证据限定范围的 repair
--> 可重试 provider 中断后的严格 child continuation
+-> 可重试模型后端中断后的严格 child continuation
 -> 不可变 artifact 与 SHA256 manifest
 ```
 
@@ -37,7 +37,7 @@ Agent 从空 case 目录开始工作。它可以使用公开 OpenFOAM 文档与�
 - Foundation OpenFOAM v10；
 - bubblewrap（`bwrap`，推荐；不可用时 `auto` 后端可降级）；
 - NumPy、Pydantic、PyYAML 与 PyVista；
-- `requests`，以及默认在线 model provider 所支持的本地 Codex OAuth credential。
+- 已登录的 Codex CLI，或由无秘密 YAML 声明的 OpenAI-compatible 模型后端。
 
 当前工作站配置使用：
 
@@ -52,8 +52,9 @@ Agent 从空 case 目录开始工作。它可以使用公开 OpenFOAM 文档与�
 ## 安装
 
 ```bash
-python -m pip install -e ".[codex,test]"
+python -m pip install -e ".[test]"
 foampilot preflight --json
+foampilot model doctor --json
 ```
 
 默认工作站配置使用 `execution_backend=auto`：先做一次有界 bubblewrap 探测并缓存结果；
@@ -75,6 +76,7 @@ foampilot validate examples/tasks/non-tutorial-side-driven-box.yaml --json
 foampilot solve \
   examples/tasks/non-tutorial-side-driven-box.yaml \
   --run-root /tmp/foampilot-runs \
+  --backend auto \
   --model-name gpt-5.6-sol \
   --json
 ```
@@ -90,12 +92,14 @@ foampilot report /tmp/foampilot-runs/RUN_DIR --json
 ```bash
 foampilot resume /tmp/foampilot-runs/PARENT_RUN \
   --run-root /tmp/foampilot-runs \
+  --backend auto \
   --model-name gpt-5.6-sol \
   --json
 ```
 
-默认认证路径是 `~/.codex/auth.json`。任务可以允许串行或有界 MPI 执行。模型声明
-`mpi_ranks`；MPI launcher 由 Runner 而不是模型负责。
+默认后端通过公开 `codex exec` 调用已登录的 Codex CLI；FoamPilot 不读取认证文件。
+任务可以允许串行或有界 MPI 执行。模型声明 `mpi_ranks`；MPI launcher 由 Runner 而不是
+模型负责。
 
 ## 公开知识与 Skills
 
@@ -129,6 +133,7 @@ foampilot qualify suite \
     src/foampilot/qualification/data/suites/controlled-learning-15-v1.yaml \
   --run-root /tmp/foampilot-controlled-learning-15 \
   --workers 2 \
+  --backend codex-cli \
   --model-name gpt-5.6-sol \
   --json
 ```
@@ -143,13 +148,14 @@ foampilot qualify suite \
     src/foampilot/qualification/data/suites/official-corpus-30-baseline-v1.yaml \
   --run-root /tmp/foampilot-official-corpus-30 \
   --workers 1 \
+  --backend codex-cli \
   --model-name gpt-5.6-sol \
   --json
 ```
 
 该 suite 由 15 个严格物理 qualification 算例和 15 个公开验证级广度算例组成。2026-08-03
 冻结基线实现 30/30 generation、28/30 目标 solver 启动、20/30 solver 正常结束、18/30
-公开验证通过和 17/30 suite `PASS`；provider/environment terminal blocker 均为 0。后 15 题
+公开验证通过和 17/30 suite `PASS`；backend/environment terminal blocker 均为 0。后 15 题
 没有 evaluator-only golden 物理比较，因此不能把 17/30 解释成 30 题严格物理通过率。
 详见 [30 题基线与受控学习报告](docs/reports/2026-08-04-official-corpus-30-baseline.md)。
 
@@ -215,8 +221,8 @@ FoamPilot 会报告：
 - `PUBLIC_VALIDATION_PASS`.
 
 RunSummary v2 还报告 workflow state（`COMPLETED`、`FAILED` 或 `DEFERRED`）、
-可选 native status、primary failure 与 terminal blocker。因此，repair 阶段 provider
-中断时可以保留 `SOLVER_FAILED`，并独立报告可重试 provider blocker。
+可选 native status、primary failure 与 terminal blocker。因此，repair 阶段模型后端
+中断时可以保留 `SOLVER_FAILED`，并独立报告可重试 backend blocker。
 
 `PUBLIC_VALIDATION_PASS` 只覆盖公开任务声明的检查。独立 qualification 层仍可能根据
 物理指标拒绝已完成求解，报告必须保留这一区别。
@@ -240,11 +246,13 @@ python -m pip wheel . --no-deps --wheel-dir dist
 - [受控评测](docs/qualification.md)
 - [15 题受控学习报告](docs/reports/2026-07-30-controlled-learning-15.md)
 - [30 题官方题库衍生基线与受控学习报告](docs/reports/2026-08-04-official-corpus-30-baseline.md)
-- [阶段 A provider/workflow 验收](docs/reports/2026-07-31-stage-a-acceptance.md)
+- [阶段 A 模型边界/workflow 验收](docs/reports/2026-07-31-stage-a-acceptance.md)
 - [阶段 B routing/semantic 验收](docs/reports/2026-07-31-stage-b-acceptance.md)
 - [交付就绪报告](docs/reports/2026-07-30-delivery-readiness.md)
 - [独立真实算例 gate](docs/reports/2026-07-29-standalone-real-gate.md)
 - [许可证](LICENSE)
 - [来源与声明](NOTICE.md)
+- [内容来源说明](PROVENANCE.md)
+- [第三方内容声明](THIRD_PARTY_NOTICES.md)
 
 FoamPilot 与 OpenFOAM Foundation 不存在从属关系，也未获得其背书。

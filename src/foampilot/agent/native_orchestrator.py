@@ -33,6 +33,7 @@ from foampilot.models import (
     ModelGateway,
     ModelStage,
 )
+from foampilot.models.messages_zh import backend_error_payload_zh
 from foampilot.plans import (
     ExecutionPlan,
     GeneratedFile,
@@ -163,12 +164,15 @@ def _failure_record(
     )
 
 
-def _provider_blocker(error: GatewayRequestError) -> FailureRecord:
+def _backend_blocker(error: GatewayRequestError) -> FailureRecord:
+    payload = backend_error_payload_zh(error.failure)
     return FailureRecord(
-        domain=FailureDomain.PROVIDER,
+        domain=FailureDomain.BACKEND,
         code=error.failure.kind.value,
         retryable=error.failure.retryable,
         detail=error.failure.detail,
+        message=str(payload["message"]),
+        recovery=str(payload["recovery"]),
     )
 
 
@@ -420,14 +424,29 @@ class NativeAgent:
         _write_json(
             run_dir / "model-configuration.json",
             {
-                "schema_version": 2,
+                "schema_version": 3,
                 "client_type": type(self.gateway).__name__,
-                "provider": getattr(
+                "backend_id": getattr(
                     self.gateway,
-                    "provider_name",
+                    "primary_backend_id",
                     type(self.gateway).__name__,
                 ),
-                "model": getattr(self.gateway, "model", None),
+                "model": getattr(self.gateway, "primary_model", None),
+                "backend_policy_sha256": getattr(
+                    self.gateway,
+                    "policy_sha256",
+                    None,
+                ),
+                "automatic_failover": bool(
+                    getattr(self.gateway, "automatic_failover", False)
+                ),
+                "backend_ids_used": sorted(
+                    {
+                        str(item["backend_id"])
+                        for item in traces
+                        if item.get("backend_id") is not None
+                    }
+                ),
                 "case_bundle_calls": generation_calls,
                 "repair_calls": repair_calls,
                 "total_model_calls": model_calls,
@@ -535,8 +554,9 @@ class NativeAgent:
         current = build_resume_fingerprint(
             task=task,
             environment=environment,
-            model=self.gateway.model,
-            provider=self.gateway.provider_name,
+            model=self.gateway.primary_model,
+            backend_id=self.gateway.primary_backend_id,
+            backend_policy_sha256=self.gateway.policy_sha256,
             knowledge_ids=context.selected_knowledge_ids,
             knowledge_text=context.knowledge_text,
             skill_ids=context.skill_names,
@@ -733,12 +753,12 @@ class NativeAgent:
                 message=f"Capability routing is unavailable: {error}",
                 model_calls=model_calls,
                 workflow_state=WorkflowState.DEFERRED,
-                terminal_blocker=_provider_blocker(error),
+                terminal_blocker=_backend_blocker(error),
                 resume=ResumeMetadata(
                     allowed=False,
                     reason=(
                         "routing has no frozen capability checkpoint; "
-                        "rerun when the provider is available"
+                        "rerun when the backend is available"
                     ),
                 ),
             )
@@ -751,7 +771,7 @@ class NativeAgent:
                 message=str(error),
                 model_calls=model_calls,
                 primary_failure=FailureRecord(
-                    domain=FailureDomain.PROVIDER,
+                    domain=FailureDomain.BACKEND,
                     code="LINEAGE_TRANSPORT_BUDGET_EXHAUSTED",
                     detail=str(error),
                 ),
@@ -807,8 +827,9 @@ class NativeAgent:
         fingerprint = build_resume_fingerprint(
             task=task,
             environment=environment,
-            model=self.gateway.model,
-            provider=self.gateway.provider_name,
+            model=self.gateway.primary_model,
+            backend_id=self.gateway.primary_backend_id,
+            backend_policy_sha256=self.gateway.policy_sha256,
             knowledge_ids=context.selected_knowledge_ids,
             knowledge_text=context.knowledge_text,
             skill_ids=context.skill_names,
@@ -925,7 +946,7 @@ class NativeAgent:
                     primary_failure=(
                         _continuation.parent_summary.primary_failure
                     ),
-                    terminal_blocker=_provider_blocker(error),
+                    terminal_blocker=_backend_blocker(error),
                     resume=ResumeMetadata(
                         allowed=can_resume,
                         from_stage=(
@@ -934,7 +955,7 @@ class NativeAgent:
                             else None
                         ),
                         reason=(
-                            "retryable provider failure during repair"
+                            "retryable backend failure during repair"
                             if can_resume
                             else "continuation or transport budget exhausted"
                         ),
@@ -956,7 +977,7 @@ class NativeAgent:
                         _continuation.parent_summary.primary_failure
                     ),
                     terminal_blocker=FailureRecord(
-                        domain=FailureDomain.PROVIDER,
+                        domain=FailureDomain.BACKEND,
                         code="LINEAGE_TRANSPORT_BUDGET_EXHAUSTED",
                         detail=str(error),
                     ),
@@ -1084,7 +1105,7 @@ class NativeAgent:
                     message=f"Model transport is unavailable: {error}",
                     model_calls=model_calls,
                     workflow_state=WorkflowState.DEFERRED,
-                    terminal_blocker=_provider_blocker(error),
+                    terminal_blocker=_backend_blocker(error),
                     resume=ResumeMetadata(
                         allowed=can_resume,
                         from_stage=(
@@ -1093,7 +1114,7 @@ class NativeAgent:
                             else None
                         ),
                         reason=(
-                            "retryable provider failure during generation"
+                            "retryable backend failure during generation"
                             if can_resume
                             else "continuation or transport budget exhausted"
                         ),
@@ -1108,7 +1129,7 @@ class NativeAgent:
                     message=str(error),
                     model_calls=model_calls,
                     primary_failure=FailureRecord(
-                        domain=FailureDomain.PROVIDER,
+                        domain=FailureDomain.BACKEND,
                         code="LINEAGE_TRANSPORT_BUDGET_EXHAUSTED",
                         detail=str(error),
                     ),
@@ -1458,7 +1479,7 @@ class NativeAgent:
                         ),
                         attempts=attempts,
                     ),
-                    terminal_blocker=_provider_blocker(error),
+                    terminal_blocker=_backend_blocker(error),
                     resume=ResumeMetadata(
                         allowed=error.failure.retryable,
                         from_stage=(
@@ -1467,9 +1488,9 @@ class NativeAgent:
                             else None
                         ),
                         reason=(
-                            "retryable provider failure during repair"
+                            "retryable backend failure during repair"
                             if error.failure.retryable
-                            else "provider failure is not retryable"
+                            else "backend failure is not retryable"
                         ),
                     ),
                 )
@@ -1490,7 +1511,7 @@ class NativeAgent:
                         attempts=attempts,
                     ),
                     terminal_blocker=FailureRecord(
-                        domain=FailureDomain.PROVIDER,
+                        domain=FailureDomain.BACKEND,
                         code="LINEAGE_TRANSPORT_BUDGET_EXHAUSTED",
                         detail=str(error),
                     ),

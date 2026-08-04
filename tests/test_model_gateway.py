@@ -4,6 +4,9 @@ from pydantic import BaseModel
 import pytest
 
 from foampilot.models import (
+    BackendFailureKind,
+    BackendMode,
+    BackendRegistry,
     GatewayRequestError,
     InMemoryModelTraceSink,
     LineageBudgetExhausted,
@@ -11,13 +14,12 @@ from foampilot.models import (
     ModelGateway,
     ModelRequest,
     ModelStage,
-    ProviderFailureKind,
 )
 
 from tests.support.model_gateway import (
     FakeClock,
-    ScriptedProvider,
-    provider_error,
+    ScriptedBackend,
+    backend_error,
     valid_response,
 )
 
@@ -56,11 +58,14 @@ def _window(
 
 
 def _gateway(
-    provider: ScriptedProvider,
+    backend: ScriptedBackend,
     clock: FakeClock,
 ) -> ModelGateway:
+    registry = BackendRegistry()
+    registry.register(backend, priority=10)
     return ModelGateway(
-        provider=provider,
+        registry=registry,
+        mode=BackendMode.NORMAL,
         monotonic=clock.monotonic,
         sleep=clock.sleep,
         utc_now=clock.utc_now,
@@ -69,11 +74,11 @@ def _gateway(
 
 def test_gateway_uses_minimum_remaining_deadline() -> None:
     clock = FakeClock()
-    provider = ScriptedProvider(
+    backend = ScriptedBackend(
         [valid_response('{"value":"ok"}')]
     )
 
-    result = _gateway(provider, clock).generate_structured(
+    result = _gateway(backend, clock).generate_structured(
         REQUEST,
         ExampleOutput,
         budget=_window(clock, stage_seconds=9),
@@ -82,19 +87,19 @@ def test_gateway_uses_minimum_remaining_deadline() -> None:
 
     assert result.value == ExampleOutput(value="ok")
     assert result.transport_attempts == 1
-    assert provider.timeouts == [pytest.approx(9)]
+    assert backend.timeouts == [pytest.approx(9)]
 
 
 def test_gateway_retries_overload_with_fixed_backoff() -> None:
     clock = FakeClock()
-    provider = ScriptedProvider(
+    backend = ScriptedBackend(
         [
-            provider_error(
-                ProviderFailureKind.OVERLOADED,
+            backend_error(
+                BackendFailureKind.OVERLOADED,
                 retryable=True,
             ),
-            provider_error(
-                ProviderFailureKind.OVERLOADED,
+            backend_error(
+                BackendFailureKind.OVERLOADED,
                 retryable=True,
             ),
             valid_response('{"value":"ok"}'),
@@ -102,7 +107,7 @@ def test_gateway_retries_overload_with_fixed_backoff() -> None:
     )
     trace = InMemoryModelTraceSink()
 
-    result = _gateway(provider, clock).generate_structured(
+    result = _gateway(backend, clock).generate_structured(
         REQUEST,
         ExampleOutput,
         budget=_window(clock),
@@ -116,10 +121,10 @@ def test_gateway_retries_overload_with_fixed_backoff() -> None:
 
 def test_gateway_stops_after_three_persistent_overloads() -> None:
     clock = FakeClock()
-    provider = ScriptedProvider(
+    backend = ScriptedBackend(
         [
-            provider_error(
-                ProviderFailureKind.OVERLOADED,
+            backend_error(
+                BackendFailureKind.OVERLOADED,
                 retryable=True,
             )
             for _ in range(3)
@@ -127,7 +132,7 @@ def test_gateway_stops_after_three_persistent_overloads() -> None:
     )
 
     with pytest.raises(GatewayRequestError) as captured:
-        _gateway(provider, clock).generate_structured(
+        _gateway(backend, clock).generate_structured(
             REQUEST,
             ExampleOutput,
             budget=_window(clock),
@@ -135,46 +140,46 @@ def test_gateway_stops_after_three_persistent_overloads() -> None:
         )
 
     assert captured.value.transport_attempts == 3
-    assert len(provider.timeouts) == 3
+    assert len(backend.timeouts) == 3
 
 
 def test_gateway_does_not_retry_auth_failure() -> None:
     clock = FakeClock()
-    provider = ScriptedProvider(
+    backend = ScriptedBackend(
         [
-            provider_error(
-                ProviderFailureKind.AUTH_FAILED,
+            backend_error(
+                BackendFailureKind.AUTH_FAILED,
                 retryable=False,
             )
         ]
     )
 
     with pytest.raises(GatewayRequestError) as captured:
-        _gateway(provider, clock).generate_structured(
+        _gateway(backend, clock).generate_structured(
             REQUEST,
             ExampleOutput,
             budget=_window(clock),
             trace=InMemoryModelTraceSink(),
         )
 
-    assert captured.value.failure.kind == ProviderFailureKind.AUTH_FAILED
+    assert captured.value.failure.kind == BackendFailureKind.AUTH_FAILED
     assert captured.value.transport_attempts == 1
-    assert len(provider.timeouts) == 1
+    assert len(backend.timeouts) == 1
 
 
-def test_gateway_does_not_retry_permission_failure() -> None:
+def test_gateway_does_not_hide_policy_rejection() -> None:
     clock = FakeClock()
-    provider = ScriptedProvider(
+    backend = ScriptedBackend(
         [
-            provider_error(
-                ProviderFailureKind.PERMISSION_DENIED,
+            backend_error(
+                BackendFailureKind.POLICY_REJECTED,
                 retryable=False,
             )
         ]
     )
 
     with pytest.raises(GatewayRequestError) as captured:
-        _gateway(provider, clock).generate_structured(
+        _gateway(backend, clock).generate_structured(
             REQUEST,
             ExampleOutput,
             budget=_window(clock),
@@ -183,46 +188,45 @@ def test_gateway_does_not_retry_permission_failure() -> None:
 
     assert (
         captured.value.failure.kind
-        == ProviderFailureKind.PERMISSION_DENIED
+        == BackendFailureKind.POLICY_REJECTED
     )
     assert captured.value.transport_attempts == 1
 
 
-def test_gateway_retries_stream_interruption_only_once() -> None:
+def test_gateway_retries_process_interruption_with_bounded_backoff() -> None:
     clock = FakeClock()
-    provider = ScriptedProvider(
+    backend = ScriptedBackend(
         [
-            provider_error(
-                ProviderFailureKind.STREAM_INTERRUPTED,
+            backend_error(
+                BackendFailureKind.PROCESS_INTERRUPTED,
                 retryable=True,
             ),
-            provider_error(
-                ProviderFailureKind.STREAM_INTERRUPTED,
+            backend_error(
+                BackendFailureKind.PROCESS_INTERRUPTED,
                 retryable=True,
             ),
             valid_response('{"value":"must-not-run"}'),
         ]
     )
 
-    with pytest.raises(GatewayRequestError) as captured:
-        _gateway(provider, clock).generate_structured(
-            REQUEST,
-            ExampleOutput,
-            budget=_window(clock),
-            trace=InMemoryModelTraceSink(),
-        )
+    result = _gateway(backend, clock).generate_structured(
+        REQUEST,
+        ExampleOutput,
+        budget=_window(clock),
+        trace=InMemoryModelTraceSink(),
+    )
 
-    assert captured.value.transport_attempts == 2
-    assert clock.sleeps == [5]
-    assert len(provider.timeouts) == 2
+    assert result.transport_attempts == 3
+    assert clock.sleeps == [5, 15]
+    assert len(backend.timeouts) == 3
 
 
 def test_gateway_traces_request_timeout_separately() -> None:
     clock = FakeClock()
-    provider = ScriptedProvider(
+    backend = ScriptedBackend(
         [
-            provider_error(
-                ProviderFailureKind.NETWORK_UNAVAILABLE,
+            backend_error(
+                BackendFailureKind.NETWORK_UNAVAILABLE,
                 retryable=True,
                 request_timed_out=True,
             )
@@ -232,7 +236,7 @@ def test_gateway_traces_request_timeout_separately() -> None:
     trace = InMemoryModelTraceSink()
 
     with pytest.raises(GatewayRequestError) as captured:
-        _gateway(provider, clock).generate_structured(
+        _gateway(backend, clock).generate_structured(
             REQUEST,
             ExampleOutput,
             budget=_window(clock),
@@ -245,17 +249,18 @@ def test_gateway_traces_request_timeout_separately() -> None:
     } == {"REQUEST_TIMEOUT"}
 
 
-def test_gateway_does_not_retry_schema_invalid() -> None:
+def test_gateway_corrects_schema_once_then_stops() -> None:
     clock = FakeClock()
-    provider = ScriptedProvider(
+    backend = ScriptedBackend(
         [
             valid_response("not-json"),
+            valid_response("still-not-json"),
             valid_response('{"value":"must-not-be-used"}'),
         ]
     )
 
     with pytest.raises(GatewayRequestError) as captured:
-        _gateway(provider, clock).generate_structured(
+        _gateway(backend, clock).generate_structured(
             REQUEST,
             ExampleOutput,
             budget=_window(clock),
@@ -264,20 +269,44 @@ def test_gateway_does_not_retry_schema_invalid() -> None:
 
     assert (
         captured.value.failure.kind
-        == ProviderFailureKind.SCHEMA_INVALID
+        == BackendFailureKind.SCHEMA_INVALID
     )
-    assert captured.value.transport_attempts == 1
-    assert len(provider.timeouts) == 1
+    assert captured.value.transport_attempts == 2
+    assert len(backend.timeouts) == 2
     assert "json_invalid" in captured.value.failure.detail
     assert "not-json" not in captured.value.failure.detail
 
 
+def test_gateway_does_not_correct_backend_request_schema_error() -> None:
+    clock = FakeClock()
+    backend = ScriptedBackend(
+        [
+            backend_error(
+                BackendFailureKind.SCHEMA_INVALID,
+                retryable=False,
+            ),
+            valid_response('{"value":"must-not-run"}'),
+        ]
+    )
+
+    with pytest.raises(GatewayRequestError) as captured:
+        _gateway(backend, clock).generate_structured(
+            REQUEST,
+            ExampleOutput,
+            budget=_window(clock),
+            trace=InMemoryModelTraceSink(),
+        )
+
+    assert captured.value.transport_attempts == 1
+    assert len(backend.timeouts) == 1
+
+
 def test_retry_after_cannot_cross_stage_deadline() -> None:
     clock = FakeClock()
-    provider = ScriptedProvider(
+    backend = ScriptedBackend(
         [
-            provider_error(
-                ProviderFailureKind.RATE_LIMITED,
+            backend_error(
+                BackendFailureKind.RATE_LIMITED,
                 retryable=True,
                 retry_after_seconds=30,
             )
@@ -285,7 +314,7 @@ def test_retry_after_cannot_cross_stage_deadline() -> None:
     )
 
     with pytest.raises(GatewayRequestError) as captured:
-        _gateway(provider, clock).generate_structured(
+        _gateway(backend, clock).generate_structured(
             REQUEST,
             ExampleOutput,
             budget=_window(clock, stage_seconds=10),
@@ -297,6 +326,32 @@ def test_retry_after_cannot_cross_stage_deadline() -> None:
     assert clock.sleeps == []
 
 
+def test_gateway_does_not_start_retry_with_short_remaining_window() -> None:
+    clock = FakeClock()
+    backend = ScriptedBackend(
+        [
+            backend_error(
+                BackendFailureKind.TIMEOUT,
+                retryable=True,
+                request_timed_out=True,
+            ),
+            valid_response('{"value":"must-not-run"}'),
+        ],
+        on_exchange=lambda: setattr(clock, "value", clock.value + 250),
+    )
+
+    with pytest.raises(GatewayRequestError) as captured:
+        _gateway(backend, clock).generate_structured(
+            REQUEST,
+            ExampleOutput,
+            budget=_window(clock, stage_seconds=360),
+            trace=InMemoryModelTraceSink(),
+        )
+
+    assert captured.value.transport_attempts == 1
+    assert len(backend.timeouts) == 1
+
+
 def test_total_deadline_is_shared_across_generation_and_repair() -> None:
     clock = FakeClock()
     ledger = ModelBudgetLedger.start(
@@ -304,11 +359,11 @@ def test_total_deadline_is_shared_across_generation_and_repair() -> None:
         lineage_transport_attempt_limit=7,
         now=clock.monotonic,
     )
-    generation_provider = ScriptedProvider(
+    generation_backend = ScriptedBackend(
         [valid_response('{"value":"ok"}')],
         on_exchange=lambda: setattr(clock, "value", clock.value + 600),
     )
-    _gateway(generation_provider, clock).generate_structured(
+    _gateway(generation_backend, clock).generate_structured(
         REQUEST,
         ExampleOutput,
         budget=ledger.open_stage(
@@ -318,12 +373,12 @@ def test_total_deadline_is_shared_across_generation_and_repair() -> None:
         ),
         trace=InMemoryModelTraceSink(),
     )
-    repair_provider = ScriptedProvider(
+    repair_backend = ScriptedBackend(
         [valid_response('{"value":"must-not-run"}')]
     )
 
     with pytest.raises(GatewayRequestError) as captured:
-        _gateway(repair_provider, clock).generate_structured(
+        _gateway(repair_backend, clock).generate_structured(
             REQUEST,
             ExampleOutput,
             budget=ledger.open_stage(
@@ -336,34 +391,34 @@ def test_total_deadline_is_shared_across_generation_and_repair() -> None:
 
     assert captured.value.transport_attempts == 0
     assert captured.value.deadline_reason == "TOTAL_MODEL_DEADLINE"
-    assert repair_provider.timeouts == []
+    assert repair_backend.timeouts == []
 
 
 def test_lineage_transport_limit_is_reserved_before_exchange() -> None:
     clock = FakeClock()
-    provider = ScriptedProvider(
+    backend = ScriptedBackend(
         [valid_response('{"value":"must-not-run"}')]
     )
 
     with pytest.raises(LineageBudgetExhausted):
-        _gateway(provider, clock).generate_structured(
+        _gateway(backend, clock).generate_structured(
             REQUEST,
             ExampleOutput,
             budget=_window(clock, attempts_used=7),
             trace=InMemoryModelTraceSink(),
         )
 
-    assert provider.timeouts == []
+    assert backend.timeouts == []
 
 
 def test_trace_records_hash_and_bytes_without_prompt_text() -> None:
     clock = FakeClock()
-    provider = ScriptedProvider(
+    backend = ScriptedBackend(
         [valid_response('{"value":"ok"}')]
     )
     trace = InMemoryModelTraceSink()
 
-    _gateway(provider, clock).generate_structured(
+    _gateway(backend, clock).generate_structured(
         REQUEST,
         ExampleOutput,
         budget=_window(clock),
@@ -372,6 +427,6 @@ def test_trace_records_hash_and_bytes_without_prompt_text() -> None:
 
     payload = trace.attempts[0].model_dump_json()
     assert len(trace.attempts[0].request_hash) == 64
-    assert trace.attempts[0].prompt_bytes > 0
+    assert trace.attempts[0].request_bytes > 0
     assert "Return one value" not in payload
     assert '{"value":"ok"}' not in payload

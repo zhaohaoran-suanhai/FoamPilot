@@ -12,5 +12,5 @@ from a previously manifest-verified run of
   source-machine path is included.
 
 The opt-in gate injects one public dictionary defect, verifies that the target
-solver starts and fails, defers on a fake provider overload, then resumes from
+solver starts and fails, defers on a fake backend overload, then resumes from
 the frozen failure evidence with a minimal repair.

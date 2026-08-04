@@ -8,9 +8,9 @@ from foampilot.agent import NativeAgent
 from foampilot.agent.repair import RepairDecision
 from foampilot.artifacts import ArtifactStore
 from foampilot.models import (
+    BackendError,
+    BackendFailureKind,
     GatewayRequestError,
-    ProviderError,
-    ProviderFailureKind,
 )
 from foampilot.plans import GeneratedFile
 from foampilot.runtime import (
@@ -400,9 +400,9 @@ def test_native_agent_does_not_repair_environment_failure(
 
 def _transport_failure() -> GatewayRequestError:
     return GatewayRequestError(
-        failure=ProviderError(
-            kind=ProviderFailureKind.NETWORK_UNAVAILABLE,
-            provider="recording",
+        failure=BackendError(
+            kind=BackendFailureKind.NETWORK_UNAVAILABLE,
+            backend_id="recording",
             model="transport-blocked",
             purpose="generation",
             detail="network unavailable",
@@ -410,6 +410,7 @@ def _transport_failure() -> GatewayRequestError:
         ),
         logical_request_id="blocked",
         transport_attempts=3,
+        backend_switches=0,
         deadline_reason=None,
     )
 
@@ -431,13 +432,15 @@ def test_native_agent_classifies_exhausted_model_transport_as_environment(
     assert outcome.summary.primary_failure is None
     assert (
         outcome.summary.terminal_blocker.code
-        == "PROVIDER_NETWORK_UNAVAILABLE"
+        == "NETWORK_UNAVAILABLE"
     )
+    assert outcome.summary.terminal_blocker.message == "无法连接模型服务。"
+    assert outcome.summary.terminal_blocker.recovery.endswith("。")
     assert outcome.summary.attempts == []
     assert runner.calls == 0
 
 
-def test_solver_failure_survives_repair_provider_blocker(
+def test_solver_failure_survives_repair_backend_blocker(
     tmp_path: Path,
 ) -> None:
     model = RecordingModel([_plan(), _transport_failure()])
@@ -456,10 +459,10 @@ def test_solver_failure_survives_repair_provider_blocker(
     assert outcome.summary.native_status == "SOLVER_FAILED"
     assert outcome.summary.primary_failure.domain == "solver"
     assert outcome.summary.primary_failure.step_id == "solve"
-    assert outcome.summary.terminal_blocker.domain == "provider"
+    assert outcome.summary.terminal_blocker.domain == "backend"
     assert (
         outcome.summary.terminal_blocker.code
-        == "PROVIDER_NETWORK_UNAVAILABLE"
+        == "NETWORK_UNAVAILABLE"
     )
     assert outcome.summary.resume.allowed
     assert (

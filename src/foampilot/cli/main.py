@@ -36,12 +36,14 @@ from foampilot.physics import (
     solve_ideal_gas_riemann,
 )
 from foampilot.models import (
-    CodexOAuthProviderClient,
+    BackendMode,
+    BackendRegistry,
     JsonlModelTraceSink,
     ModelBudgetLedger,
     ModelGateway,
     ModelStage,
-    load_codex_access_token,
+    doctor_backends,
+    load_backend_registry,
 )
 from foampilot.plans import (
     ExecutionPlan,
@@ -75,6 +77,7 @@ COMMANDS = (
     "inspect",
     "report",
     "preflight",
+    "model",
     "knowledge",
     "skill",
     "audit",
@@ -108,36 +111,21 @@ def _parser() -> argparse.ArgumentParser:
     native_plan = subparsers.add_parser("plan")
     native_plan.add_argument("path", type=Path)
     native_plan.add_argument("--output", required=True, type=Path)
-    native_plan.add_argument(
-        "--auth",
-        type=Path,
-        default=Path.home() / ".codex/auth.json",
-    )
-    native_plan.add_argument("--model-name", default="gpt-5.2-codex")
+    _add_backend_options(native_plan)
     native_plan.add_argument("--json", action="store_true")
 
     native_solve = subparsers.add_parser("solve")
     native_solve.add_argument("path", type=Path)
     native_solve.add_argument("--run-root", required=True, type=Path)
     native_solve.add_argument("--public-asset-root", type=Path)
-    native_solve.add_argument(
-        "--auth",
-        type=Path,
-        default=Path.home() / ".codex/auth.json",
-    )
-    native_solve.add_argument("--model-name", default="gpt-5.2-codex")
+    _add_backend_options(native_solve)
     native_solve.add_argument("--max-mpi-ranks", type=int, default=1)
     native_solve.add_argument("--json", action="store_true")
 
     native_resume = subparsers.add_parser("resume")
     native_resume.add_argument("parent_run", type=Path)
     native_resume.add_argument("--run-root", required=True, type=Path)
-    native_resume.add_argument(
-        "--auth",
-        type=Path,
-        default=Path.home() / ".codex/auth.json",
-    )
-    native_resume.add_argument("--model-name", default="gpt-5.2-codex")
+    _add_backend_options(native_resume)
     native_resume.add_argument("--max-mpi-ranks", type=int, default=1)
     native_resume.add_argument("--json", action="store_true")
 
@@ -153,6 +141,12 @@ def _parser() -> argparse.ArgumentParser:
 
     preflight = subparsers.add_parser("preflight")
     preflight.add_argument("--json", action="store_true")
+
+    model = subparsers.add_parser("model")
+    model_commands = model.add_subparsers(dest="model_command")
+    model_doctor = model_commands.add_parser("doctor")
+    model_doctor.add_argument("--backend-config", type=Path)
+    model_doctor.add_argument("--json", action="store_true")
 
     knowledge = subparsers.add_parser("knowledge")
     knowledge_commands = knowledge.add_subparsers(dest="knowledge_command")
@@ -279,14 +273,15 @@ def _parser() -> argparse.ArgumentParser:
     qualify.add_argument("--suite-file", type=Path)
     qualify.add_argument("--run-root", required=True, type=Path)
     qualify.add_argument("--workers", type=int, choices=(1, 2), default=2)
-    qualify.add_argument("--model-name", default="gpt-5.6-sol")
-    qualify.add_argument(
-        "--auth",
-        type=Path,
-        default=Path.home() / ".codex/auth.json",
-    )
+    _add_backend_options(qualify)
     qualify.add_argument("--json", action="store_true")
     return parser
+
+
+def _add_backend_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--backend", default="auto")
+    parser.add_argument("--backend-config", type=Path)
+    parser.add_argument("--model-name")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -302,13 +297,76 @@ def _emit(payload: object, *, as_json: bool, human: str) -> None:
         print(human)
 
 
-def _native_gateway(arguments: argparse.Namespace) -> ModelGateway:
-    return ModelGateway(
-        provider=CodexOAuthProviderClient(
-            model=arguments.model_name,
-            access_token=load_codex_access_token(arguments.auth),
-        )
+def _native_gateway(
+    arguments: argparse.Namespace,
+    *,
+    qualification: bool = False,
+) -> ModelGateway:
+    default_model = arguments.model_name or "gpt-5.6-sol"
+    registry = load_backend_registry(
+        arguments.backend_config,
+        default_model=default_model,
     )
+    backend_id = arguments.backend
+    if qualification and backend_id == "auto":
+        raise ValueError(
+            "qualification requires an explicit --backend and --model-name"
+        )
+    if qualification and arguments.model_name is None:
+        raise ValueError(
+            "qualification requires an explicit --backend and --model-name"
+        )
+    if backend_id == "auto":
+        return ModelGateway(registry=registry, mode=BackendMode.NORMAL)
+
+    selected = BackendRegistry()
+    for priority, backend in registry.registrations():
+        if backend.backend_id != backend_id:
+            continue
+        if arguments.model_name is not None and (
+            backend.model != arguments.model_name
+        ):
+            continue
+        selected.register(backend, priority=priority)
+    if not selected.registrations():
+        raise ValueError(
+            f"backend/model is not configured: {backend_id}/"
+            f"{arguments.model_name or '*'}"
+        )
+    if qualification:
+        return ModelGateway(
+            registry=selected,
+            mode=BackendMode.QUALIFICATION,
+            pinned_backend_id=backend_id,
+            pinned_model=arguments.model_name,
+        )
+    return ModelGateway(registry=selected, mode=BackendMode.NORMAL)
+
+
+def _model(arguments: argparse.Namespace) -> int:
+    if arguments.model_command != "doctor":
+        raise ValueError("a model subcommand is required")
+    registry = load_backend_registry(arguments.backend_config)
+    records = doctor_backends(registry)
+    payload = {
+        "schema_version": 1,
+        "status": (
+            "PASS"
+            if any(item.state == "available" for item in records)
+            else "BACKEND_UNAVAILABLE"
+        ),
+        "backends": [item.model_dump(mode="json") for item in records],
+    }
+    _emit(
+        payload,
+        as_json=arguments.json,
+        human=(
+            "PASS: 至少一个模型后端可用。"
+            if payload["status"] == "PASS"
+            else "BACKEND_UNAVAILABLE: 没有可用的模型后端。"
+        ),
+    )
+    return 0 if payload["status"] == "PASS" else 3
 
 
 def _native_validate(arguments: argparse.Namespace) -> int:
@@ -686,6 +744,7 @@ def _audit(arguments: argparse.Namespace) -> int:
 
 
 def _qualify(arguments: argparse.Namespace) -> int:
+    gateway = _native_gateway(arguments, qualification=True)
     if arguments.suite == "official-six":
         if arguments.suite_file is not None:
             raise ValueError(
@@ -694,8 +753,9 @@ def _qualify(arguments: argparse.Namespace) -> int:
         report = run_official_six(
             run_root=arguments.run_root,
             workers=arguments.workers,
+            backend_id=arguments.backend,
             model_name=arguments.model_name,
-            auth=arguments.auth,
+            gateway=gateway,
         )
     elif arguments.suite == "suite":
         if arguments.suite_file is None:
@@ -706,8 +766,9 @@ def _qualify(arguments: argparse.Namespace) -> int:
             suite=load_qualification_suite(arguments.suite_file),
             run_root=arguments.run_root,
             workers=arguments.workers,
+            backend_id=arguments.backend,
             model_name=arguments.model_name,
-            auth=arguments.auth,
+            gateway=gateway,
         )
     else:
         raise ValueError("a qualification suite is required")
@@ -823,6 +884,7 @@ def main(argv: list[str] | None = None) -> int:
             "resume": _native_resume,
             "inspect": _native_inspect,
             "preflight": _preflight,
+            "model": _model,
             "report": _report,
             "knowledge": _knowledge,
             "skill": _skill,

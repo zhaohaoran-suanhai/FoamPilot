@@ -10,7 +10,7 @@ FoamPilot 只支持一条从公开 TaskSpec 到证据限定结果的规范路径
 - `routing`：基于证据选择 solver family，并由系统计算 confidence；
 - `context`：每个语义槽位最多选择一条有界公开知识，并装配通用/族级 Skill；
 - `manifests`：薄型、支持 region 的算例声明，以及带来源的 family contract；
-- `models`：单次交换 provider client、共享 `ModelGateway`、retry/deadline policy、
+- `models`：单次交换 backend、共享 `ModelGateway`、retry/deadline policy、
   transport trace、lineage budget 与线程安全 circuit breaker；
 - `agent`：构造 prompt、编写完整 case bundle 和执行有界 repair；
 - `workflow`：有序持久事件、独占 checkpoint、v2 run state、严格兼容性指纹，以及不可变
@@ -68,8 +68,8 @@ materialization、inspection、OpenFOAM、public-validation、repair 与 finaliz
 - `native_status`：如果发生过 native execution，则记录最新 CFD/native 结果；
 - `primary_failure` 与 `terminal_blocker`：算例为何失败，以及当前为何无法继续。
 
-例如，solver 可以保持 `SOLVER_FAILED`，同时将 provider overload 独立记录为可重试
-terminal blocker。因此 provider deferral 不会被改写为 OpenFOAM 或 Agent 准确性失败。
+例如，solver 可以保持 `SOLVER_FAILED`，同时将 backend overload 独立记录为可重试
+terminal blocker。因此 backend deferral 不会被改写为 OpenFOAM 或 Agent 准确性失败。
 
 ## 严格续跑
 
@@ -83,7 +83,7 @@ terminal blocker。因此 provider deferral 不会被改写为 OpenFOAM 或 Agen
 -> 规范 inspect/run/validate/finalize
 ```
 
-parent 永不重新打开。Strict resume 比较 TaskSpec、public asset、model/provider policy、
+parent 永不重新打开。Strict resume 比较 TaskSpec、public asset、model/backend policy、
 package content、source revision、plan schema、knowledge、Skill、OpenFOAM target 与
 executable capability。Generation 与 repair 各允许至多两个 child continuation，完整
 lineage 至多允许七次真实 transport attempt。代码、knowledge、Skill、model 或 policy

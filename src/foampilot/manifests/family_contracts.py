@@ -67,6 +67,18 @@ GENERIC_RULES: dict[str, SemanticRuleProvenance] = {
             "test_solver_created_output_may_use_a_descriptive_manifest_alias",
         ),
     ),
+    "field_dimensions": SemanticRuleProvenance(
+        rule_id="of10.semantic.icofoam-field-dimensions",
+        source=(
+            "Foundation OpenFOAM v10 icoFoam createFields definitions for "
+            "kinematic pressure and velocity"
+        ),
+        severity="error",
+        tested_by=(
+            "tests/test_artifact_replay.py::"
+            "test_synthetic_cases_replay_policy_and_semantic_inspection",
+        ),
+    ),
     "patch": SemanticRuleProvenance(
         rule_id="of10.semantic.manifest-patch-region",
         source=(

@@ -65,7 +65,7 @@ class QualificationMetric(StrictModel):
 QualificationStatus = Literal[
     "PASS",
     "FAIL_AGENT",
-    "DEFERRED_PROVIDER",
+    "DEFERRED_BACKEND",
     "BLOCKED_ENVIRONMENT",
     "INVALID_QUALIFICATION",
 ]
@@ -86,7 +86,7 @@ class QualificationResult(StrictModel):
     logical_model_requests: int = 0
     transport_attempts: int = 0
     model_time_seconds: float = Field(default=0, ge=0)
-    provider_deferred: bool = False
+    backend_deferred: bool = False
     generation_success: bool = False
     native_execution_started: bool = False
     mesh_generation_pass: bool | None = None
@@ -112,7 +112,7 @@ class QualificationAggregates(StrictModel):
     task_count: int = Field(default=0, ge=0)
     logical_model_requests: int = Field(default=0, ge=0)
     transport_attempts: int = Field(default=0, ge=0)
-    provider_deferred_count: int = Field(default=0, ge=0)
+    backend_deferred_count: int = Field(default=0, ge=0)
     generation_success_count: int = Field(default=0, ge=0)
     native_execution_started_count: int = Field(default=0, ge=0)
     mesh_generation_pass_count: int = Field(default=0, ge=0)
@@ -126,13 +126,15 @@ class QualificationAggregates(StrictModel):
 
 
 class QualificationReport(StrictModel):
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     protocol_id: str = Field(
         default="official-six-v1",
         pattern=r"^[a-z0-9][a-z0-9._-]*$",
     )
     created_at: datetime
+    backend_id: str
     model_name: str
+    automatic_failover: Literal[False] = False
     counts: dict[QualificationStatus, int]
     aggregates: QualificationAggregates = Field(
         default_factory=QualificationAggregates

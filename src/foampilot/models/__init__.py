@@ -1,12 +1,15 @@
-"""Independent model-provider boundary."""
+"""独立、可替换的模型后端边界。"""
 
 from .base import (
     ModelRequest,
 )
-from .codex_oauth import (
-    CodexOAuthProviderClient,
-    load_codex_access_token,
+from .backend import BackendHealth, BackendResponse, ModelBackend
+from .command_backend import (
+    CommandBackend,
+    CommandBackendConfig,
+    codex_exec_config,
 )
+from .config import load_backend_registry
 from .budgets import (
     LineageBudgetExhausted,
     ModelBudgetLedger,
@@ -19,9 +22,16 @@ from .circuit_breaker import (
     CircuitState,
     SharedCircuitBreaker,
 )
-from .errors import ProviderError, ProviderFailureKind
+from .errors import (
+    BackendError,
+    BackendFailureKind,
+)
 from .gateway import GatewayRequestError, ModelGateway, ModelResult
-from .provider import ProviderClient, ProviderResponse
+from .openai_compatible import (
+    OpenAICompatibleBackend,
+    OpenAICompatibleConfig,
+)
+from .registry import BackendMode, BackendRegistry, doctor_backends
 from .traces import (
     InMemoryModelTraceSink,
     JsonlModelTraceSink,
@@ -29,7 +39,14 @@ from .traces import (
     ModelTraceSink,
 )
 __all__ = [
-    "CodexOAuthProviderClient",
+    "BackendHealth",
+    "BackendError",
+    "BackendFailureKind",
+    "BackendMode",
+    "BackendRegistry",
+    "BackendResponse",
+    "CommandBackend",
+    "CommandBackendConfig",
     "CircuitBreakerKey",
     "CircuitDeferredError",
     "CircuitState",
@@ -41,14 +58,15 @@ __all__ = [
     "ModelBudgetLedger",
     "ModelBudgetWindow",
     "ModelGateway",
+    "ModelBackend",
     "ModelRequest",
     "ModelResult",
     "ModelStage",
     "ModelTraceSink",
-    "ProviderClient",
-    "ProviderError",
-    "ProviderFailureKind",
-    "ProviderResponse",
+    "OpenAICompatibleBackend",
+    "OpenAICompatibleConfig",
     "SharedCircuitBreaker",
-    "load_codex_access_token",
+    "codex_exec_config",
+    "doctor_backends",
+    "load_backend_registry",
 ]

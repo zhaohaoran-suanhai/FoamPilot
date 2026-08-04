@@ -1,0 +1,13 @@
+{
+  "checks": [
+    {
+      "detail": "Synthetic bad dimension was rejected.",
+      "limits": {},
+      "name": "synthetic-static-inspection",
+      "observed": {},
+      "passed": false
+    }
+  ],
+  "failed_step_id": "solve",
+  "failure_layer": "STATIC_INSPECTION_FAILED"
+}

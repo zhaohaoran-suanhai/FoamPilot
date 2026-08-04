@@ -61,6 +61,7 @@ def _qualification_report_for_cli(
     )
     return QualificationReport(
         created_at=datetime(2026, 7, 29, tzinfo=timezone.utc),
+        backend_id="test-backend",
         model_name="gpt-test",
         counts={
             "PASS": int(passed),

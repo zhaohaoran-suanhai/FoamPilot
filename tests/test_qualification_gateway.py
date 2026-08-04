@@ -6,13 +6,15 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from foampilot.models import (
+    BackendFailureKind,
+    BackendMode,
+    BackendRegistry,
     GatewayRequestError,
     InMemoryModelTraceSink,
     ModelBudgetLedger,
     ModelGateway,
     ModelRequest,
     ModelStage,
-    ProviderFailureKind,
     SharedCircuitBreaker,
 )
 from foampilot.qualification.models import QualificationReport
@@ -24,8 +26,8 @@ from foampilot.qualification.suites import (
 )
 from tests.support.model_gateway import (
     FakeClock,
-    ScriptedProvider,
-    provider_error,
+    ScriptedBackend,
+    backend_error,
 )
 
 
@@ -55,16 +57,24 @@ def test_suite_passes_one_injected_gateway_to_every_worker(
         observed.append(gateway)
         return {"case_id": case_id}
 
-    def fake_build(raw_results, *, model_name, protocol_id, case_order):
+    def fake_build(
+        raw_results,
+        *,
+        backend_id,
+        model_name,
+        protocol_id,
+        case_order,
+    ):
         del raw_results, case_order
         return QualificationReport(
             protocol_id=protocol_id,
             created_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+            backend_id=backend_id,
             model_name=model_name,
             counts={
                 "PASS": 0,
                 "FAIL_AGENT": 0,
-                "DEFERRED_PROVIDER": 0,
+                "DEFERRED_BACKEND": 0,
                 "BLOCKED_ENVIRONMENT": 0,
                 "INVALID_QUALIFICATION": 0,
             },
@@ -91,8 +101,8 @@ def test_suite_passes_one_injected_gateway_to_every_worker(
         suite=suite,
         run_root=tmp_path,
         workers=2,
+        backend_id="fake",
         model_name="fake-model",
-        auth=None,
         gateway=sentinel_gateway,
     )
 
@@ -121,17 +131,22 @@ def test_shared_breaker_defers_later_task_without_http(
         ],
     )
     clock = FakeClock()
-    provider = ScriptedProvider(
+    backend = ScriptedBackend(
         [
-            provider_error(
-                ProviderFailureKind.OVERLOADED,
+            backend_error(
+                BackendFailureKind.OVERLOADED,
                 retryable=True,
             )
             for _ in range(3)
         ]
     )
+    registry = BackendRegistry()
+    registry.register(backend, priority=10)
     gateway = ModelGateway(
-        provider=provider,
+        registry=registry,
+        mode=BackendMode.QUALIFICATION,
+        pinned_backend_id="fake",
+        pinned_model="fake-model",
         circuit_breaker=SharedCircuitBreaker(
             failure_threshold=1,
             cooldown_seconds=120,
@@ -176,11 +191,12 @@ def test_shared_breaker_defers_later_task_without_http(
         lambda raw_results, **kwargs: QualificationReport(
             protocol_id=kwargs["protocol_id"],
             created_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+            backend_id=kwargs["backend_id"],
             model_name=kwargs["model_name"],
             counts={
                 "PASS": 0,
                 "FAIL_AGENT": 0,
-                "DEFERRED_PROVIDER": 0,
+                "DEFERRED_BACKEND": 0,
                 "BLOCKED_ENVIRONMENT": 0,
                 "INVALID_QUALIFICATION": 0,
             },
@@ -199,10 +215,10 @@ def test_shared_breaker_defers_later_task_without_http(
         suite=suite,
         run_root=tmp_path,
         workers=1,
+        backend_id="fake",
         model_name="fake-model",
-        auth=None,
         gateway=gateway,
     )
 
     assert deferred_by_circuit == [False, True]
-    assert len(provider.timeouts) == 3
+    assert len(backend.timeouts) == 3

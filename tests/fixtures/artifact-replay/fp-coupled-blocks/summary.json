@@ -1,0 +1,12 @@
+{
+  "attempts": [
+    {
+      "attempt": 1,
+      "status": "PUBLIC_VALIDATION_PASS"
+    }
+  ],
+  "message": "Deterministic synthetic replay fixture.",
+  "schema_version": 1,
+  "status": "PUBLIC_VALIDATION_PASS",
+  "task_id": "fp-coupled-blocks"
+}

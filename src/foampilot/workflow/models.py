@@ -45,7 +45,7 @@ class WorkflowState(StrEnum):
 class FailureDomain(StrEnum):
     TASK = "task"
     ENVIRONMENT = "environment"
-    PROVIDER = "provider"
+    BACKEND = "backend"
     PLAN = "plan"
     CASE = "case"
     INSPECTION = "inspection"
@@ -63,6 +63,8 @@ class FailureRecord(StrictModel):
     step_id: str | None = None
     retryable: bool = False
     detail: str
+    message: str | None = None
+    recovery: str | None = None
     evidence_paths: list[str] = Field(default_factory=list)
 
 
@@ -81,8 +83,8 @@ class ResumeCompatibility(StrictModel):
     task_sha256: str
     public_assets_sha256: str | None = None
     model: str
-    provider: str
-    provider_policy_sha256: str
+    backend_id: str
+    backend_policy_sha256: str
     package_version: str
     package_artifact_sha256: str
     git_revision: str | None = None
@@ -97,7 +99,7 @@ class ResumeCompatibility(StrictModel):
     @field_validator(
         "task_sha256",
         "public_assets_sha256",
-        "provider_policy_sha256",
+        "backend_policy_sha256",
         "package_artifact_sha256",
         "knowledge_hash",
         "skill_hash",

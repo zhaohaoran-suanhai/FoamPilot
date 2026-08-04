@@ -1,0 +1,32 @@
+FoamFile
+{
+    version 2.0;
+    format ascii;
+    class volVectorField;
+    object U;
+}
+
+dimensions [0 1 -1 0 0 0 0];
+internalField #include "U.internal.inc"
+boundaryField
+{
+    feed
+    {
+        type fixedValue;
+        value uniform (0 0 0);
+    }
+    drain
+    {
+        type fixedValue;
+        value uniform (0 0 0);
+    }
+    jacket
+    {
+        type fixedValue;
+        value uniform (0 0 0);
+    }
+    span
+    {
+        type empty;
+    }
+}

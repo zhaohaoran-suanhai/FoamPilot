@@ -155,7 +155,7 @@ ModelGateway 发起一次逻辑生成请求，要求模型同时返回所有 cas
 CaseManifest 和全部 typed commands。底层传输在阶段 deadline 和次数预算内可以
 对网络中断、服务过载或限流进行重试，但不会无限等待。
 
-Provider client 只负责一次 HTTP/SSE 交换；Gateway 负责错误分类、重试、deadline、
+Model backend 只负责一次交换；Gateway 负责错误分类、重试、deadline、
 传输追踪和熔断。qualification 的多个 worker 可以共享 Gateway 和熔断状态，但各
 算例的任务、时间预算、case、日志和评测状态相互独立。
 
@@ -230,9 +230,9 @@ repair 可以替换 case 文件或已有 typed command，但仍要再次通过�
 运行目录内每个文件的大小和 SHA256。`foampilot report RUN_DIR --json` 会重新计算
 这些信息，并报告缺失文件、额外文件或哈希变化。
 
-## 6. Provider 中断与严格续跑
+## 6. 模型后端中断与严格续跑
 
-生成或修复阶段发生可重试的 provider 中断时，FoamPilot 可以把当前运行结束为
+生成或修复阶段发生可重试的模型后端中断时，FoamPilot 可以把当前运行结束为
 `DEFERRED`，而不是把它改写成 OpenFOAM 失败。恢复命令为：
 
 ```bash
@@ -244,7 +244,7 @@ foampilot resume PARENT_RUN --run-root NEW_RUN_ROOT --json
 - parent run 必须已经完成 manifest 固化且哈希验证通过；
 - 只支持从被中断的生成或修复模型阶段继续；
 - 新运行是独立 child run，不重新打开或修改 parent；
-- TaskSpec、公开资产、模型/provider 策略、包内容、知识、Skill、OpenFOAM 目标和
+- TaskSpec、公开资产、模型/backend 策略、包内容、知识、Skill、OpenFOAM 目标和
   可执行能力必须满足严格兼容性；
 - 每个模型阶段最多创建两个 continuation，整个 lineage 最多使用七次真实传输；
 - 修改代码、任务、知识、Skill、模型或策略后必须作为新运行，而不是 strict resume。
@@ -261,7 +261,7 @@ restart 功能。
 | `workflow_state` | 整个工作流是 `COMPLETED`、`FAILED` 还是 `DEFERRED` |
 | `native_status` | 已经发生的最新 OpenFOAM/公开验证结果；未进入 native 阶段时可以为空 |
 | `primary_failure` | 算例首先在哪个任务、计划、网格、求解或验证层失败 |
-| `terminal_blocker` | 当前为何无法继续，例如 provider 暂时不可用 |
+| `terminal_blocker` | 当前为何无法继续，例如模型后端暂时不可用 |
 
 主要失败层包括：
 
@@ -276,8 +276,8 @@ restart 功能。
 - `PUBLIC_VALIDATION_FAILED`：求解执行结束但公开检查未通过；
 - `PUBLIC_VALIDATION_PASS`：普通求解的全部公开检查通过。
 
-例如，算例首先发生 `SOLVER_FAILED`，随后修复请求遭遇 provider 过载时，
-`primary_failure` 仍是 solver，`terminal_blocker` 单独记录 provider，避免把环境
+例如，算例首先发生 `SOLVER_FAILED`，随后修复请求遭遇模型后端过载时，
+`primary_failure` 仍是 solver，`terminal_blocker` 单独记录 backend，避免把环境
 或模型服务故障误记为 CFD 错误。
 
 ## 8. 普通求解、qualification 和离线改进
@@ -359,7 +359,7 @@ FoamPilot 当前可以：
 - 在执行前阻止高置信度结构错误和危险命令；
 - 解析执行日志并检查写出结果；
 - 根据公开失败证据进行有限修复；
-- 在 provider 可重试中断后通过不可变 child run 严格续跑；
+- 在模型后端可重试中断后通过不可变 child run 严格续跑；
 - 对官方题库式任务执行盲测 qualification，并保留可审计证据；
 - 将冻结失败转化为人工审查的通用改进候选。
 
@@ -390,7 +390,7 @@ foampilot solve TASK.yaml --run-root RUNS --json
 foampilot report RUNS/RUN_DIR --json
 ```
 
-如果运行因可重试的生成或修复 provider 故障进入 `DEFERRED`：
+如果运行因可重试的生成或修复 backend 故障进入 `DEFERRED`：
 
 ```bash
 foampilot resume RUNS/PARENT_RUN --run-root RUNS --json

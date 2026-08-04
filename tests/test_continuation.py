@@ -164,7 +164,7 @@ def test_resume_rejects_changed_model(tmp_path: Path) -> None:
         replies=[_repair()],
         runner=SequencePlanRunner([]),
     )
-    agent.gateway.model = "different-model"
+    agent.gateway.primary_model = "different-model"
 
     with pytest.raises(
         ResumeCompatibilityError,

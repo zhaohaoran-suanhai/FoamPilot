@@ -1,0 +1,27 @@
+{
+  "advisories": [
+    {
+      "code": "SEMANTIC_PATCH_REGION_UNVERIFIED",
+      "detail": "regional or generated mesh patch membership cannot be proven before native mesh generation",
+      "path": null,
+      "provenance": {
+        "openfoam_distribution": "foundation",
+        "openfoam_version": "10",
+        "rule_id": "of10.semantic.family-unregistered",
+        "severity": "warning",
+        "source": "FoamPilot Stage B conservative semantic-inspection policy",
+        "tested_by": [
+          "tests/test_semantic_inspection.py::test_unknown_solver_family_is_advisory_not_blocking"
+        ]
+      },
+      "severity": "warning"
+    }
+  ],
+  "issues": [],
+  "observed_patches": [
+    "casing",
+    "fluidGate",
+    "solidGate",
+    "span"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "advisories": [],
+  "issues": [
+    {
+      "code": "SEMANTIC_FIELD_DIMENSIONS_MISMATCH",
+      "detail": "icoFoam field p requires dimensions [0 2 -2 0 0 0 0]",
+      "path": "0/p",
+      "provenance": {
+        "openfoam_distribution": "foundation",
+        "openfoam_version": "10",
+        "rule_id": "of10.semantic.icofoam-field-dimensions",
+        "severity": "error",
+        "source": "Foundation OpenFOAM v10 icoFoam createFields definitions for kinematic pressure and velocity",
+        "tested_by": [
+          "tests/test_artifact_replay.py::test_synthetic_cases_replay_policy_and_semantic_inspection"
+        ]
+      },
+      "severity": "error"
+    }
+  ],
+  "observed_patches": [
+    "sink",
+    "skin",
+    "source",
+    "span"
+  ]
+}

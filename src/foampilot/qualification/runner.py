@@ -15,10 +15,7 @@ import yaml
 from foampilot.agent import NativeAgent
 from foampilot.artifacts import ArtifactStore, NativeAgentOutcome
 from foampilot.models import (
-    CodexOAuthProviderClient,
     ModelGateway,
-    SharedCircuitBreaker,
-    load_codex_access_token,
 )
 from foampilot.runtime import RuntimeConfig
 from foampilot.tasks import load_task_spec
@@ -261,9 +258,9 @@ def run_qualification_suite(
     suite: QualificationSuite,
     run_root: Path,
     workers: int,
+    backend_id: str,
     model_name: str,
-    auth: Path | None,
-    gateway: ModelGateway | None = None,
+    gateway: ModelGateway,
 ) -> QualificationReport:
     """Run one strict suite through the existing native qualification path."""
 
@@ -285,20 +282,16 @@ def run_qualification_suite(
         )
 
     active_gateway = gateway
-    if active_gateway is None:
-        if auth is None:
+    if isinstance(active_gateway, ModelGateway):
+        if active_gateway.mode.value != "qualification":
+            raise ValueError("qualification gateway must use pinned mode")
+        if (
+            active_gateway.primary_backend_id != backend_id
+            or active_gateway.primary_model != model_name
+        ):
             raise ValueError(
-                "auth is required when gateway is not injected"
+                "qualification gateway does not match pinned backend/model"
             )
-        access_token = load_codex_access_token(auth)
-        provider = CodexOAuthProviderClient(
-            model=model_name,
-            access_token=access_token,
-        )
-        active_gateway = ModelGateway(
-            provider=provider,
-            circuit_breaker=SharedCircuitBreaker(),
-        )
     raw_results: list[dict[str, object]] = []
     parallel = [
         item
@@ -338,6 +331,7 @@ def run_qualification_suite(
 
     report = build_qualification_report(
         raw_results,
+        backend_id=backend_id,
         model_name=model_name,
         protocol_id=suite.protocol_id,
         case_order=tuple(selected),
@@ -350,8 +344,9 @@ def run_official_six(
     *,
     run_root: Path,
     workers: int,
+    backend_id: str,
     model_name: str,
-    auth: Path,
+    gateway: ModelGateway,
     case_ids: list[str] | None = None,
 ) -> QualificationReport:
     """Run selected official-six cases through the generic suite runner."""
@@ -376,6 +371,7 @@ def run_official_six(
         suite=suite,
         run_root=run_root,
         workers=workers,
+        backend_id=backend_id,
         model_name=model_name,
-        auth=auth,
+        gateway=gateway,
     )

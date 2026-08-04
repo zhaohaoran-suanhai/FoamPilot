@@ -1,0 +1,31 @@
+{
+  "acceptance_requirements": [
+    "deterministic static inspection"
+  ],
+  "openfoam_target": {
+    "distribution": "foundation",
+    "version": "10"
+  },
+  "prompt": "Inspect a deterministic, repository-owned native case and preserve its typed execution plan.",
+  "protected_paths": [],
+  "public_assets": [],
+  "public_checks": [
+    {
+      "kind": "completion",
+      "name": "synthetic-check",
+      "parameters": {}
+    }
+  ],
+  "required_outputs": [
+    "synthetic replay evidence"
+  ],
+  "resource_budget": {
+    "max_attempts": 1,
+    "max_mpi_ranks": 1,
+    "max_wall_seconds": 40,
+    "memory_mib": 1024
+  },
+  "schema_version": 1,
+  "task_id": "fp-heated-slot",
+  "title": "Synthetic replay fp-heated-slot"
+}

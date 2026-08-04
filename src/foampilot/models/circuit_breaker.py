@@ -1,4 +1,4 @@
-"""Thread-safe in-process circuit breaker for shared provider access."""
+"""供多个工作线程共享的模型后端熔断器。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from enum import StrEnum
 import threading
 import time
 
-from .errors import ProviderFailureKind
+from .errors import BackendFailureKind
 
 
 class CircuitState(StrEnum):
@@ -19,9 +19,9 @@ class CircuitState(StrEnum):
 
 @dataclass(frozen=True)
 class CircuitBreakerKey:
-    provider: str
+    backend_id: str
     model: str
-    account_identity_hash: str
+    identity_hash: str
 
 
 class CircuitDeferredError(RuntimeError):
@@ -30,9 +30,9 @@ class CircuitDeferredError(RuntimeError):
         *,
         key: CircuitBreakerKey,
         retry_after_seconds: float,
-        last_failure_kind: ProviderFailureKind,
+        last_failure_kind: BackendFailureKind,
     ) -> None:
-        super().__init__("provider circuit is open")
+        super().__init__("backend circuit is open")
         self.key = key
         self.retry_after_seconds = retry_after_seconds
         self.last_failure_kind = last_failure_kind
@@ -44,8 +44,8 @@ class _CircuitRecord:
     consecutive_failures: int = 0
     opened_at: float | None = None
     probe_in_flight: bool = False
-    last_failure_kind: ProviderFailureKind = (
-        ProviderFailureKind.NETWORK_UNAVAILABLE
+    last_failure_kind: BackendFailureKind = (
+        BackendFailureKind.NETWORK_UNAVAILABLE
     )
 
 
@@ -92,11 +92,13 @@ class SharedCircuitBreaker:
     def record_failure(
         self,
         key: CircuitBreakerKey,
-        kind: ProviderFailureKind,
+        kind: BackendFailureKind,
     ) -> None:
         if kind not in {
-            ProviderFailureKind.OVERLOADED,
-            ProviderFailureKind.NETWORK_UNAVAILABLE,
+            BackendFailureKind.OVERLOADED,
+            BackendFailureKind.NETWORK_UNAVAILABLE,
+            BackendFailureKind.TIMEOUT,
+            BackendFailureKind.PROCESS_INTERRUPTED,
         }:
             return
         with self._lock:

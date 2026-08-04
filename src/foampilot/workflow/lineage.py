@@ -25,25 +25,12 @@ from .models import (
 )
 
 
-_PROVIDER_POLICY = {
-    "schema_version": 1,
-    "request_timeout_seconds": 300,
-    "routing_deadline_seconds": 60,
-    "generation_deadline_seconds": 360,
-    "repair_deadline_seconds": 240,
-    "total_model_deadline_seconds": 600,
-    "max_transport_attempts_per_request": 3,
-    "lineage_transport_attempt_limit": 7,
-    "max_continuations_per_stage": 2,
-    "retry_delays_seconds": [5, 15],
-    "stream_retry_delays_seconds": [5],
-}
 _STRICT_FIELDS = (
     "task_sha256",
     "public_assets_sha256",
     "model",
-    "provider",
-    "provider_policy_sha256",
+    "backend_id",
+    "backend_policy_sha256",
     "package_version",
     "package_artifact_sha256",
     "git_revision",
@@ -157,7 +144,8 @@ def build_resume_fingerprint(
     task: TaskSpec,
     environment: EnvironmentSnapshot,
     model: str,
-    provider: str,
+    backend_id: str,
+    backend_policy_sha256: str,
     knowledge_ids: list[str] | tuple[str, ...],
     knowledge_text: str,
     skill_ids: list[str] | tuple[str, ...],
@@ -173,8 +161,8 @@ def build_resume_fingerprint(
             public_asset_root,
         ),
         model=model,
-        provider=provider,
-        provider_policy_sha256=_hash_json(_PROVIDER_POLICY),
+        backend_id=backend_id,
+        backend_policy_sha256=backend_policy_sha256,
         package_version=__version__,
         package_artifact_sha256=_package_artifact_sha256(),
         git_revision=_git_revision(),

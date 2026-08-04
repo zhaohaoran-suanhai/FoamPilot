@@ -1,0 +1,13 @@
+{
+  "checks": [
+    {
+      "detail": "Synthetic case passed deterministic inspection.",
+      "limits": {},
+      "name": "synthetic-static-inspection",
+      "observed": {},
+      "passed": true
+    }
+  ],
+  "failed_step_id": null,
+  "failure_layer": null
+}

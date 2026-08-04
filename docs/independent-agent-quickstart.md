@@ -18,7 +18,7 @@ Foundation OpenFOAM v10 运行。FoamPilot 是独立的 Python 工具包。
 8. 检查高置信度跨文件语义，并执行原生命令；
 9. 执行由 evaluator 负责的公开检查；
 10. 如果尝试预算允许，请求一次基于失败证据的定向修复；
-11. 如果可重试的 provider 故障中断生成或修复，将运行固化为 `DEFERRED`，
+11. 如果可重试的模型后端故障中断生成或修复，将运行固化为 `DEFERRED`，
     并保存 strict resume 元数据；
 12. 为每个终态运行固化 artifact manifest。
 
@@ -38,8 +38,9 @@ commands[] = {step_id, stage, executable, args, mpi_ranks, timeout_seconds}
 ```bash
 git clone git@github.com:zhaohaoran-suanhai/FoamPilot.git
 cd FoamPilot
-python -m pip install -e ".[codex,test]"
+python -m pip install -e ".[test]"
 foampilot preflight --json
+foampilot model doctor --json
 ```
 
 当前本机配置使用：
@@ -59,11 +60,13 @@ foampilot validate examples/tasks/non-tutorial-side-driven-box.yaml --json
 
 foampilot plan examples/tasks/non-tutorial-side-driven-box.yaml \
   --output /tmp/side-driven-plan.json \
+  --backend auto \
   --model-name gpt-5.6-sol \
   --json
 
 foampilot solve examples/tasks/non-tutorial-side-driven-box.yaml \
   --run-root /tmp/foampilot-native-runs \
+  --backend auto \
   --model-name gpt-5.6-sol \
   --json
 
@@ -73,10 +76,10 @@ foampilot report /tmp/foampilot-native-runs/RUN_DIR --json
 `plan` 和 `solve` 的初始阶段都会针对整个 case bundle 发起一次逻辑模型请求。
 一次逻辑请求内部可以包含次数受限的传输重试。
 
-`solve` 只有在状态为 `PUBLIC_VALIDATION_PASS` 时返回 0；provider 暂缓或环境
+`solve` 只有在状态为 `PUBLIC_VALIDATION_PASS` 时返回 0；模型后端暂缓或环境
 阻断返回 3；执行失败或验证失败返回 4。
 
-## Provider 暂缓和续跑
+## 模型后端暂缓和续跑
 
 生成阶段中断时尚未产生 native 结果：
 
@@ -85,8 +88,8 @@ foampilot report /tmp/foampilot-native-runs/RUN_DIR --json
   "workflow_state": "DEFERRED",
   "native_status": null,
   "terminal_blocker": {
-    "domain": "provider",
-    "code": "PROVIDER_OVERLOADED",
+    "domain": "backend",
+    "code": "OVERLOADED",
     "retryable": true
   },
   "resume": {
@@ -104,8 +107,8 @@ foampilot report /tmp/foampilot-native-runs/RUN_DIR --json
   "native_status": "SOLVER_FAILED",
   "primary_failure": {"domain": "solver"},
   "terminal_blocker": {
-    "domain": "provider",
-    "code": "PROVIDER_OVERLOADED"
+    "domain": "backend",
+    "code": "OVERLOADED"
   },
   "resume": {
     "allowed": true,
@@ -114,21 +117,22 @@ foampilot report /tmp/foampilot-native-runs/RUN_DIR --json
 }
 ```
 
-provider 恢复后执行：
+模型后端恢复后执行：
 
 ```bash
 foampilot resume /tmp/foampilot-native-runs/PARENT_RUN \
   --run-root /tmp/foampilot-native-runs \
+  --backend auto \
   --model-name gpt-5.6-sol \
   --json
 ```
 
 创建 child run 前，`resume` 会校验 parent manifest、兼容性指纹、可重试 blocker、
 continuation 数量、传输尝试预算以及当前 OpenFOAM 能力。strict compatibility 或
-输入被拒绝时返回 2；再次发生 provider/environment 暂缓时返回 3；native 执行
+输入被拒绝时返回 2；再次发生 backend/environment 暂缓时返回 3；native 执行
 失败时返回 4。
 
-修改代码、TaskSpec、公开资产、模型、provider policy、Knowledge 或 Skills 后，
+修改代码、TaskSpec、公开资产、模型、backend policy、Knowledge 或 Skills 后，
 不要使用 strict resume。应重新执行普通 `solve`，并将其记录为
 `rerun_with_changes`，否则两个不同实验会被错误归入同一 lineage。
 
