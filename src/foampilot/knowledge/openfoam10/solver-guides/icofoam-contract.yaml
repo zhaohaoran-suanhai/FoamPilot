@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.icofoam-contract
-title: icoFoam transient incompressible laminar contract
+title: icoFoam 瞬态不可压缩层流契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,10 +9,10 @@ models: [incompressible, laminar, transient]
 tags: [icofoam, transient, incompressible, laminar, newtonian, velocity, kinematic-pressure]
 applicability:
   conditions:
-    - The fluid is incompressible, laminar, isothermal, and transient.
-    - Velocity U and kinematic pressure p are defined on every mesh patch.
+    - 流体为不可压缩、层流、等温且瞬态。
+    - 每个 mesh patch 上都定义了速度 U 与运动压力 p。
   not_applicable:
-    - Compressible, turbulent, multiphase, buoyant, or steady-state physics is required.
+    - 需要可压缩、湍流、多相、浮力或稳态物理时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 icoFoam application
@@ -24,16 +24,16 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: icoFoam advances laminar incompressible velocity and kinematic pressure in time with PISO coupling.
+  summary: icoFoam 使用 PISO 耦合随时间推进层流不可压缩速度与运动压力。
   rules:
-    - Use a transient controlDict and a positive deltaT.
-    - Provide physicalProperties, U, p, fvSchemes, fvSolution, and a valid mesh.
-    - When the selected PISO corrector sequence requests a final pressure solve, define a compatible pFinal solver entry as well as p.
-    - Reject the contract when requested physics requires another solver family.
+    - 使用瞬态 controlDict 和正 deltaT。
+    - 提供 physicalProperties、U、p、fvSchemes、fvSolution 与有效网格。
+    - 所选 PISO corrector sequence 要求最终压力求解时，除 p 外还要定义兼容的 pFinal solver 项。
+    - 若要求的物理需要其他 solver family，应拒绝该契约。
   failure_signals:
     - Required field U or p cannot be read.
     - The solver requests pFinal but fvSolution defines only p.
     - The requested physics is not incompressible laminar transient flow.
   validation:
-    - Verify that the authored application and dictionaries match Foundation v10 icoFoam semantics.
-    - Require normal solver completion and the requested final time.
+    - 验证编写的 application 与 dictionary 符合 Foundation v10 icoFoam 语义。
+    - 要求 solver 正常结束并达到要求的 final time。

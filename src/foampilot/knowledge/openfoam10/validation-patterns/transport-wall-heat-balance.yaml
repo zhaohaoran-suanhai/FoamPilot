@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.validation.transport-wall-heat-balance
-title: Transport-model wall heat-flow balance
+title: 输运模型壁面热流平衡
 fork: foundation
 version: "10"
 knowledge_type: validation_pattern
@@ -9,10 +9,10 @@ models: [thermophysical-transport, turbulent-heat-transfer]
 tags: [wallheatflux, energy, convergence, turbulence]
 applicability:
   conditions:
-    - A completed fluid or solid heat-transfer result needs integrated wall heat-flow evidence.
-    - The active thermophysical transport model may include turbulent or radiative heat flux.
+    - 已完成流体或固体传热结果需要积分壁面热流证据。
+    - active thermophysical transport model 可能包含湍流或辐射热流。
   not_applicable:
-    - No wall heat-transfer quantity is part of the physical acceptance criteria.
+    - 物理验收标准不包含任何壁面传热量时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 wallHeatFlux function object
@@ -24,16 +24,16 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation wallHeatFlux obtains heat flux from the active thermophysical transport model, includes configured radiation when present, and integrates Q over each wall patch.
+  summary: Foundation wallHeatFlux 从 active thermophysical transport model 获取热流；存在已配置 radiation 时将其计入，并在每个 wall patch 上积分 Q。
   rules:
-    - Use integrated wallHeatFlux Q rather than reconstructing turbulent heat flow from molecular conductivity alone.
-    - Run post-processing on a temporary copy when the completed attempt is immutable.
-    - Pair energy balance with equation-residual and continuity trends because a normal End line is not a convergence proof.
-    - Normalize closed-domain hot/cold imbalance by the larger absolute integrated heat flow.
+    - 使用积分 wallHeatFlux Q，而不是仅根据分子导热重构湍流热流。
+    - 已完成 attempt 不可变时，在临时副本上运行 post-processing。
+    - 将 energy balance 与 equation-residual、continuity trend 配合判断，因为正常 End line 不是收敛证明。
+    - 使用较大的绝对积分热流归一化封闭域冷热壁不平衡量。
   failure_signals:
     - Wall heat rate is inferred only from first-cell temperature and molecular conductivity in a turbulent case.
     - Hot and cold integrated heat flows have the same sign or a large normalized imbalance.
     - Residual or local continuity evidence is absent at the accepted iteration.
   validation:
-    - Record patch names, integrated Q, mean q, audit time, and normalized imbalance.
-    - Preserve separate completion, convergence, continuity, and energy-balance verdicts.
+    - 记录 patch name、积分 Q、平均 q、audit time 与归一化不平衡量。
+    - 分别保留 completion、convergence、continuity 与 energy-balance verdict。

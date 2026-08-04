@@ -8,9 +8,16 @@ import subprocess
 from pathlib import Path
 
 from .models import RuntimeCheck, RuntimeConfig
+from .sandbox import probe_bubblewrap
 
 
-def _path_check(name: str, path: Path, *, executable: bool = False) -> RuntimeCheck:
+def _path_check(
+    name: str,
+    path: Path,
+    *,
+    executable: bool = False,
+    blocking: bool = True,
+) -> RuntimeCheck:
     exists = path.is_file() if executable else path.exists()
     ok = exists and (not executable or os.access(path, os.X_OK))
     expectation = "executable file" if executable else "existing path"
@@ -18,6 +25,7 @@ def _path_check(name: str, path: Path, *, executable: bool = False) -> RuntimeCh
         name=name,
         ok=ok,
         detail=f"{path} ({expectation})",
+        blocking=blocking,
     )
 
 
@@ -46,56 +54,53 @@ def _solver_check(config: RuntimeConfig, solver: str) -> RuntimeCheck:
 
 
 def _bubblewrap_launch_check(config: RuntimeConfig) -> RuntimeCheck:
-    if not config.bubblewrap.is_file():
-        return RuntimeCheck(
-            name="bubblewrap_launch",
-            ok=False,
-            detail=f"bubblewrap executable is missing: {config.bubblewrap}",
-        )
-    try:
-        result = subprocess.run(
-            [
-                str(config.bubblewrap),
-                "--unshare-net",
-                "--ro-bind",
-                "/usr",
-                "/usr",
-                "--symlink",
-                "usr/bin",
-                "/bin",
-                "--symlink",
-                "usr/lib",
-                "/lib",
-                "--symlink",
-                "usr/lib64",
-                "/lib64",
-                "--proc",
-                "/proc",
-                "--dev",
-                "/dev",
-                "/usr/bin/true",
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        return RuntimeCheck(
-            name="bubblewrap_launch",
-            ok=False,
-            detail=f"bubblewrap launch failed: {error}",
-        )
-    detail = (
-        "networkless bubblewrap namespace launch succeeded"
-        if result.returncode == 0
-        else result.stderr.strip() or f"bubblewrap returned {result.returncode}"
-    )
+    ok, detail = probe_bubblewrap(config.bubblewrap)
     return RuntimeCheck(
         name="bubblewrap_launch",
-        ok=result.returncode == 0,
+        ok=ok,
         detail=detail,
+        blocking=config.execution_backend == "bubblewrap",
     )
+
+
+def _execution_backend_check(config: RuntimeConfig) -> RuntimeCheck:
+    bubblewrap_ok, bubblewrap_detail = probe_bubblewrap(
+        config.bubblewrap
+    )
+    if config.execution_backend == "bubblewrap":
+        return RuntimeCheck(
+            name="execution_backend",
+            ok=bubblewrap_ok,
+            detail=(
+                "bubblewrap selected"
+                if bubblewrap_ok
+                else f"bubblewrap unavailable: {bubblewrap_detail}"
+            ),
+        )
+    if config.execution_backend == "host":
+        return RuntimeCheck(
+            name="execution_backend",
+            ok=True,
+            detail="audited typed host execution selected explicitly",
+        )
+    return RuntimeCheck(
+        name="execution_backend",
+        ok=True,
+        detail=(
+            "bubblewrap selected by auto policy"
+            if bubblewrap_ok
+            else (
+                "audited typed host execution selected by auto policy; "
+                f"bubblewrap unavailable: {bubblewrap_detail}"
+            )
+        ),
+    )
+
+
+def preflight_passed(checks: list[RuntimeCheck]) -> bool:
+    """Return whether all blocking runtime checks passed."""
+
+    return all(check.ok or not check.blocking for check in checks)
 
 
 def run_preflight(config: RuntimeConfig) -> list[RuntimeCheck]:
@@ -106,8 +111,14 @@ def run_preflight(config: RuntimeConfig) -> list[RuntimeCheck]:
         _path_check("openfoam_root", config.openfoam_root),
         _path_check("openfoam_bashrc", config.openfoam_root / "etc" / "bashrc"),
         _path_check("tutorial_root", config.tutorial_root),
-        _path_check("bubblewrap", config.bubblewrap, executable=True),
+        _path_check(
+            "bubblewrap",
+            config.bubblewrap,
+            executable=True,
+            blocking=config.execution_backend == "bubblewrap",
+        ),
         _bubblewrap_launch_check(config),
+        _execution_backend_check(config),
         _solver_check(config, "icoFoam"),
     ]
     return checks

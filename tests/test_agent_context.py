@@ -87,17 +87,17 @@ def test_context_dynamically_retrieves_public_vof_knowledge() -> None:
     assert "of10.numerics.interfoam-alpha-boundedness" in (
         context.selected_knowledge_ids
     )
-    assert "interFoam incompressible two-fluid VOF contract" in (
+    assert "interFoam 不可压缩两流体 VOF 契约" in (
         context.knowledge_text
     )
     assert "constant/physicalProperties.<phase>" in context.knowledge_text
     assert "pcorrFinal" in context.knowledge_text
-    assert "all-time extrema" in context.knowledge_text
+    assert "全时段最差 extrema" in context.knowledge_text
     assert "maxAlphaCo" in context.knowledge_text
     assert "1.000001" not in context.knowledge_text
     assert "openfoam-author-native-case" in context.skills_text
-    assert "VOF boundedness" in context.skills_text
-    assert "add a safe generated case file" in context.skills_text
+    assert "保持 VOF 有界性" in context.skills_text
+    assert "repair 可以新增一个安全的生成算例文件" in context.skills_text
     assert "reviewed plan" not in context.skills_text
     assert "Generate files sequentially" not in context.skills_text
     assert "/private/tutorial/damBreak" not in (

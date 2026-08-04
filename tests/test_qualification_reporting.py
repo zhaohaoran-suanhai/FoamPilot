@@ -159,6 +159,15 @@ def test_classification_preserves_failure_layers(tmp_path: Path) -> None:
         )
         == "FAIL_AGENT"
     )
+    assert (
+        classify_qualification(
+            passed,
+            [],
+            [],
+            evaluation_level="public_validation",
+        )
+        == "PASS"
+    )
 
 
 def test_classification_distinguishes_provider_deferred(

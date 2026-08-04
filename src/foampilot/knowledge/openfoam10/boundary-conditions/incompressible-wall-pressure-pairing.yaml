@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.boundary.incompressible-wall-pressure-pairing
-title: Velocity and pressure conditions on impermeable walls
+title: 不可渗透壁面的速度与压力边界配对
 fork: foundation
 version: "10"
 knowledge_type: boundary_condition
@@ -9,10 +9,10 @@ models: [incompressible, wall]
 tags: [boundary, pressure, velocity, wall]
 applicability:
   conditions:
-    - The patch is an impermeable stationary or moving wall in an incompressible case.
-    - Pressure is kinematic pressure and no fixed pressure value is prescribed at the wall.
+    - 该 patch 是不可压缩算例中的不可渗透静止壁面或运动壁面。
+    - 压力为运动压力，且壁面没有指定固定压力值。
   not_applicable:
-    - The patch is an inlet, outlet, free surface, coupled interface, or compressible boundary.
+    - 该 patch 是入口、出口、自由表面、耦合界面或可压缩边界时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 zero-gradient finite-volume patch field
@@ -24,14 +24,14 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Impermeable walls constrain velocity while kinematic pressure normally uses a zero normal gradient; the exact velocity value depends on stationary versus moving wall intent.
+  summary: 不可渗透壁面约束速度，而运动压力通常采用零法向梯度；具体速度值取决于壁面是静止还是按指定方式运动。
   rules:
-    - Use noSlip or a fixed wall velocity for U according to physical motion.
-    - Use zeroGradient for p when no pressure value anchors that wall.
-    - Cover every mesh patch in both U and p boundaryField dictionaries.
+    - 根据物理运动为 U 使用 noSlip 或固定壁面速度。
+    - 壁面没有压力值作为锚点时，p 使用 zeroGradient。
+    - U 与 p 的 boundaryField dictionary 都必须覆盖每个 mesh patch。
   failure_signals:
     - A wall patch is missing from one field.
     - Moving-wall velocity contradicts the requested motion.
   validation:
-    - Compare every field patch set with the mesh patch set.
-    - Review velocity magnitude and direction against the physical request.
+    - 将每个 field 的 patch 集合与 mesh patch 集合逐一比较。
+    - 对照物理需求检查速度大小和方向。

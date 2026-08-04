@@ -6,6 +6,7 @@ import pytest
 
 from foampilot.runtime import (
     RuntimeConfig,
+    preflight_passed,
     parse_openfoam_log,
     run_preflight,
 )
@@ -18,9 +19,14 @@ def test_local_foundation_v10_preflight_detects_icofoam() -> None:
         "/home/edwin/feal-venv-py312/bin/python"
     )
     assert config.bubblewrap == Path("/usr/local/bin/bwrap")
+    assert config.execution_backend == "auto"
     checks = {check.name: check for check in run_preflight(config)}
     assert checks["solver:icoFoam"].ok, checks["solver:icoFoam"].detail
-    assert checks["bubblewrap_launch"].ok, checks["bubblewrap_launch"].detail
+    assert preflight_passed(list(checks.values()))
+    if not checks["bubblewrap_launch"].ok:
+        assert not checks["bubblewrap_launch"].blocking
+        assert checks["execution_backend"].ok
+        assert "host" in checks["execution_backend"].detail
 
 
 def test_openfoam_log_parser_tracks_completion_and_failures() -> None:

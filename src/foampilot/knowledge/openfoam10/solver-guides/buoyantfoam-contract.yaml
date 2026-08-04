@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.buoyantfoam-contract
-title: buoyantFoam compressible natural-convection contract
+title: buoyantFoam 可压缩自然对流契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,10 +9,10 @@ models: [compressible, buoyant, turbulent, steady, PIMPLE]
 tags: [buoyantfoam, natural-convection, p_rgh, komega-sst, wall-heat]
 applicability:
   conditions:
-    - Compressible buoyancy, gravity, heat transfer, and thermodynamic density coupling are required.
-    - The task uses steady or transient PIMPLE bookkeeping supported by buoyantFoam.
+    - 问题需要可压缩浮力、重力、传热与热力学密度耦合。
+    - 任务使用 buoyantFoam 支持的稳态或瞬态 PIMPLE 推进方式。
   not_applicable:
-    - Density is constant and temperature does not couple to momentum.
+    - 密度为常数且温度不与动量耦合时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 buoyantFoam application
@@ -24,18 +24,20 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: buoyantFoam couples compressible thermodynamics, gravity, U, enthalpy, p_rgh, turbulence, and thermophysical transport through a PIMPLE loop that may use steady pseudo-time bookkeeping.
+  summary: buoyantFoam 通过 PIMPLE loop 耦合可压缩热力学、重力、U、焓、p_rgh、湍流和热物性输运；该 loop 可以使用稳态伪时间计数。
   rules:
-    - Provide physicalProperties, momentumTransport, g, any required pressure-reference data, U, p, p_rgh, T, turbulence and thermal-diffusivity fields, fvSchemes, fvSolution, and controlDict.
-    - Keep thermodynamic p, hydrostatic-reduced p_rgh, gravity head, operating pressure, pRefCell, and pRefValue mutually consistent.
-    - For a steady task use steadyState discretization and interpret controlDict time as iterations; omit residualControl unless explicitly needed, and when present give Foundation v10 PIMPLE residualControl fields as single scalar values rather than tolerance dictionaries.
-    - Provide every divergence scheme used by the energy and momentum equations, including div(phi,K) for the kinetic-energy transport term.
-    - When divSchemes/default is none, include the exact Foundation v10 compressible viscous-stress entry div(((rho*nuEff)*dev2(T(grad(U))))); a kinematic div((nuEff*...)) entry does not satisfy buoyantFoam.
-    - Match constant/thermophysicalTransport to momentumTransport. For a Foundation v10 laminar case, use a top-level laminar dictionary containing model Fourier; do not wrap model Fourier in a generic thermophysicalTransport dictionary because the run-time selector looks up the laminar sub-dictionary.
-    - For the Foundation v10 steady natural-convection baseline, use momentumPredictor no, bounded Gauss limitedLinear 0.2 for U, K, enthalpy, and transported turbulence fields, and start relaxation with rho 1.0, p_rgh 0.7, U and enthalpy 0.3, and turbulence 0.7. Do not treat reaching the iteration cap as convergence when residuals or wall heat imbalance remain high.
-    - Use one coherent Foundation v10 turbulence wall-function set, including compressible alphat with the declared turbulent Prandtl number.
-    - For a large three-dimensional case, decompose, execute the solver with typed mpi_ranks, and reconstruct the accepted state.
+    - 提供 physicalProperties、momentumTransport、g、所有必需 pressure-reference 数据、U、p、p_rgh、T、湍流与热扩散字段、fvSchemes、fvSolution 和 controlDict。
+    - 保证热力学 p、静水压缩减 p_rgh、重力压头、工作压力、pRefCell 与 pRefValue 相互一致。
+    - 稳态任务采用 steadyState 离散，并将 controlDict time 解释为迭代；除非明确需要，否则省略 residualControl。若使用，Foundation v10 PIMPLE residualControl 中每个字段应给出单个 scalar value，而不是 tolerance dictionary。
+    - 提供能量与动量方程使用的全部 divergence scheme，包括动能输运项 div(phi,K)。
+    - 在 fvSolution/solvers 中同时提供 rho 与 rhoFinal；rho 可使用 diagonal，rhoFinal 应通过 `$rho;` 继承。PIMPLE 最终 pressure correction 会按 final field name 查找，只有 rho 时可能在首步报告 rhoFinal undefined。
+    - 当 divSchemes/default 为 none 时，加入精确的 Foundation v10 可压缩黏性应力项 div(((rho*nuEff)*dev2(T(grad(U)))))；运动学形式 div((nuEff*...)) 不满足 buoyantFoam。
+    - constant/thermophysicalTransport 必须与 momentumTransport 匹配。Foundation v10 层流算例使用顶层 laminar dictionary，并在其中设置 model Fourier；不要把 model Fourier 包在通用 thermophysicalTransport dictionary 中，因为 runtime selector 查找的是 laminar 子字典。
+    - Foundation v10 稳态自然对流基线使用 momentumPredictor no；U、K、焓和输运湍流场采用 bounded Gauss limitedLinear 0.2；初始 relaxation 使用 rho 1.0、p_rgh 0.7、U 与焓 0.3、湍流 0.7。若 residual 或壁面热流不平衡仍高，不得把达到迭代上限视为收敛。
+    - 使用一组内部一致的 Foundation v10 湍流 wall function，包括带已声明 turbulent Prandtl number 的可压缩 alphat。
+    - 大型三维算例应执行 decompose，以 typed mpi_ranks 运行 solver，并 reconstruct 已接受状态。
   failure_signals:
+    - fvSolution reports rhoFinal undefined although a rho solver exists.
     - Perfect-gas p is initialized near zero or p and p_rgh encode incompatible hydrostatics.
     - k, omega, nut, or alphat wall functions are missing or mutually inconsistent.
     - fvSchemes reports div(((rho*nuEff)*dev2(T(grad(U))))) as undefined before the first momentum solve.
@@ -43,5 +45,5 @@ content:
     - Temperature and velocity profiles look plausible but the two integrated wall heat flows remain imbalanced because the steady system is under-converged.
     - Molecular-only wall gradients disagree with transport-model integrated wall heat flow.
   validation:
-    - Require Mesh OK, normal completion, finite reconstructed fields, decreasing terminal residuals, and acceptable local and cumulative continuity.
-    - Use Foundation wallHeatFlux integrated Q on a temporary copy and check closed-domain hot/cold balance.
+    - 要求 Mesh OK、正常结束、重构字段有限、终止 residual 呈下降趋势，并且 local 与 cumulative continuity 可接受。
+    - 在临时副本上使用 Foundation wallHeatFlux 积分 Q，检查封闭域冷热壁热平衡。

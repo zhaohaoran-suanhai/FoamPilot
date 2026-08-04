@@ -1,0 +1,28 @@
+schema_version: 1
+task_id: laminar-cavity-clipped
+title: Clipped-corner lid-driven laminar cavity
+prompt: >-
+  Starting from an empty case directory, build the clipped-corner variant of
+  the Foundation OpenFOAM v10 lid-driven cavity. In metres, form a 0.1 by
+  0.1 two-dimensional cavity extruded 0.01 m, with the lower-right 0.04 by
+  0.04 corner removed. Use three conformal blocks: lower-left 12 by 8,
+  upper-left 12 by 12, and upper-right 8 by 12 cells, all one cell thick.
+  Preserve lid, fixedWalls, and empty frontAndBack patches. Use icoFoam with
+  nu=0.01 m2/s, initially zero U and p, lid velocity (1 0 0) m/s,
+  deltaT=0.005 s, and run from 0 to 0.6 s with writes at 0.1 s. Generate all
+  files, run blockMesh and checkMesh, and solve serially without reading or
+  copying a pre-existing case.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 600, max_mpi_ranks: 1, memory_mib: 2048}
+required_outputs: [mesh quality log, completed icoFoam log, velocity and pressure fields at 0.6 s]
+acceptance_requirements: [checkMesh reports Mesh OK, icoFoam reaches 0.6 s and ends normally, required fields remain finite]
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: icoFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 0.6}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+  - {name: final-velocity, kind: requested_output, parameters: {path: 0.6/U}}
+  - {name: final-pressure, kind: requested_output, parameters: {path: 0.6/p}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

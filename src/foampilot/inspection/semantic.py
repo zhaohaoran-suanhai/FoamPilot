@@ -141,12 +141,13 @@ def inspect_semantics(
     for field in manifest.fields:
         region = regions[field.region]
         field_path = root / field.path
-        if (
-            PurePosixPath(field.path).name != field.name
-            or not _field_region_matches(
-                field.path,
-                prefix=region.path_prefix,
-            )
+        name_mismatch = (
+            field.created_by != "solver"
+            and PurePosixPath(field.path).name != field.name
+        )
+        if name_mismatch or not _field_region_matches(
+            field.path,
+            prefix=region.path_prefix,
         ):
             issues.append(
                 _semantic_issue(

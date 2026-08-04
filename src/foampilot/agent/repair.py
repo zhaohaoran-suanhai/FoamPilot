@@ -244,9 +244,8 @@ def request_repair(
         "dynamic_public_knowledge": knowledge_text,
         "portable_workflow_skill": skills_text,
         "repair_contract": (
-            "Because EVIDENCE indicates CAUSE, change or add only safe "
-            "case-relative generated files, or change existing typed "
-            "commands; name the expected check and one stable control."
+            "因为 EVIDENCE 指向 CAUSE，只能修改或新增安全的算例相对路径生成文件，"
+            "或修改已有 typed command；同时说明预期检查和一个保持不变的 control。"
         ),
     }
     user_prompt = json.dumps(
@@ -263,9 +262,8 @@ def request_repair(
         ModelRequest(
             purpose="repair-openfoam-attempt",
             system_prompt=(
-                "Propose one minimal evidence-scoped OpenFOAM repair. "
-                "Follow the supplied public knowledge and workflow Skill. "
-                "Do not access tutorials, private evaluators, or golden data."
+                "提出一个由证据限定范围的最小 OpenFOAM repair。遵循提供的公开知识与"
+                "工作流 Skill。不得访问 tutorial、私有 evaluator 或 golden data。"
             ),
             user_prompt=user_prompt,
         ),

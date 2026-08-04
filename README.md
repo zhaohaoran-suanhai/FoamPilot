@@ -1,51 +1,45 @@
 # FoamPilot
 
-FoamPilot turns a public CFD requirement into a native Foundation OpenFOAM
-v10 case, executes it in a networkless sandbox, evaluates the written result,
-and permits one evidence-scoped repair. It is an independently installable
-Python package and CLI; it does not require Foam-Agent, LangGraph, FAISS, MCP,
-or a pre-existing tutorial case.
+FoamPilot 将公开 CFD 需求转换为原生 Foundation OpenFOAM v10 算例，优先在无网络沙箱中
+执行求解，评估写出结果，并允许一次由证据限定范围的 repair。它是可独立安装的 Python
+工具包和 CLI，不依赖 Foam-Agent、LangGraph、FAISS、MCP 或预先存在的 tutorial case。
 
-FoamPilot is an Agent workflow around OpenFOAM, not a CFD solver. OpenFOAM
-provides the mesh utilities and numerical solvers; FoamPilot authors,
-orchestrates, checks, and records the case.
+FoamPilot 是围绕 OpenFOAM 构建的 Agent 工作流，不是 CFD 求解器。OpenFOAM 提供网格
+utility 与数值求解器；FoamPilot 负责编写、编排、检查并记录算例。
 
-## Capability boundary
+## 能力边界
 
-The verified runtime target is Foundation OpenFOAM v10. ESI OpenFOAM
-distributions and other Foundation releases are not currently qualified.
-Model-authored case generation is non-deterministic, so one successful run is
-evidence for that run rather than a guarantee for every future prompt.
+当前经过验证的运行目标是 Foundation OpenFOAM v10。ESI OpenFOAM 发行版及其他
+Foundation 版本尚未完成 qualification。模型编写算例具有非确定性，因此一次成功 run
+只能作为该次运行的证据，不能保证以后每个 prompt 都成功。
 
-The canonical workflow is:
+规范工作流如下：
 
 ```text
-public TaskSpec
--> evidence-based CapabilityProfile
--> slot-bounded public knowledge and routed Skills
--> one complete model-authored ExecutionPlan v3
--> safe MPI normalization, typed policy, and semantic inspection
--> networkless native OpenFOAM execution
--> evaluator-owned checks
--> at most one evidence-scoped repair
--> strict child continuation after retryable provider interruption
--> immutable artifacts and SHA256 manifest
+公开 TaskSpec
+-> 基于证据的 CapabilityProfile
+-> 按槽位限制的公开知识与路由 Skills
+-> 模型一次编写完整 ExecutionPlan v3
+-> 安全 MPI 规范化、typed policy 与语义检查
+-> bubblewrap 或 audited host 原生 OpenFOAM 执行
+-> evaluator 负责的检查
+-> 至多一次由证据限定范围的 repair
+-> 可重试 provider 中断后的严格 child continuation
+-> 不可变 artifact 与 SHA256 manifest
 ```
 
-The Agent starts from an empty case directory. It may use public OpenFOAM
-documentation and general knowledge, but it may not read the current target
-tutorial, evaluator rules, or derived reference values.
+Agent 从空 case 目录开始工作。它可以使用公开 OpenFOAM 文档与通用知识，但不能读取
+当前目标 tutorial、evaluator rule 或派生 reference value。
 
-## Requirements
+## 运行要求
 
-- Python 3.12 or newer;
-- Foundation OpenFOAM v10;
-- bubblewrap (`bwrap`);
-- NumPy, Pydantic, PyYAML, and PyVista;
-- `requests` plus a supported local Codex OAuth credential for the default
-  live model provider.
+- Python 3.12 或更高版本；
+- Foundation OpenFOAM v10；
+- bubblewrap（`bwrap`，推荐；不可用时 `auto` 后端可降级）；
+- NumPy、Pydantic、PyYAML 与 PyVista；
+- `requests`，以及默认在线 model provider 所支持的本地 Codex OAuth credential。
 
-The current workstation profile expects:
+当前工作站配置使用：
 
 ```text
 /home/edwin/workplace/OpenFOAM-10
@@ -53,29 +47,29 @@ The current workstation profile expects:
 /usr/local/bin/bwrap
 ```
 
-These paths are explicit runtime configuration, not a dependency on the
-source repository from which FoamPilot was extracted.
+这些路径是显式 runtime 配置，并不表示 FoamPilot 依赖其最初拆分来源的代码仓库。
 
-## Install
+## 安装
 
 ```bash
 python -m pip install -e ".[codex,test]"
 foampilot preflight --json
 ```
 
-`preflight` must be executed with permission to create the bubblewrap
-namespace. A nested development sandbox may block that operation even when
-the host is correctly configured.
+默认工作站配置使用 `execution_backend=auto`：先做一次有界 bubblewrap 探测并缓存结果；
+namespace 可用时使用无网络 bubblewrap，不可用时选择有 executable allowlist、资源限制和
+完整日志的 audited host 后端。host 后端不提供 network namespace 隔离，`preflight` 会明确
+报告所选后端与 fallback 原因，而不会因 bubblewrap 权限不足无限等待。
 
-## Solve a task
+## 求解任务
 
-Validate a public TaskSpec:
+校验公开 TaskSpec：
 
 ```bash
 foampilot validate examples/tasks/non-tutorial-side-driven-box.yaml --json
 ```
 
-Run the complete Agent loop:
+运行完整 Agent 闭环：
 
 ```bash
 foampilot solve \
@@ -85,14 +79,13 @@ foampilot solve \
   --json
 ```
 
-Verify a frozen result:
+验证已冻结结果：
 
 ```bash
 foampilot report /tmp/foampilot-runs/RUN_DIR --json
 ```
 
-Resume a retryable generation or repair interruption without mutating the
-parent:
+在不修改 parent 的前提下，续跑可重试的 generation 或 repair 中断：
 
 ```bash
 foampilot resume /tmp/foampilot-runs/PARENT_RUN \
@@ -101,14 +94,12 @@ foampilot resume /tmp/foampilot-runs/PARENT_RUN \
   --json
 ```
 
-The default authentication path is `~/.codex/auth.json`. A task may allow
-serial or bounded MPI execution. The model declares `mpi_ranks`; the Runner,
-not the model, owns the MPI launcher.
+默认认证路径是 `~/.codex/auth.json`。任务可以允许串行或有界 MPI 执行。模型声明
+`mpi_ranks`；MPI launcher 由 Runner 而不是模型负责。
 
-## Public knowledge and Skills
+## 公开知识与 Skills
 
-Knowledge and Skills are package data and remain available from an installed
-wheel:
+Knowledge 与 Skills 属于 package data，从已安装 wheel 中仍可使用：
 
 ```bash
 foampilot knowledge validate src/foampilot/knowledge/openfoam10 --json
@@ -119,22 +110,18 @@ foampilot skill validate \
   src/foampilot/skills/openfoam-author-native-case --json
 ```
 
-The package contains one general native authoring Skill plus benchmark,
-buoyant-flow, and `rhoCentralFoam` solver-family Skills. These are public
-guidance, not deterministic case templates.
+工具包包含一个通用原生算例编写 Skill，以及 benchmark、buoyant-flow 与
+`rhoCentralFoam` solver-family Skills。它们是公开行为指导，不是确定性 case template。
 
-Routing confidence is system-owned. An explicit installed solver may route
-with high confidence; one compatible public solver-family candidate may route
-with medium confidence; an ambiguous or physically incomplete request stops
-before case generation. The model may suggest a route candidate but cannot
-assign its confidence.
+Routing confidence 由系统负责。明确指定且已安装的 solver 可以高置信度路由；唯一兼容的
+公开 solver-family candidate 可以中置信度路由；含糊或物理信息不完整的请求会在生成
+case 前停止。模型可以建议 route candidate，但不能自行指定 confidence。
 
-## Controlled qualification
+## 受控 qualification
 
-FoamPilot ships a 15-case Foundation OpenFOAM v10 suite spanning regression,
-development, and holdout roles. Each case has a public TaskSpec plus
-evaluator-only rules and compact derived numeric references. The repository
-does not ship official tutorial directories or their large solver results.
+FoamPilot 提供一套由 15 个 Foundation OpenFOAM v10 算例组成的 suite，覆盖
+regression、development 与 holdout 角色。每题包含公开 TaskSpec、仅 evaluator 可见的
+rule 和紧凑派生数值 reference。仓库不包含官方 tutorial 目录或大型求解结果。
 
 ```bash
 foampilot qualify suite \
@@ -146,39 +133,52 @@ foampilot qualify suite \
   --json
 ```
 
-The smaller `foampilot qualify official-six` command remains available as a
-six-case regression wrapper.
+较小的 `foampilot qualify official-six` 命令继续作为六题 regression wrapper 提供。
 
-On 2026-07-30, the frozen 15-case baseline reached 11/15 strict qualification
-passes. All 15 cases entered their requested solver and 14 reached public
-validation; one CHT case failed during its solver run. Four evidence-scoped
-failures were then corrected and passed targeted reruns, but these separate
-runs are not presented as a fresh 15/15 stochastic suite result. See the
-[qualification methodology](docs/qualification.md) and
-[controlled-learning report](docs/reports/2026-07-30-controlled-learning-15.md).
+最新的 30 题广度基线可以使用：
 
-The standalone non-tutorial gate is 2/2
-`PUBLIC_VALIDATION_PASS`: the laminar enclosure passed on its first attempt,
-and the two-phase column collapse passed after one evidence-scoped
-time-step-cap repair. This verifies the installed-wheel solve path, not the
-15-case physics qualification. See the
-[standalone real-case gate report](docs/reports/2026-07-29-standalone-real-gate.md).
-
-## Offline controlled improvement
-
-FoamPilot can turn a frozen failed run into a reviewable learning candidate
-and compare qualification reports after a developer applies one small change:
-
-```text
-frozen solve/qualification
--> foampilot improve analyze
--> developer applies one candidate change
--> rerun qualification
--> foampilot improve compare
--> explicit promotion decision
+```bash
+foampilot qualify suite \
+  --suite-file \
+    src/foampilot/qualification/data/suites/official-corpus-30-baseline-v1.yaml \
+  --run-root /tmp/foampilot-official-corpus-30 \
+  --workers 1 \
+  --model-name gpt-5.6-sol \
+  --json
 ```
 
-For example:
+该 suite 由 15 个严格物理 qualification 算例和 15 个公开验证级广度算例组成。2026-08-03
+冻结基线实现 30/30 generation、28/30 目标 solver 启动、20/30 solver 正常结束、18/30
+公开验证通过和 17/30 suite `PASS`；provider/environment terminal blocker 均为 0。后 15 题
+没有 evaluator-only golden 物理比较，因此不能把 17/30 解释成 30 题严格物理通过率。
+详见 [30 题基线与受控学习报告](docs/reports/2026-08-04-official-corpus-30-baseline.md)。
+
+2026-07-30 冻结的 15 题基线取得 11/15 严格 qualification 通过。15 题都进入了目标
+solver，14 题进入公开验证；一个 CHT 算例在 solver run 中失败。之后针对四项由证据限定
+范围的失败进行了修正并通过定向复测，但这些独立 run 不能表述为一次新的随机性 15/15
+suite 结果。详见 [qualification 方法](docs/qualification.md) 与
+[受控学习报告](docs/reports/2026-07-30-controlled-learning-15.md)。
+
+独立 non-tutorial gate 达到 2/2 `PUBLIC_VALIDATION_PASS`：层流方腔首次 attempt
+通过，两相液柱坍塌在一次由证据限定的时间步上限 repair 后通过。该结果验证 installed-wheel
+求解路径，不代表 15 题物理 qualification。详见
+[独立真实算例 gate 报告](docs/reports/2026-07-29-standalone-real-gate.md)。
+
+## 离线受控改进
+
+FoamPilot 可以把冻结的失败 run 转换为可审查 learning candidate；developer 应用一项
+小改动后，再比较 qualification report：
+
+```text
+冻结的 solve/qualification
+-> foampilot improve analyze
+-> developer 应用一项 candidate change
+-> 重新运行 qualification
+-> foampilot improve compare
+-> 显式 promotion decision
+```
+
+示例：
 
 ```bash
 foampilot improve analyze RUN_DIR \
@@ -195,16 +195,14 @@ foampilot improve compare BASELINE.json CURRENT.json \
   --json
 ```
 
-This workflow is offline and has no automatic promotion. Candidate and
-comparison files live beside run roots, never inside immutable runs or package
-data. Official examples are unavailable during blind authoring and repair.
-Only after artifact verification and frozen qualification may a developer use
-one as a teacher reference; the candidate records its directory hash,
-generalized principles, and leakage family instead of copying the case.
+该工作流完全离线，并且不会自动 promotion。Candidate 与 comparison 文件位于 run root
+旁边，绝不写入不可变 run 或 package data。盲编写与 repair 阶段无法访问官方 example。
+只有 artifact verification 和冻结 qualification 完成后，developer 才可以将 example
+作为 teacher reference；candidate 记录目录 hash、泛化原则与 leakage family，而不是复制算例。
 
-## Failure layers
+## 失败分层
 
-FoamPilot reports:
+FoamPilot 会报告：
 
 - `REQUEST_INCOMPLETE`;
 - `ROUTING_UNRESOLVED`;
@@ -216,39 +214,37 @@ FoamPilot reports:
 - `PUBLIC_VALIDATION_FAILED`;
 - `PUBLIC_VALIDATION_PASS`.
 
-RunSummary v2 also reports workflow state (`COMPLETED`, `FAILED`, or
-`DEFERRED`), an optional native status, a primary failure, and a terminal
-blocker. A repair-time provider outage can therefore preserve
-`SOLVER_FAILED` while independently reporting a retryable provider blocker.
+RunSummary v2 还报告 workflow state（`COMPLETED`、`FAILED` 或 `DEFERRED`）、
+可选 native status、primary failure 与 terminal blocker。因此，repair 阶段 provider
+中断时可以保留 `SOLVER_FAILED`，并独立报告可重试 provider blocker。
 
-`PUBLIC_VALIDATION_PASS` covers the checks declared by the public task. A
-separate qualification layer may still reject a completed solve against
-physics metrics. Reports must preserve that distinction.
+`PUBLIC_VALIDATION_PASS` 只覆盖公开任务声明的检查。独立 qualification 层仍可能根据
+物理指标拒绝已完成求解，报告必须保留这一区别。
 
-## Development verification
+## 开发验证
 
 ```bash
 PYTHONPATH=src python -B -m pytest -q -p no:cacheprovider tests
 python -m pip wheel . --no-deps --wheel-dir dist
 ```
 
-Real OpenFOAM tests require the host runtime and are intentionally separate
-from deterministic unit tests.
+真实 OpenFOAM 测试需要宿主机 runtime，并有意与确定性单元测试分离。
 
-## Documentation
+## 文档
 
 - [架构、运行流程与功能边界](docs/system-overview.md)
-- [Architecture](docs/architecture.md)
+- [架构说明](docs/architecture.md)
 - [快速开始](docs/independent-agent-quickstart.md)
-- [Agent integration](docs/agent-integration.md)
-- [Knowledge governance](docs/knowledge-governance.md)
+- [Agent 集成](docs/agent-integration.md)
+- [知识治理](docs/knowledge-governance.md)
 - [受控评测](docs/qualification.md)
-- [Controlled-learning 15-case report](docs/reports/2026-07-30-controlled-learning-15.md)
-- [Stage A provider/workflow acceptance](docs/reports/2026-07-31-stage-a-acceptance.md)
-- [Stage B routing/semantic acceptance](docs/reports/2026-07-31-stage-b-acceptance.md)
-- [Delivery readiness report](docs/reports/2026-07-30-delivery-readiness.md)
-- [Standalone real-case gate](docs/reports/2026-07-29-standalone-real-gate.md)
-- [License](LICENSE)
-- [Provenance and notices](NOTICE.md)
+- [15 题受控学习报告](docs/reports/2026-07-30-controlled-learning-15.md)
+- [30 题官方题库衍生基线与受控学习报告](docs/reports/2026-08-04-official-corpus-30-baseline.md)
+- [阶段 A provider/workflow 验收](docs/reports/2026-07-31-stage-a-acceptance.md)
+- [阶段 B routing/semantic 验收](docs/reports/2026-07-31-stage-b-acceptance.md)
+- [交付就绪报告](docs/reports/2026-07-30-delivery-readiness.md)
+- [独立真实算例 gate](docs/reports/2026-07-29-standalone-real-gate.md)
+- [许可证](LICENSE)
+- [来源与声明](NOTICE.md)
 
-FoamPilot is not affiliated with or endorsed by the OpenFOAM Foundation.
+FoamPilot 与 OpenFOAM Foundation 不存在从属关系，也未获得其背书。

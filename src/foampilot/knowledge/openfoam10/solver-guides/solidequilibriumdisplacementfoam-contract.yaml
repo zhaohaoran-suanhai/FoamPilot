@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.solidequilibriumdisplacementfoam-contract
-title: solidEquilibriumDisplacementFoam steady linear-elastic contract
+title: solidEquilibriumDisplacementFoam 稳态线弹性契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,10 +9,10 @@ models: [solid, linear-elastic, small-strain, displacement, planeStress]
 tags: [solidequilibriumdisplacementfoam, solid-mechanics, displacement, traction, stress]
 applicability:
   conditions:
-    - Foundation v10 solidEquilibriumDisplacementFoam solves steady small-strain linear elasticity with displacement corrections.
-    - Material behavior is supported by solidDisplacementThermo.
+    - Foundation v10 solidEquilibriumDisplacementFoam 通过位移修正求解稳态小应变线弹性。
+    - 材料行为受 solidDisplacementThermo 支持。
   not_applicable:
-    - The task requires transient inertia, plasticity, contact, finite strain, or nonlinear material behavior.
+    - 任务需要瞬态惯性、塑性、接触、有限应变或非线性材料行为时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 solidEquilibriumDisplacementFoam application source
@@ -24,18 +24,20 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 solidEquilibriumDisplacementFoam iterates D and Dcorr with an explicit combined stress divergence and solver-specific stressAnalysis controls.
+  summary: Foundation v10 solidEquilibriumDisplacementFoam 使用显式组合应力 divergence 与 solver-specific stressAnalysis 控制，迭代 D 和 Dcorr。
   rules:
-    - Provide D, T, physicalProperties, fvSchemes, fvSolution, and controlDict. Material properties rho, E, nu, Cp, kappa, and alphav use the subdictionary form expected by solidDisplacementThermo.
-    - Use tractionDisplacement with traction, pressure, and value on loaded or free faces, fixedValue on constrained faces, and coherent empty or symmetry conditions.
-    - For the steady equilibrium solver define d2dt2Schemes/default steadyState, exact laplacianSchemes entries for laplacian(DD,D) and laplacian(DD,Dcorr) unless a valid default covers both, and the exact explicit divergence key div((sigmaExp+sigmaD)).
-    - Configure solvers for D and Dcorr and a stressAnalysis dictionary containing the convergence tolerance D, nCorrectors when needed, and accelerationFactor compatible with the material Poisson ratio.
-    - Do not reuse solidDisplacementFoam-only scheme names such as div(sigmaD) when the selected executable requests the combined equilibrium operator.
+    - 提供 D、T、physicalProperties、fvSchemes、fvSolution 与 controlDict。材料属性 rho、E、nu、Cp、kappa 与 alphav 使用 solidDisplacementThermo 要求的子字典形式。
+    - solidDisplacementThermo 直接读取 physicalProperties 的 top-level Cp dictionary，结构必须是 `Cp { type uniform; value <J/kg/K>; }`；`mixture/thermodynamics/Cp` 属于通用 mixture thermo，不能替代这个顶层属性。同样以顶层 uniform/field 子字典提供 rho、kappa、E、nu 与 alphav。
+    - 受载或自由面使用包含 traction、pressure 与 value 的 tractionDisplacement；受约束面使用 fixedValue；并配置内部一致的 empty 或 symmetry condition。
+    - 稳态平衡求解器定义 d2dt2Schemes/default steadyState；除非有效 default 能同时覆盖，否则分别提供 laplacian(DD,D) 与 laplacian(DD,Dcorr) 的精确 laplacianSchemes 项；并提供精确显式 divergence key div((sigmaExp+sigmaD))。
+    - 为 D 与 Dcorr 配置 solver，并提供 stressAnalysis dictionary，其中包含 convergence tolerance D、需要时的 nCorrectors，以及与材料 Poisson ratio 兼容的 accelerationFactor。
+    - 所选 executable 请求组合 equilibrium operator 时，不得复用仅适用于 solidDisplacementFoam 的 div(sigmaD) 等 scheme name。
   failure_signals:
+    - physicalProperties reports Cp, kappa, E, nu, or alphav undefined when the value was placed only under a generic mixture dictionary.
     - fvSchemes reports div((sigmaExp+sigmaD)) as undefined.
     - fvSchemes reports laplacian(DD,D) or laplacian(DD,Dcorr) as undefined.
     - fvSolution cannot find Dcorr or required stressAnalysis controls.
     - Traction boundaries cannot construct because traction, pressure, or value is missing.
   validation:
-    - Require Mesh OK, normal completion, finite D and stress fields, and task-derived constraint and traction behavior.
-    - Check displacement or stress against a public physical relation without copying a target-case solution.
+    - 要求 Mesh OK、正常结束、D 与 stress field 有限，并满足任务给定 constraint 与 traction 行为。
+    - 在不复制目标算例解的前提下，用公开物理关系检查位移或应力。

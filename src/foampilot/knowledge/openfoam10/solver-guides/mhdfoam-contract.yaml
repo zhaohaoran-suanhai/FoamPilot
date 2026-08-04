@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.mhdfoam-contract
-title: mhdFoam incompressible magnetohydrodynamic contract
+title: mhdFoam 不可压缩磁流体契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,10 +9,10 @@ models: [incompressible, transient, laminar, magnetohydrodynamic, MHD, PISO, BPI
 tags: [mhdfoam, mhd, hartmann, magnetic, permeability, conductivity, bpiso, pb]
 applicability:
   conditions:
-    - Foundation v10 mhdFoam solves laminar incompressible conducting flow coupled to a magnetic field.
-    - The case supplies velocity U, magnetic field B, kinematic pressure p, and magnetic pressure pB.
+    - Foundation v10 mhdFoam 求解与磁场耦合的层流不可压缩导电流动。
+    - 算例提供速度 U、磁场 B、运动压力 p 和磁压力 pB。
   not_applicable:
-    - The physics requires compressible, turbulent, inductionless, or electric-potential formulations.
+    - 物理问题需要可压缩、湍流、无感应或电势 formulation 时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 mhdFoam application source
@@ -24,18 +24,18 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 mhdFoam runs separate hydrodynamic PISO and magnetic BPISO correction loops and reads four dimensioned constants plus U, B, p, and pB directly.
+  summary: Foundation v10 mhdFoam 分别运行流体 PISO 与磁场 BPISO 修正 loop，并直接读取四个 dimensioned constant 以及 U、B、p 和 pB。
   rules:
-    - In constant/physicalProperties, use the repeated dimensioned-scalar stream forms rho rho [1 -3 0 0 0 0 0], nu nu [0 2 -1 0 0 0 0], mu mu [1 1 -2 0 0 -2 0], and sigma sigma [-1 -3 3 0 0 2 0], followed by their values.
-    - Provide readable U, B, p, and pB fields with coherent boundary conditions on every mesh patch.
-    - In fvSolution, configure the complete coupled set p, pFinal, pB, pBFinal, U, B, and BFinal and provide both PISO and BPISO dictionaries; BPISO controls the magnetic-pressure correction loop and is not inferred from PISO. Regex entries such as "(U|B).*" may cover base and final vector solves, but both pressure-final aliases remain explicit.
-    - When divSchemes/default is none, define the complete Foundation v10 coupled divergence set div(phi,U), div(phiB,U), div(phi,B), and div(phiB,((2*DBU)*B)); retain valid pressure references when either pressure field lacks a fixed-value anchor. Treat these four entries as one solver-family contract rather than adding missing keys one startup failure at a time.
-    - Keep magnetic permeability mu distinct from dynamic viscosity; mhdFoam reads nu as kinematic viscosity and mu as the electromagnetic constant with different dimensions.
+    - 在 constant/physicalProperties 中使用重复名称的 dimensioned-scalar stream 形式：rho rho [1 -3 0 0 0 0 0]、nu nu [0 2 -1 0 0 0 0]、mu mu [1 1 -2 0 0 -2 0] 和 sigma sigma [-1 -3 3 0 0 2 0]，随后写入各自数值。
+    - 提供可读取的 U、B、p 和 pB 字段，并在每个 mesh patch 上使用内部一致的 boundary condition。
+    - 在 fvSolution 中配置完整耦合集 p、pFinal、pB、pBFinal、U、B 与 BFinal，并同时提供 PISO 和 BPISO dictionary；BPISO 控制磁压力修正 loop，不能从 PISO 推断。"(U|B).*" 等 regex 项可以覆盖 base 与 final vector solve，但两个 pressure-final alias 仍需显式给出。
+    - 当 divSchemes/default 为 none 时，定义完整 Foundation v10 耦合 divergence 集：div(phi,U)、div(phiB,U)、div(phi,B) 与 div(phiB,((2*DBU)*B))。任一压力字段没有 fixed-value 锚点时，保留有效 pressure reference。将这四项视为一个 solver-family 契约，不能每遇到一次启动失败才补一个缺失 key。
+    - 明确区分磁导率 mu 与动力黏度；mhdFoam 将 nu 读取为运动黏度，将具有不同量纲的 mu 读取为电磁常数。
   failure_signals:
     - Startup reports that BPISO is undefined in fvSolution.
     - physicalProperties reports rho, nu, mu, or sigma as undefined or dimensionally inconsistent.
     - A solver entry for pFinal, pBFinal, B, or BFinal is missing when a final correction begins.
     - fvSchemes reports div(phiB,U), div(phi,B), or the Lorentz-coupling divergence as undefined.
   validation:
-    - Require Mesh OK, normal completion through the requested time, and finite U, B, p, and pB.
-    - Check fluid flux conservation, magnetic divergence behavior, and the requested Hartmann or magnetic profile without golden leakage.
+    - 要求 Mesh OK、正常推进至要求时刻，且 U、B、p 与 pB 有限。
+    - 在不泄漏 golden 的前提下，检查流体通量守恒、磁场 divergence 行为以及要求的 Hartmann 或 magnetic profile。

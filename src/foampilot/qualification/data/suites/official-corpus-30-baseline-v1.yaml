@@ -1,0 +1,34 @@
+schema_version: 1
+protocol_id: official-corpus-30-baseline-v1
+max_workers: 1
+cases:
+  - {case_id: laminar-cavity, role: regression}
+  - {case_id: potential-cylinder, role: regression}
+  - {case_id: rans-pitzdaily, role: regression}
+  - {case_id: multiphase-dam-break, role: regression}
+  - {case_id: compressible-shock-tube, role: regression}
+  - {case_id: buoyant-cavity, role: regression, exclusive: true}
+  - {case_id: scalar-transport-pitzdaily, role: development}
+  - {case_id: laminar-planar-poiseuille, role: development}
+  - {case_id: porous-angled-duct, role: development}
+  - {case_id: compressible-blocked-channel, role: development}
+  - {case_id: cht-cooling-cylinder, role: development, exclusive: true}
+  - {case_id: srf-rotor, role: development}
+  - {case_id: mhd-hartmann, role: holdout}
+  - {case_id: multiphase-capillary-rise, role: holdout}
+  - {case_id: solid-plate-hole, role: holdout}
+  - {case_id: laminar-cavity-graded, role: development, evaluation_level: public_validation}
+  - {case_id: laminar-cavity-clipped, role: development, evaluation_level: public_validation}
+  - {case_id: laminar-planar-couette, role: development, evaluation_level: public_validation}
+  - {case_id: laminar-planar-contraction, role: development, evaluation_level: public_validation}
+  - {case_id: pimple-blocked-channel, role: development, evaluation_level: public_validation}
+  - {case_id: piso-porous-blockage, role: development, evaluation_level: public_validation}
+  - {case_id: shallow-water-square-bump, role: development, evaluation_level: public_validation}
+  - {case_id: electrostatic-charged-wire, role: development, evaluation_level: public_validation}
+  - {case_id: solid-beam-end-load, role: development, evaluation_level: public_validation}
+  - {case_id: rhopimple-shock-tube, role: development, evaluation_level: public_validation}
+  - {case_id: rhocentral-oblique-shock, role: holdout, evaluation_level: public_validation}
+  - {case_id: rhocentral-forward-step, role: holdout, evaluation_level: public_validation}
+  - {case_id: buoyant-benard-cells, role: holdout, evaluation_level: public_validation, exclusive: true}
+  - {case_id: buoyant-hot-room-boussinesq, role: holdout, evaluation_level: public_validation, exclusive: true}
+  - {case_id: two-liquid-lock-exchange, role: holdout, evaluation_level: public_validation}

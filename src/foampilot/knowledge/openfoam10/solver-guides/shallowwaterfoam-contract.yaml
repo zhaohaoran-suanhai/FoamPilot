@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.shallowwaterfoam-contract
-title: shallowWaterFoam field and rotating-gravity contract
+title: shallowWaterFoam 字段与旋转重力契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,10 +9,10 @@ models: [incompressible, shallow-water, transient, rotating, PIMPLE]
 tags: [shallowwaterfoam, shallow-water, h0, htotal, hu, gravitationalproperties]
 applicability:
   conditions:
-    - Foundation v10 shallowWaterFoam advances water depth and depth-integrated momentum over a prescribed bed.
-    - The task supplies shallow-water gravity, rotation, initial depth, bed height, and momentum.
+    - Foundation v10 shallowWaterFoam 在给定底床上推进水深与深度积分动量。
+    - 任务提供浅水重力、旋转、初始水深、床面高度与动量。
   not_applicable:
-    - The task requires a three-dimensional free surface, VOF interface capture, or compressible flow.
+    - 任务需要三维自由表面、VOF 界面捕获或可压缩流动时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 shallowWaterFoam application source
@@ -24,16 +24,16 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 shallowWaterFoam reads bed height h0, water depth h, depth-integrated momentum hU, total depth hTotal, rotating gravity data, and PIMPLE controls.
+  summary: Foundation v10 shallowWaterFoam 读取床面高度 h0、水深 h、深度积分动量 hU、总深度 hTotal、旋转重力数据与 PIMPLE 控制。
   rules:
-    - Use constant/gravitationalProperties rather than constant/g. Foundation v10 dimensioned-vector lookup requires both the dictionary key and the dimensioned value name, for example g g [0 1 -2 0 0 0 0] (0 0 -9.81) and Omega Omega [0 0 -1 0 0 0 0] (0 0 7.292e-5); omitting the second name makes the dimensions token invalid. Declare rotating true or false and include Omega when rotation is enabled.
-    - Provide 0/h0 and 0/h with length dimensions, 0/hU with area-per-time dimensions, and 0/hTotal with length dimensions and calculated patch values. Cover every mesh patch coherently; hTotal is part of the startup field inventory, not merely optional post-processing.
-    - Treat h0 as a static input field. Foundation v10 discovers it from the latest available mesh-time instance, binds it as a const field, and h0 is not automatically written into each output time. Validate or preserve the authored h0 input itself; require time-directory outputs only for evolving or auto-written fields such as h, hU, U, and hTotal.
-    - When a bed feature is regional, initialize h0, h, and hU together with setFields so that the prescribed total free-surface state and momentum remain consistent.
-    - Supply a PIMPLE dictionary with nOuterCorrectors, nCorrectors, nNonOrthogonalCorrectors, and momentumPredictor. A solvers dictionary alone is incomplete.
-    - Provide h, hFinal, hU, and hUFinal linear-solver entries. A Foundation v10 baseline uses PCG with DIC for h and smoothSolver for hU; final entries inherit their base settings with zero relative tolerance.
-    - Under divSchemes default none, include the exact momentum transport entry div(phiv,hU). A Foundation v10 square-bump baseline uses Gauss LUST un, CrankNicolson 0.9 time discretization, and uncorrected laplacian and surface-normal schemes.
-    - Preserve positive water depth and finite hU throughout the run, and keep the time step consistent with shallow-water wave and advection speeds.
+    - 使用 constant/gravitationalProperties，而不是 constant/g。Foundation v10 dimensioned-vector lookup 同时要求 dictionary key 与 dimensioned value name，例如 g g [0 1 -2 0 0 0 0] (0 0 -9.81) 和 Omega Omega [0 0 -1 0 0 0 0] (0 0 7.292e-5)；省略第二个名称会使 dimensions token 无效。声明 rotating true 或 false，启用旋转时包含 Omega。
+    - 提供具有长度量纲的 0/h0 与 0/h、具有面积每时间量纲的 0/hU，以及具有长度量纲和 calculated patch value 的 0/hTotal。一致覆盖每个 mesh patch；hTotal 属于启动 field inventory，不只是可选后处理。
+    - 将 h0 视为静态输入字段。Foundation v10 从最近可用 mesh-time instance 发现它，并绑定为 const field；h0 不会自动写入每个 output time。验证或保留编写的 h0 输入本身；只有 h、hU、U 与 hTotal 等演化或自动写出字段才要求 time-directory 输出。
+    - 床面特征具有区域分布时，使用 setFields 同时初始化 h0、h 与 hU，保证给定总自由表面状态和动量一致。
+    - 提供包含 nOuterCorrectors、nCorrectors、nNonOrthogonalCorrectors 与 momentumPredictor 的 PIMPLE dictionary；只有 solvers dictionary 不完整。
+    - 提供 h、hFinal、hU 与 hUFinal linear-solver 项。Foundation v10 基线中 h 使用带 DIC 的 PCG，hU 使用 smoothSolver；final 项继承 base 设置并采用零 relative tolerance。
+    - 在 divSchemes default none 下加入精确动量输运项 div(phiv,hU)。Foundation v10 square-bump 基线采用 Gauss LUST un、CrankNicolson 0.9 时间离散，以及 uncorrected laplacian 与 surface-normal scheme。
+    - 全程保持水深为正、hU 有限，并让时间步与浅水波速及对流速度一致。
   failure_signals:
     - Startup reports that PIMPLE is undefined in system/fvSolution.
     - Startup cannot find constant/gravitationalProperties even though constant/g exists.
@@ -41,5 +41,5 @@ content:
     - Startup cannot read h0, h, hU, hTotal, hFinal, hUFinal, or div(phiv,hU).
     - setFields changes the bed height without consistently updating water depth and depth-integrated momentum.
   validation:
-    - Require Mesh OK, successful initialization, normal completion through the requested time, finite required fields, and positive water depth.
-    - Check depth and momentum conservation together with task-derived free-surface or wave observables.
+    - 要求 Mesh OK、初始化成功、正常推进到要求时刻、必需字段有限且水深为正。
+    - 同时检查水深与动量守恒，以及任务给定自由表面或波动观测量。

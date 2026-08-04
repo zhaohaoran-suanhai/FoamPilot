@@ -13,7 +13,7 @@ from .models import (
     RuntimeConfig,
 )
 from .plan_runner import PlanRunner
-from .preflight import run_preflight
+from .preflight import preflight_passed, run_preflight
 
 __all__ = [
     "ContinuitySample",
@@ -25,5 +25,6 @@ __all__ = [
     "RuntimeCheck",
     "RuntimeConfig",
     "parse_openfoam_log",
+    "preflight_passed",
     "run_preflight",
 ]

@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.pimplefoam-maxwell-contract
-title: pimpleFoam transient laminar Maxwell and body-force contract
+title: pimpleFoam 瞬态层流 Maxwell 与体力源项契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,11 +9,11 @@ models: [incompressible, transient, laminar, Maxwell, viscoelastic, PIMPLE, semi
 tags: [pimplefoam, maxwell, viscoelastic, stress, sigma, fvmodels, semiimplicitsource, body-force]
 applicability:
   conditions:
-    - Foundation v10 pimpleFoam advances an incompressible transient flow with the laminar Maxwell momentum-transport model.
-    - A uniform or selected-cell body force may be supplied through semiImplicitSource.
+    - Foundation v10 pimpleFoam 使用层流 Maxwell 动量输运模型推进不可压缩瞬态流动。
+    - 可以通过 semiImplicitSource 施加均匀或选定 cell 的体力。
   not_applicable:
-    - The task uses Newtonian laminar transport without an extra stress field.
-    - The body force is imposed through a pressure gradient or another model type.
+    - 任务使用不含附加应力字段的 Newtonian 层流输运时不适用。
+    - 体力通过压力梯度或其他 model type 施加时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 pimpleFoam, Maxwell model, and semiImplicitSource sources
@@ -25,19 +25,19 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 pimpleFoam with the laminar Maxwell model transports the extra-stress field sigma and requires model-specific divergence schemes; semiImplicitSource selects cells with selectionMode and declares explicit and implicit source coefficients.
+  summary: Foundation v10 pimpleFoam 使用层流 Maxwell 模型输运附加应力字段 sigma，并需要模型专用 divergence scheme；semiImplicitSource 使用 selectionMode 选择 cell，并声明显式与隐式源项系数。
   rules:
-    - Provide U, p, sigma, physicalProperties, momentumTransport, fvSchemes, fvSolution, controlDict, and any requested fvModels or fvConstraints dictionaries with coherent patch coverage.
-    - Under divSchemes default none, the Maxwell family requires exact entries for div(phi,U), div(phi,sigma), div(sigma), div((nu*dev2(T(grad(U))))), and div((nuM*grad(U))). Do not substitute the Newtonian nuEff key or omit the base-viscosity stress key.
-    - Configure laminar MaxwellCoeffs with nuM and lambda and preserve a finite sigma field using boundary conditions consistent with the velocity constraints.
-    - For a strongly coupled transient Maxwell baseline, use a bounded stress-convection scheme such as Gauss vanAlbada for div(phi,sigma), configure both "(U|sigma)" and "(U|sigma)Final" solver coverage, set momentumPredictor off, and use multiple nOuterCorrectors before pressure correctors. Changing only the stress convection to upwind does not replace the required outer coupling.
-    - A Foundation v10 semiImplicitSource uses selectionMode, for example selectionMode all, not select. Set volumeMode explicitly and declare a U source subdictionary containing an explicit vector entry and an implicit scalar entry; the compact U (((vector) scalar)) primitive form is incompatible with this reader.
-    - Use a PIMPLE dictionary and a valid pressure reference for a periodic or otherwise unanchored pressure field.
+    - 提供 U、p、sigma、physicalProperties、momentumTransport、fvSchemes、fvSolution、controlDict，以及任务要求的 fvModels 或 fvConstraints dictionary，并保证 patch 覆盖一致。
+    - 在 divSchemes default none 下，Maxwell family 要求精确项 div(phi,U)、div(phi,sigma)、div(sigma)、div((nu*dev2(T(grad(U))))) 与 div((nuM*grad(U)))。不得以 Newtonian nuEff key 替代，也不得省略 base-viscosity stress key。
+    - 使用 nuM 与 lambda 配置 laminar MaxwellCoeffs，并通过与速度约束一致的 boundary condition 保持 sigma 字段有限。
+    - 强耦合瞬态 Maxwell 基线中，div(phi,sigma) 使用 Gauss vanAlbada 等有界应力对流 scheme；同时配置 "(U|sigma)" 与 "(U|sigma)Final" solver coverage；设置 momentumPredictor off，并在 pressure corrector 前使用多个 nOuterCorrectors。仅将应力对流改为 upwind 不能替代所需 outer coupling。
+    - Foundation v10 semiImplicitSource 使用 selectionMode，例如 selectionMode all，而不是 select。显式设置 volumeMode，并声明包含显式 vector 项和隐式 scalar 项的 U source 子字典；紧凑 U (((vector) scalar)) primitive 形式与该 reader 不兼容。
+    - 对周期性或其他无锚点压力字段，使用 PIMPLE dictionary 和有效 pressure reference。
   failure_signals:
     - fvModels reports that selectionMode is undefined because select was used.
     - fvModels tries to return sources/U as a sub-dictionary because a compact primitive source tuple was used.
     - fvSchemes reports div((nu*dev2(T(grad(U))))) or another Maxwell stress divergence as undefined.
     - The sigma field is missing, has incompatible patches, or becomes non-finite because the transient stress and momentum equations were under-coupled.
   validation:
-    - Require Mesh OK, normal completion through the requested time, and finite U, p, and sigma.
-    - Check periodic or boundary flow balance and compare the requested transient velocity or stress observable independently.
+    - 要求 Mesh OK、正常推进至要求时刻，且 U、p 和 sigma 有限。
+    - 检查周期或边界流量平衡，并独立比较要求的瞬态速度或应力观测量。

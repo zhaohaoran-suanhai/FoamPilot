@@ -264,6 +264,26 @@ def test_solver_created_output_is_not_required_before_execution(
     assert "SEMANTIC_FIELD_PATH_MISSING" not in _codes(report)
 
 
+def test_solver_created_output_may_use_a_descriptive_manifest_alias(
+    tmp_path: Path,
+) -> None:
+    plan = _plan()
+    plan.manifest.fields.append(
+        CaseField(
+            name="U-final",
+            region="default",
+            path="0.03/U",
+            role="final velocity written by the solver",
+            created_by="solver",
+        )
+    )
+    _materialize(tmp_path, plan)
+
+    report = inspect_semantics(tmp_path, _task(), plan)
+
+    assert "SEMANTIC_FIELD_REGION_MISMATCH" not in _codes(report)
+
+
 def test_command_stage_shape_is_checked_without_guessing_unknown_utility(
     tmp_path: Path,
 ):

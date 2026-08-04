@@ -98,7 +98,28 @@ def test_interfoam_knowledge_covers_v10_scheme_and_stability_margin() -> None:
         "div(((rho*nuEff)*dev2(T(grad(U)))))"
         in solver.model_dump_json()
     )
-    assert "strictly below" in boundedness.model_dump_json()
+    assert "严格低于公开上限" in boundedness.model_dump_json()
+
+
+def test_solver_contracts_cover_failures_observed_in_native_baseline() -> None:
+    entries = load_knowledge_corpus(CORPUS)
+    by_id = {entry.id: entry.model_dump_json() for entry in entries}
+
+    solid = by_id["of10.solver.solidequilibriumdisplacementfoam-contract"]
+    assert "top-level Cp dictionary" in solid
+    assert "mixture/thermodynamics/Cp" in solid
+
+    rho_central = by_id["of10.solver.rhocentralfoam-contract"]
+    assert "div(tauMC)" in rho_central
+    assert "fieldInf must be a scalar literal" in rho_central
+    assert "gamma scalar" in rho_central
+    assert "(U|e)" in rho_central
+
+    buoyant = by_id["of10.solver.buoyantfoam-contract"]
+    assert "rhoFinal" in buoyant
+
+    cht = by_id["of10.solver.chtmultiregionfoam-contract"]
+    assert "maxDi <= 1" in cht
 
 
 def test_retrieval_prefers_exact_solver_and_topic_deterministically() -> None:
@@ -202,7 +223,7 @@ def test_parallel_knowledge_uses_method_specific_decomposition_coefficients() ->
 
     assert "hierarchicalCoeffs" in rules
     assert "simpleCoeffs" in rules
-    assert "generic coeffs" in rules
+    assert "通用 coeffs dictionary" in rules
 
 
 def test_maxwell_pimple_task_retrieves_its_solver_family_contract() -> None:
@@ -309,9 +330,9 @@ def test_shallow_water_contract_distinguishes_static_bed_from_time_outputs() -> 
     )
     rules = "\n".join(solver.content.rules)
 
-    assert "static input field" in rules
-    assert "not automatically written" in rules
-    assert "h, hU" in rules
+    assert "静态输入字段" in rules
+    assert "不会自动写入" in rules
+    assert "h、hU" in rules
     assert "hTotal" in rules
     assert "g g [0 1 -2 0 0 0 0]" in rules
     assert "Omega Omega [0 0 -1 0 0 0 0]" in rules
@@ -345,7 +366,7 @@ def test_solver_contracts_capture_complete_observed_v10_dictionary_sets() -> Non
         "of10.solver.interfoam-vof-contract": (
             "constantAlphaContactAngle",
             "inletOutlet",
-            "liquid reservoir",
+            "液体 reservoir",
             "momentumPredictor no",
             "nCorrectors 3",
             "fixedValue p_rgh",
@@ -361,16 +382,16 @@ def test_solver_contracts_capture_complete_observed_v10_dictionary_sets() -> Non
         "of10.solver.poroussimplefoam-contract": (
             "constant/porosityProperties",
             "No porosity models present",
-            "full local cross-section",
-            "shared inlet interface",
-            "common plane normal to the inlet axis",
+            "完整局部截面",
+            "共享入口界面",
+            "公共平面",
             "turbulentBL",
             "turbulentIntensityKineticEnergyInlet",
             "turbulentMixingLengthDissipationRateInlet",
-            "porous-section slip walls still use turbulence wall functions",
-            "strictly positive internal k and epsilon",
+            "slip wall 仍使用 turbulence wall function",
+            "internal k 与 epsilon 初始化为严格正值",
             "nUCorrectors 2",
-            "do not enable consistent SIMPLE",
+            "不要启用 consistent SIMPLE",
             "inletOutlet",
             "0.7",
             "0.9",
@@ -408,8 +429,8 @@ def test_buoyant_pressure_contract_covers_operating_pressure_gauge_start() -> No
         "of10.boundary.buoyant-pressure-semantics"
     ].model_dump_json()
 
-    assert "uniform zero reduced-pressure gauge" in serialized
-    assert "do not duplicate the operating pressure" in serialized
+    assert "均匀零缩减压力" in serialized
+    assert "不要在 p 和 p_rgh 中重复写入工作压力" in serialized
     assert "pRefValue 0" in serialized
     assert "constant/pRef" in serialized
 
@@ -433,11 +454,11 @@ def test_extended_solver_contracts_cover_observed_startup_failures() -> None:
         "of10.mesh.two-dimensional-empty-extrusion": (
             "boundary face",
             "block cell face",
-            "collapsed",
+            "塌缩 hex",
         ),
         "of10.physics.volume-fraction-source": (
             "setFields",
-            "without -time",
+            "不带 -time",
         ),
         "of10.boundary.rotating-swirl-inlet-contract": (
             "origin",
@@ -476,7 +497,7 @@ def test_extended_solver_contracts_cover_observed_startup_failures() -> None:
         "of10.solver.twoliquidmixingfoam-contract": (
             "twoLiquidMixingFoam",
             "maxAlphaCo",
-            "required control entry",
+            "必须成对包含 maxCo 与 maxAlphaCo",
             "nAlphaSubCycles",
             "div(phi,alpha)",
         ),

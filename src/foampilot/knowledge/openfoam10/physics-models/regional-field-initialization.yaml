@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.physics.regional-field-initialization
-title: Native regional volume-field initialization
+title: 原生区域 volume field 初始化
 fork: foundation
 version: "10"
 knowledge_type: physics_model
@@ -9,10 +9,10 @@ models: [initialization, cell-region, volume-field]
 tags: [setfields, initialization, region, field]
 applicability:
   conditions:
-    - A volume field must have a nonuniform regional initial state on an existing mesh.
-    - The selected region can be expressed by a native cell-selection source.
+    - volume field 必须在已有网格上具有非均匀区域初始状态。
+    - 所选区域可以用原生 cell-selection source 表达。
   not_applicable:
-    - The requested initial state is uniform or requires an external mapped dataset.
+    - 要求的初始状态均匀，或需要外部 mapped dataset 时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 setFields utility
@@ -24,17 +24,17 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: setFields reads an existing volume field, selects mesh cells or patch faces from a dictionary, assigns typed values, updates boundaries from patch-internal values, and writes the field.
+  summary: setFields 读取已有 volume field，根据 dictionary 选择 mesh cell 或 patch face，赋予有类型的数值，根据 patch-internal value 更新边界并写出字段。
   rules:
-    - Create the mesh before regional initialization.
-    - Provide a valid default field value and one or more explicit region selections.
-    - Use a typed scalar or vector assignment whose field already exists in the initial-time directory.
-    - Execute initialization after mesh quality checks and before the solver.
+    - 区域初始化前先创建网格。
+    - 提供有效 default field value 和一个或多个显式 region selection。
+    - 使用有类型的 scalar 或 vector 赋值，且目标字段必须已存在于 initial-time 目录。
+    - 在 mesh quality check 之后、solver 之前执行初始化。
   failure_signals:
     - The named field cannot be found at the current or constant time.
     - The selected region contains no cells or lies outside the mesh.
     - Solver execution begins before the regional field is written.
   validation:
-    - Capture initialization return code and log.
-    - Confirm a nonzero intended region through the initial field integral.
-    - Preserve the initialization dictionary and resulting initial field in the run artifact.
+    - 捕获初始化 return code 与日志。
+    - 通过初始字段积分确认预期区域非空。
+    - 在 run artifact 中保留 initialization dictionary 和生成的初始字段。

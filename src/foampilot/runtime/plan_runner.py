@@ -17,10 +17,14 @@ from .models import (
     RuntimeConfig,
 )
 from .sandbox import build_sandbox_prefix
+from .sandbox import probe_bubblewrap
 
 
 _SOURCE_AND_EXEC = (
     'source "$1" >/dev/null 2>&1; shift; cd /case; exec "$@"'
+)
+_SOURCE_AND_EXEC_HOST = (
+    'source "$1" >/dev/null 2>&1; shift; cd "$1"; shift; exec "$@"'
 )
 _SHELL_TOKENS = {"&&", "||", ";", "|", "<", ">"}
 _SHELL_MARKERS = ("$(", "`", "\n", "\r", "\0")
@@ -169,6 +173,57 @@ class PlanRunner:
         ]
         return full, typed
 
+    def _host_command(
+        self,
+        *,
+        case_dir: Path,
+        command: NativeCommand,
+        budget: ResourceBudget,
+    ) -> tuple[list[str], list[str]]:
+        typed = self._typed_argv(command)
+        address_space = budget.memory_mib * 1024 * 1024
+        full = [
+            "/usr/bin/prlimit",
+            f"--cpu={command.timeout_seconds}",
+            f"--as={address_space}",
+            "--",
+            "/bin/bash",
+            "--noprofile",
+            "--norc",
+            "-c",
+            _SOURCE_AND_EXEC_HOST,
+            "foampilot",
+            str(self.runtime_config.openfoam_root / "etc" / "bashrc"),
+            str(case_dir),
+            *typed,
+        ]
+        return full, typed
+
+    def _execution_backend(self) -> tuple[str, str | None]:
+        requested = self.runtime_config.execution_backend
+        if requested != "auto":
+            return requested, None
+        ok, detail = probe_bubblewrap(self.runtime_config.bubblewrap)
+        if ok:
+            return "bubblewrap", None
+        return "host", detail
+
+    @staticmethod
+    def _host_environment(case: Path) -> dict[str, str]:
+        home = case / ".foampilot/host-home"
+        temporary = case / ".foampilot/tmp"
+        home.mkdir(parents=True, exist_ok=True)
+        temporary.mkdir(parents=True, exist_ok=True)
+        return {
+            "HOME": str(home),
+            "USER": "agent",
+            "LOGNAME": "agent",
+            "TMPDIR": str(temporary),
+            "PATH": "/usr/bin:/bin",
+            "LANG": "C",
+            "LC_ALL": "C",
+        }
+
     def run(
         self,
         *,
@@ -190,6 +245,7 @@ class PlanRunner:
         steps: list[PlanStepResult] = []
         failed_step_id: str | None = None
         run_timed_out = False
+        execution_backend, fallback_reason = self._execution_backend()
 
         for index, command in enumerate(commands, start=1):
             stdout_path = (
@@ -200,11 +256,23 @@ class PlanRunner:
                 log_directory
                 / f"{index:02d}-{command.step_id}.stderr.log"
             )
-            full_argv, typed_argv = self._sandbox_command(
-                case_dir=case,
-                command=command,
-                budget=budget,
-            )
+            if execution_backend == "bubblewrap":
+                full_argv, typed_argv = self._sandbox_command(
+                    case_dir=case,
+                    command=command,
+                    budget=budget,
+                )
+                executor_options = {}
+            else:
+                full_argv, typed_argv = self._host_command(
+                    case_dir=case,
+                    command=command,
+                    budget=budget,
+                )
+                executor_options = {
+                    "cwd": case,
+                    "env": self._host_environment(case),
+                }
             started = _utc_now()
             timed_out = False
             return_code: int | None
@@ -225,6 +293,7 @@ class PlanRunner:
                         timeout=command.timeout_seconds,
                         text=True,
                         shell=False,
+                        **executor_options,
                     )
                     return_code = completed.returncode
                 except subprocess.TimeoutExpired:
@@ -260,6 +329,8 @@ class PlanRunner:
                 timed_out=timed_out,
                 stdout_path=stdout_path,
                 stderr_path=stderr_path,
+                execution_backend=execution_backend,
+                backend_fallback_reason=fallback_reason,
             )
             steps.append(step)
             if timed_out or return_code != 0 or semantic_failure:

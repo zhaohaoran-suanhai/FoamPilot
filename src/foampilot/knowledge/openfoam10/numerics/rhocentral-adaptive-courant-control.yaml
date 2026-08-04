@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.numerics.rhocentral-adaptive-courant
-title: rhoCentralFoam adaptive Courant time-step control
+title: rhoCentralFoam 自适应 Courant 时间步控制
 fork: foundation
 version: "10"
 knowledge_type: numerics
@@ -9,10 +9,10 @@ models: [compressible, transient, central-upwind]
 tags: [rhocentralfoam, timestep, courant, shock]
 applicability:
   conditions:
-    - A Foundation v10 compressible transient solver uses adjustTimeStep and maxCo.
-    - Wave propagation or another time-accuracy requirement must be verified from public physics.
+    - Foundation v10 可压缩瞬态求解器使用 adjustTimeStep 与 maxCo。
+    - 必须依据公开物理检查波传播或其他时间精度要求。
   not_applicable:
-    - A steady solver uses the controlDict index only as iteration bookkeeping.
+    - 稳态求解器仅将 controlDict index 作为迭代计数时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 adaptive time-step implementation
@@ -24,16 +24,16 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation adaptive stepping computes a Courant-limited next step and then caps it by maxDeltaT, so maxDeltaT can prevent an otherwise requested increase.
+  summary: Foundation 自适应推进先计算受 Courant 限制的下一时间步，再用 maxDeltaT 截断，因此 maxDeltaT 可能阻止本应发生的步长增长。
   rules:
-    - Treat deltaT as the initial step and maxDeltaT as the adaptive upper bound.
-    - When growth is required, require maxDeltaT strictly greater than the initial deltaT.
-    - Inspect the actual Courant history because declarations alone do not prove the requested target is active.
-    - Check transient accuracy against a public analytical or convergence criterion rather than maximizing the time step.
+    - 将 deltaT 视为初始步长，将 maxDeltaT 视为自适应上限。
+    - 需要步长增长时，maxDeltaT 必须严格大于初始 deltaT。
+    - 检查实际 Courant history，因为仅有声明不能证明要求的目标正在起作用。
+    - 使用公开解析或收敛准则检查瞬态精度，而不是追求最大时间步。
   failure_signals:
     - maxDeltaT equals deltaT while adjustTimeStep is enabled.
     - Observed maximum Courant remains far below maxCo because the cap is active.
     - Solver completion and conservation pass but wave propagation is inaccurate.
   validation:
-    - Record deltaT, maxDeltaT, maxCo, and observed maximum Courant.
-    - For an ideal-gas Riemann problem, compare rarefaction, contact, and shock positions with the exact public solution.
+    - 记录 deltaT、maxDeltaT、maxCo 和观测 maximum Courant。
+    - 对 ideal-gas Riemann 问题，将 rarefaction、contact 和 shock 位置与公开精确解比较。

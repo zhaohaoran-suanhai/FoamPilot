@@ -56,6 +56,7 @@ from foampilot.qualification import (
 )
 from foampilot.runtime import (
     RuntimeConfig,
+    preflight_passed,
     run_preflight,
 )
 from foampilot.routing import route_capability
@@ -478,7 +479,7 @@ def _native_inspect(arguments: argparse.Namespace) -> int:
 
 def _preflight(arguments: argparse.Namespace) -> int:
     checks = run_preflight(RuntimeConfig.local_foundation_v10())
-    ok = all(check.ok for check in checks)
+    ok = preflight_passed(checks)
     payload = {
         "status": "PASS" if ok else "BLOCKED_ENVIRONMENT",
         "checks": [check.model_dump(mode="json") for check in checks],

@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.incompressible-transient-contract
-title: pisoFoam and pimpleFoam transient incompressible startup contract
+title: pisoFoam 与 pimpleFoam 瞬态不可压缩启动契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,10 +9,10 @@ models: [incompressible, transient, laminar, ras, piso, pimple]
 tags: [pisofoam, pimplefoam, transient, incompressible, momentum, viscous-stress]
 applicability:
   conditions:
-    - Foundation v10 pisoFoam or pimpleFoam advances an incompressible velocity-pressure system.
-    - The case uses laminar or RAS momentum transport with kinematic pressure.
+    - Foundation v10 pisoFoam 或 pimpleFoam 推进不可压缩速度-压力系统。
+    - 算例使用层流或 RAS 动量输运以及运动压力。
   not_applicable:
-    - Density, energy, phase fraction, or solid displacement is the primary coupled equation.
+    - 密度、能量、相分数或固体位移是主要耦合方程时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 pisoFoam application source
@@ -24,18 +24,18 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 pisoFoam and pimpleFoam require a complete incompressible momentum discretization and matching PISO or PIMPLE controls before time advancement.
+  summary: Foundation v10 pisoFoam 与 pimpleFoam 在时间推进前需要完整的不可压缩动量离散，以及匹配的 PISO 或 PIMPLE 控制。
   rules:
-    - Provide U, kinematic p, physicalProperties, momentumTransport, controlDict, fvSchemes, and fvSolution with every mesh patch covered by both fields.
-    - Under divSchemes/default none, include div(phi,U) and the exact viscous-stress entry div((nuEff*dev2(T(grad(U))))); the solver requests the complete operator name even for laminar momentum transport.
-    - Use a transient ddt scheme, a pressure solver, a velocity solver, and PISO or PIMPLE controls matching the selected executable. Give pFinal and UFinal when final correctors require zero relative tolerance.
-    - Create required cell zones before solving and reference the exact generated zone name from any fvModel or fvConstraint.
-    - For Foundation v10 explicit porous resistance with pisoFoam or pimpleFoam, declare type explicitPorositySource at the model level and put selectionMode cellZone, cellZone, type DarcyForchheimer, d, f, and coordinateSystem inside an explicitPorositySourceCoeffs sub-dictionary. Define a named cartesian coordinate system in constant/coordinateSystems and reference that name; do not flatten the coefficients into the model level or set model DarcyForchheimer there.
-    - An auxiliary transported scalar is not solved merely because its field and div scheme exist; configure a supported solver or function object explicitly. For a Foundation v10 scalarTransport function object, the diffusion entry is mandatory, so write diffusion none when no diffusion is intended.
+    - 提供 U、运动压力 p、physicalProperties、momentumTransport、controlDict、fvSchemes 和 fvSolution，并让两个字段覆盖全部 mesh patch。
+    - 在 divSchemes/default none 下，加入 div(phi,U) 和精确黏性应力项 div((nuEff*dev2(T(grad(U)))))；即使是层流动量输运，solver 也会请求完整 operator name。
+    - 使用瞬态 ddt scheme、pressure solver、velocity solver，以及与所选 executable 匹配的 PISO 或 PIMPLE 控制。当 final corrector 要求零 relative tolerance 时提供 pFinal 和 UFinal。
+    - 求解前创建所有必需 cell zone，并从 fvModel 或 fvConstraint 引用精确的生成 zone 名。
+    - Foundation v10 pisoFoam/pimpleFoam 使用显式 porous resistance 时，在 model 层声明 type explicitPorositySource，并将 selectionMode cellZone、cellZone、type DarcyForchheimer、d、f 与 coordinateSystem 放入 explicitPorositySourceCoeffs 子字典。在 constant/coordinateSystems 中定义具名 cartesian coordinate system 并引用该名称；不得把 coefficient 平铺到 model 层，也不得在该层设置 model DarcyForchheimer。
+    - 仅有辅助输运 scalar 的 field 与 div scheme 并不会使其被求解；必须显式配置受支持的 solver 或 function object。Foundation v10 scalarTransport function object 强制要求 diffusion 项，无扩散时应写 diffusion none。
   failure_signals:
     - fvSchemes reports div((nuEff*dev2(T(grad(U))))) as undefined on the first momentum assembly.
     - fvSolution reports a missing PISO, PIMPLE, pFinal, or UFinal entry.
     - An fvModel cannot find its selected cellZone.
   validation:
-    - Require Mesh OK, successful zone creation when used, normal solver completion, finite U and p, and task-derived continuity limits.
-    - Check any auxiliary scalar independently from the velocity-pressure completion signal.
+    - 要求 Mesh OK；使用 zone 时创建成功；solver 正常结束；U 与 p 有限；并满足任务给定 continuity 限制。
+    - 辅助 scalar 必须独立于速度-压力 completion signal 进行检查。

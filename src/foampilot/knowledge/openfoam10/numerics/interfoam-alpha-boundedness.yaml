@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.numerics.interfoam-alpha-boundedness
-title: interFoam VOF alpha boundedness and Courant control
+title: interFoam VOF alpha 有界性与 Courant 控制
 fork: foundation
 version: "10"
 knowledge_type: numerics
@@ -9,11 +9,11 @@ models: [incompressible, isothermal, immiscible, vof, transient, mules]
 tags: [interfoam, vof, mules, boundedness, courant, phase-fraction]
 applicability:
   conditions:
-    - A Foundation v10 interFoam case must keep a phase-fraction field within a stated finite tolerance over the full transient interval.
-    - The case uses adaptive or fixed global time stepping and algebraic VOF interface capture.
+    - Foundation v10 interFoam 算例必须在完整瞬态区间内将相分数字段保持在声明的有限容差内。
+    - 算例使用自适应或固定全局时间步，以及代数 VOF 界面捕获方法。
   not_applicable:
-    - The task uses a geometric interface-capturing method with different control semantics.
-    - A phase fraction intentionally represents an unbounded transported scalar.
+    - 任务使用具有不同控制语义的几何界面捕获方法时不适用。
+    - 相分数被有意用作无界输运标量时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 VoF alpha-equation and time-step source set
@@ -25,21 +25,21 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 interFoam couples MULES phase-fraction correction, alpha correctors and sub-cycles, and flow/interface Courant limits; strict boundedness requires conservative controls plus all-time evidence, not only successful completion.
+  summary: Foundation v10 interFoam 耦合 MULES 相分数修正、alpha corrector 与 sub-cycle，以及流动/界面 Courant 上限；严格有界性需要保守控制和全时段证据，不能只依据正常结束。
   rules:
-    - Treat maxCo and maxAlphaCo as safety ceilings, not accuracy targets. When strict phase-fraction bounds are required, configure them strictly below the public ceilings instead of copying the allowed maxima, and cap maxDeltaT consistently with the mesh and interface motion.
-    - Declare nAlphaCorr and nAlphaSubCycles explicitly. MULESCorr and nLimiterIter control the bounded correction process, but their presence alone is not proof that the requested tolerance is met.
-    - When the public task explicitly requires all-time log evidence, record every time step with three Foundation v10 volFieldValue function objects using type volFieldValue, writeFields false, regionType all, and operations operation min, operation max, and operation volIntegrate for the phase field. Foundation v10 does not provide fieldMinMax; do not use that cross-distribution function type. For ordinary output-time evidence, let the evaluator inspect written fields. Do not infer boundedness from the final field or normal End marker.
-    - If a completed finite run violates a bound, keep geometry, material properties, boundary conditions, and initialization fixed. First test a smaller time-step/interface-Courant family; only if the overshoot persists, test one alpha correction, sub-cycling, or limiter family.
-    - Change one causal family per repair and rerun the full requested interval. Do not weaken a public tolerance to turn an observed overshoot into a pass.
-    - Accept the numerical repair only when all-time lower and upper bounds and phase-volume conservation pass together.
+    - 将 maxCo 和 maxAlphaCo 视为安全上限，而不是精度目标。要求严格相分数界限时，两者应严格低于公开上限，不能照抄允许最大值；maxDeltaT 也必须与网格和界面运动一致地受限。
+    - 显式声明 nAlphaCorr 和 nAlphaSubCycles。MULESCorr 与 nLimiterIter 控制有界修正过程，但仅有这些设置不能证明满足要求的容差。
+    - 公开任务明确要求全时段日志证据时，为相字段配置三个 Foundation v10 volFieldValue function object，在每个时间步记录；使用 type volFieldValue、writeFields false、regionType all，并分别设置 operation min、operation max 与 operation volIntegrate。Foundation v10 不提供 fieldMinMax，不能使用这一跨发行版 function type。普通输出时刻的证据应由 evaluator 检查写出字段。不得根据最终字段或正常 End 标记推断有界性。
+    - 已完成且字段有限的 run 违反界限时，保持几何、材料属性、边界条件和初始化不变。先测试更小的 time-step/interface-Courant 参数族；只有 overshoot 持续存在时，才测试一个 alpha correction、sub-cycling 或 limiter 参数族。
+    - 每次 repair 只改变一个因果参数族，并重跑完整要求区间。不得通过放宽公开容差把已观测 overshoot 变成通过。
+    - 只有全时段上下界与 phase-volume conservation 同时通过，才能接受数值修复。
   failure_signals:
     - The solver reaches End but an all-time phase-fraction extremum exceeds the public tolerance.
     - The reported interface Courant number repeatedly approaches its configured ceiling while extrema deteriorate.
     - Tightening the time-step family changes the overshoot materially, indicating temporal/interface-transport sensitivity.
     - Bounds improve but phase-volume drift worsens, so the repair is not physically acceptable.
   validation:
-    - Parse every recorded minimum and maximum, including intermediate MULES-corrected states when exposed by the selected evidence contract.
-    - Compare the worst all-time extrema with the public tolerance and reject final-time-only evidence.
-    - Compare the first and last recorded phase-volume integrals after successful regional initialization.
-    - Preserve the failed run, the one-family repair decision, the rerun logs, and the unchanged-control statement.
+    - 解析每个已记录的 minimum 与 maximum；若所选证据契约暴露 MULES 修正中间状态，也要一并解析。
+    - 将全时段最差 extrema 与公开容差比较，并拒绝只有 final-time 的证据。
+    - 区域初始化成功后，比较首个与末个记录的 phase-volume integral。
+    - 保留失败 run、单参数族 repair decision、重跑日志和 unchanged-control 说明。

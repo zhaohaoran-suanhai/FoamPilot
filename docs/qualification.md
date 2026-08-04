@@ -36,6 +36,21 @@ foampilot qualify suite \
 会独占运行。每个算例保留其 TaskSpec 定义的 attempt、wall-time、内存和 MPI 预算。
 兼容命令 `foampilot qualify official-six` 只运行六个回归算例。
 
+30 题广度基线使用：
+
+```bash
+foampilot qualify suite \
+  --suite-file \
+    src/foampilot/qualification/data/suites/official-corpus-30-baseline-v1.yaml \
+  --run-root /tmp/foampilot-official-corpus-30 \
+  --workers 1 \
+  --model-name gpt-5.6-sol \
+  --json
+```
+
+该 suite 保留原 15 题严格物理 qualification，并增加 15 题公开验证级 solver-family
+广度测试。报告必须分别统计两种 `evaluation_level`；公开验证题不能计入严格物理通过率。
+
 对于相同的 provider、model 和 account identity，所有 worker 共享一个线程安全的
 模型 Gateway 和 circuit breaker。它们不共享任务 deadline、lineage budget、trace、
 ArtifactStore、case 或 evaluator workspace。如果持续的 provider 过载或网络故障
@@ -94,6 +109,14 @@ Qualification 报告会分别统计：
 parent/child lineage 上累计。每个单独运行的产物仍然保持独立固化。
 
 ## 当前证据
+
+2026-08-03 的 `official-corpus-30-baseline-v1` 完成 30/30 generation、28/30 目标
+solver 启动、20/30 solver 正常结束、18/30 公开验证通过和 17/30 suite `PASS`。
+provider deferred 与 blocked environment 都为 0。30 个 artifact manifest 全部通过哈希
+校验。该结果证明长批工作流健康度，但新增 15 题只有公开验证级别。
+
+完整数据、逐题失败分层和定向学习证据见
+[30 题官方题库衍生基线与受控学习报告](reports/2026-08-04-official-corpus-30-baseline.md)。
 
 2026-07-30 冻结的 15 题全量基线获得 11 个严格通过和 4 个失败。全部 15 个算例
 都进入了请求的目标求解器，其中 14 个到达公开验证，另一个 CHT 算例在求解器中

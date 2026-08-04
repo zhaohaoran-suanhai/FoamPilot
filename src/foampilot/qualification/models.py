@@ -73,6 +73,10 @@ QualificationStatus = Literal[
 
 class QualificationResult(StrictModel):
     case_id: str
+    evaluation_level: Literal[
+        "physics_qualification",
+        "public_validation",
+    ] = "physics_qualification"
     status: QualificationStatus
     workflow_state: str = "FAILED"
     native_status: str | None

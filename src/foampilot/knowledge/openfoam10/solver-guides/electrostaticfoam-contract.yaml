@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.electrostaticfoam-contract
-title: electrostaticFoam potential and charge-transport contract
+title: electrostaticFoam 电势与电荷输运契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,10 +9,10 @@ models: [electrostatic, dielectric, charge-transport, transient]
 tags: [electrostaticfoam, electrostatic, potential, charge, epsilon0, dielectric]
 applicability:
   conditions:
-    - Foundation v10 electrostaticFoam solves electric potential coupled to transported charge density.
-    - The case provides phi, rho, dielectric permittivity, and charge-transport mobility.
+    - Foundation v10 electrostaticFoam 求解与输运电荷密度耦合的电势。
+    - 算例提供 phi、rho、介电常数与电荷输运迁移率。
   not_applicable:
-    - The task requires a magnetohydrodynamic or externally coupled electromagnetic solver.
+    - 任务需要磁流体或外部耦合电磁求解器时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 electrostaticFoam field construction
@@ -24,16 +24,16 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 electrostaticFoam reads named dimensioned scalars from physicalProperties, solves potential, and transports charge density in time.
+  summary: Foundation v10 electrostaticFoam 从 physicalProperties 读取具名 dimensioned scalar，求解电势，并随时间输运电荷密度。
   rules:
-    - Provide volScalarField phi with electric-potential dimensions [1 2 -3 0 0 -1 0] and rho with charge-density dimensions [0 -3 1 0 0 1 0].
-    - physicalProperties uses the native dimensionedScalar stream form with a repeated internal name, for example epsilon0 epsilon0 [-1 -3 4 0 0 2 0] <value>; and k k [-1 0 2 0 0 1 0] <value>. Writing only epsilon0 [dimensions] <value> or k [dimensions] <value> makes the reader expect a word and fail on the opening bracket.
-    - Provide laplacian(phi) and div(rhoFlux,rho) schemes plus an asymmetric-capable solver for the transported rho equation.
-    - Use fixed electric potential where voltage is imposed, compatible charge-density conditions, symmetry on symmetry planes, and empty on spanwise faces of a two-dimensional extrusion.
+    - 提供电势量纲为 [1 2 -3 0 0 -1 0] 的 volScalarField phi，以及电荷密度量纲为 [0 -3 1 0 0 1 0] 的 rho。
+    - physicalProperties 使用带重复内部名称的原生 dimensionedScalar stream 形式，例如 epsilon0 epsilon0 [-1 -3 4 0 0 2 0] <value> 和 k k [-1 0 2 0 0 1 0] <value>。若只写 epsilon0 [dimensions] <value> 或 k [dimensions] <value>，reader 会期待 word 并在左方括号处失败。
+    - 提供 laplacian(phi) 与 div(rhoFlux,rho) scheme，并为输运 rho 方程使用支持非对称矩阵的 solver。
+    - 施加电压处使用 fixed electric potential；同时使用兼容的 charge-density condition，symmetry plane 使用 symmetry，二维挤出跨距面使用 empty。
   failure_signals:
     - physicalProperties reports wrong token type, expected word, at epsilon0 or k.
     - Startup cannot read phi, rho, epsilon0, k, laplacian(phi), or div(rhoFlux,rho).
     - Charge transport uses a symmetric-only linear solver despite its advective operator.
   validation:
-    - Require Mesh OK, normal completion at the requested final time, and finite written phi and rho fields.
-    - Reject a run that only completes the potential solve but does not advance the charge-density equation.
+    - 要求 Mesh OK、在要求 final time 正常结束，且写出的 phi 与 rho 字段有限。
+    - 若 run 只完成电势求解却没有推进电荷密度方程，应判定失败。

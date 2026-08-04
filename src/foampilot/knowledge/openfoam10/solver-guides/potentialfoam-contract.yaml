@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.potentialfoam-contract
-title: potentialFoam incompressible velocity-potential contract
+title: potentialFoam 不可压缩速度势契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,10 +9,10 @@ models: [incompressible, inviscid, potential-flow, steady]
 tags: [potentialfoam, potential, phi, velocity, pressure]
 applicability:
   conditions:
-    - The requested flow is incompressible, irrotational, and adequately represented by a velocity potential.
-    - A mesh and consistent velocity and pressure boundary conditions define the flux problem.
+    - 要求的流动不可压缩、无旋，并可由速度势充分表示。
+    - 网格以及一致的速度与压力边界条件定义了通量问题。
   not_applicable:
-    - Viscous separation, turbulence, compressibility, or time-resolved physics is required.
+    - 需要黏性分离、湍流、可压缩性或时间分辨物理时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 potentialFoam application
@@ -24,19 +24,19 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: potentialFoam solves a velocity-potential equation, corrects flux, reconstructs U, and can optionally write the potential and an approximate pressure field without a time loop.
+  summary: potentialFoam 求解速度势方程、修正通量并重构 U；无需时间 loop，也可以选择写出势和近似压力字段。
   rules:
-    - Provide U, p, fvSchemes, fvSolution with a potentialFlow non-orthogonal corrector dictionary, controlDict, and a valid mesh.
-    - Use a reference for the velocity potential and, when pressure is requested, a consistent pressure reference.
-    - Request -writePhi when the potential is needed and -writep when the pressure field is a required output. When using -writep, also configure a linear solver for p in fvSolution; the approximate-pressure calculation does not reuse the Phi solver.
-    - When using -writep with divSchemes default none, provide both div(phi,U) and div(div(phi,U)); Foundation v10 constructs the approximate pressure from nested divergence operations.
-    - Treat the written result as a single steady state; do not invent transient convergence semantics.
-    - Use slip or symmetry on inviscid solid boundaries and keep inlet/outlet U and p conditions flux-compatible.
+    - 提供 U、p、fvSchemes、带 potentialFlow 非正交 corrector dictionary 的 fvSolution、controlDict 和有效网格。
+    - 为速度势设置 reference；要求写出压力时，还要设置一致 pressure reference。
+    - 需要势时请求 -writePhi，压力字段是 required output 时请求 -writep。使用 -writep 时还要在 fvSolution 中为 p 配置 linear solver；近似压力计算不会复用 Phi solver。
+    - 在 divSchemes default none 下使用 -writep 时，同时提供 div(phi,U) 与 div(div(phi,U))；Foundation v10 通过嵌套 divergence operation 构造近似压力。
+    - 将写出结果视为单个稳态，不得虚构瞬态收敛语义。
+    - 无黏固体边界使用 slip 或 symmetry，并保持入口/出口 U 与 p condition 的通量兼容性。
   failure_signals:
     - Phi or its reference cannot be created.
     - The -writep calculation reaches approximate pressure and reports that the p solver is undefined.
     - U is reconstructed but required p or Phi output is absent because the corresponding option was omitted.
     - The result completes but inlet/outlet flux or an analytical potential-flow invariant fails.
   validation:
-    - Require Mesh OK, normal End, finite U and p, and the requested written fields.
-    - Check flux balance and compare sampled velocity with an analytical invariant when one is public.
+    - 要求 Mesh OK、正常 End、U 与 p 有限，并写出任务要求的字段。
+    - 检查通量平衡；存在公开解析不变量时，将采样速度与其比较。

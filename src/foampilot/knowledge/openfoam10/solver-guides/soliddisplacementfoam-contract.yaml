@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.soliddisplacementfoam-contract
-title: solidDisplacementFoam linear-elastic displacement contract
+title: solidDisplacementFoam 线弹性位移契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,10 +9,10 @@ models: [solid, linear-elastic, small-strain, displacement, planeStress, thermal
 tags: [soliddisplacementfoam, solid-mechanics, displacement, stress, d2dt2, traction]
 applicability:
   conditions:
-    - Foundation v10 solidDisplacementFoam solves transient or steady linear-elastic small-strain displacement D with optional thermal stress.
-    - Material properties are uniform values or fields understood by solidDisplacementThermo.
+    - Foundation v10 solidDisplacementFoam 求解瞬态或稳态线弹性小应变位移 D，并可选耦合热应力。
+    - 材料属性为 solidDisplacementThermo 能识别的均匀数值或字段。
   not_applicable:
-    - The problem requires finite strain, plasticity, contact, nonlinear material behavior, or a different solid-mechanics solver.
+    - 问题需要有限应变、塑性、接触、非线性材料行为或其他固体力学求解器时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 solidDisplacementFoam application source
@@ -24,20 +24,20 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 solidDisplacementFoam reads material properties through solidDisplacementThermo and selects second-time-derivative, displacement-Laplacian, and explicit-stress schemes by exact operator names.
+  summary: Foundation v10 solidDisplacementFoam 通过 solidDisplacementThermo 读取材料属性，并按精确 operator name 选择二阶时间导数、位移 Laplacian 与显式应力 scheme。
   rules:
-    - In constant/physicalProperties, define rho, E, nu, Cp, kappa, and alphav as subdictionaries containing type uniform and a scalar value, or use type field with a readable field; do not write these entries as primitive dimensioned scalars.
-    - Set planeStress and thermalStress explicitly. A non-thermal calculation still supplies coherent Cp, kappa, alphav, and T data because the thermo object constructs these properties before the displacement loop.
-    - Provide a readable vector displacement field D. Use tractionDisplacement with traction and pressure entries for loaded or traction-free boundaries, symmetry-compatible field types on geometric symmetry patches, and empty on an empty two-dimensional span.
-    - In system/fvSchemes, provide a separate d2dt2Schemes dictionary with the exact key d2dt2(rho,D); select steadyState for pseudo-time steady iterations or a supported second-derivative scheme for a genuinely transient task. A ddtSchemes entry does not satisfy this lookup.
-    - Define laplacian(DD,D) because the implicit displacement equation names that scheme, and define div(sigmaD) when compactNormalStress uses the named explicit stress divergence.
-    - Configure an fvSolution solver for D and a stressAnalysis subdictionary containing compactNormalStress, optional nCorrectors, and the scalar D convergence tolerance. Foundation v10 reads the literal stressAnalysis name rather than a solidDisplacementFoam-named control dictionary.
-    - The solver writes sigma and sigmaEq at write times. Run native postProcess only for additional requested components after the displacement solve has produced sigma.
+    - 在 constant/physicalProperties 中，将 rho、E、nu、Cp、kappa 与 alphav 定义为包含 type uniform 和 scalar value 的子字典，或使用带可读取 field 的 type field；不得把这些项写成 primitive dimensioned scalar。
+    - 显式设置 planeStress 与 thermalStress。即使是非热计算，也要提供内部一致的 Cp、kappa、alphav 与 T 数据，因为 thermo object 在位移 loop 前构造这些属性。
+    - 提供可读取 vector displacement field D。受载或无 traction 边界使用带 traction 与 pressure 项的 tractionDisplacement；几何 symmetry patch 使用兼容的 field type；二维 empty 跨距使用 empty。
+    - 在 system/fvSchemes 中提供独立 d2dt2Schemes dictionary，并使用精确 key d2dt2(rho,D)；伪时间稳态迭代选择 steadyState，真实瞬态任务选择受支持 second-derivative scheme。ddtSchemes 项不能满足该查找。
+    - 定义 laplacian(DD,D)，因为隐式位移方程按该名称查找 scheme；compactNormalStress 使用具名显式应力 divergence 时还要定义 div(sigmaD)。
+    - 在 fvSolution 中为 D 配置 solver，并提供包含 compactNormalStress、可选 nCorrectors 和 scalar D 收敛容差的 stressAnalysis 子字典。Foundation v10 读取字面名称 stressAnalysis，而不是以 solidDisplacementFoam 命名的控制字典。
+    - solver 在 write time 写出 sigma 与 sigmaEq。只有位移求解产生 sigma 后，才为额外要求的分量运行原生 postProcess。
   failure_signals:
     - physicalProperties reports an attempt to return a primitive entry as a sub-dictionary.
     - fvSchemes.d2dt2Schemes reports that d2dt2(rho,D) is undefined.
     - Startup reports that laplacian(DD,D), div(sigmaD), D, planeStress, or thermalStress is undefined.
     - fvSolution reports stressAnalysis or stressAnalysis/compactNormalStress as undefined.
   validation:
-    - Require Mesh OK, normal completion through the requested iteration or time, and finite D, sigma, and sigmaEq.
-    - Check boundary displacement/traction behavior, symmetry, and a task-derived stress or displacement metric without exposing a target-case solution.
+    - 要求 Mesh OK、正常推进至要求 iteration 或 time，且 D、sigma 与 sigmaEq 有限。
+    - 在不暴露目标算例解的前提下，检查边界 displacement/traction 行为、symmetry，以及任务给定应力或位移指标。

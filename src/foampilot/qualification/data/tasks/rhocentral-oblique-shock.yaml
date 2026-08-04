@@ -1,0 +1,30 @@
+schema_version: 1
+task_id: rhocentral-oblique-shock
+title: Supersonic oblique-shock channel
+prompt: >-
+  Starting from an empty case directory, build the Foundation v10
+  rhoCentralFoam oblique-shock benchmark in a 4.1 m by 1 m two-dimensional
+  channel extruded 0.1 m with a 60 by 30 by 1 mesh. Preserve inlet, outlet,
+  top wall, bottom symmetry plane, and empty frontAndBack. Use a laminar
+  calorically perfect gas with the standard air thermodynamics and constant
+  transport. Impose a uniform supersonic inlet state p=1 Pa, T=1 K and
+  U=(1.9 0 0) m/s in the nondimensional Foundation benchmark convention;
+  impose the matching compression-wall condition on the top boundary and
+  non-reflecting outlet conditions. Run to 10 s with initial deltaT=0.0025 s,
+  adjustable time stepping, maxCo=0.2, maxDeltaT=1 s, and write every 1 s.
+  Generate all files, run blockMesh, checkMesh and rhoCentralFoam serially,
+  and do not read or copy a pre-existing case.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1200, max_mpi_ranks: 1, memory_mib: 3072}
+required_outputs: [mesh quality log, completed rhoCentralFoam log, p T rho and U fields at 10 s]
+acceptance_requirements: [checkMesh reports Mesh OK, rhoCentralFoam reaches 10 s and ends normally, required fields remain finite]
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: rhoCentralFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 10}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+  - {name: final-pressure, kind: requested_output, parameters: {path: 10/p}}
+  - {name: final-temperature, kind: requested_output, parameters: {path: 10/T}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.physics.volume-fraction-source
-title: rhoPimpleFoam volume-fraction and solid-equilibrium source contract
+title: rhoPimpleFoam 体积分数与固体平衡源项契约
 fork: foundation
 version: "10"
 knowledge_type: physics_model
@@ -9,11 +9,11 @@ models: [compressible, volumeFractionSource, solidEquilibriumEnergySource, porou
 tags: [rhopimplefoam, volume-fraction, alpha-volume, alpha-solid, volumephase, solidphase, fvmodels, postprocess]
 applicability:
   conditions:
-    - A fixed spatial volume fraction modifies superficial fluid transport through volumeFractionSource.
-    - A fixed solid fraction may add equilibrium solid thermal inertia to a compressible energy equation.
+    - 固定空间体积分数通过 volumeFractionSource 修正表观流体输运。
+    - 固定固相分数可能为可压缩能量方程增加平衡固体热惯性。
   not_applicable:
-    - The volume fraction is a transported multiphase field.
-    - Porous drag or non-equilibrium solid temperature requires a different model.
+    - 体积分数是被输运的多相字段时不适用。
+    - 需要 porous drag 或非平衡固体温度时应使用其他模型。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 volumeFractionSource and solidEquilibriumEnergySource
@@ -25,15 +25,15 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 volumeFractionSource reads a fixed constant/alpha.<volumePhase> field, while solidEquilibriumEnergySource reads constant/alpha.<solidPhase> and a phase-specific solid physical-properties dictionary; these are model inputs rather than time-zero solution fields.
+  summary: Foundation v10 volumeFractionSource 读取固定的 constant/alpha.<volumePhase> 字段；solidEquilibriumEnergySource 读取 constant/alpha.<solidPhase> 和分相固体 physical-properties dictionary。这些是模型输入，而不是 time-zero 解字段。
   rules:
-    - For each volumeFractionSource entry, set volumePhase to the phase suffix and create constant/alpha.<volumePhase> before the solver starts. Writing only 0/alpha.<volumePhase> does not satisfy the model lookup.
-    - Foundation v10 setFields does not accept a -time option. Run setFields without -time for ordinary time-zero fields; do not use setFields -time constant to create constant/alpha.<volumePhase>. Use the supported coded postProcess initializer or generate the complete constant field directly instead.
-    - Generate spatially varying constant alpha fields with an available native initializer that writes to the constant instance. One Foundation v10 pattern is a coded function object configured under system/controlDict, executed by postProcess without -func and with its inputs selected from -time constant; using -func <inlineName> instead requests a separately installed function-object configuration. If a separate generated dictionary is used, pass its complete case-root-relative location, for example -dict system/initControlDict; a bare filename is resolved at the case root rather than below system.
-    - Inside a Foundation v10 coded function object's codeExecute block, obtain the database as `const fvMesh& m = mesh()` and use `m.time().constant()` for the constant instance. Solver-main variables such as runTime and a bare mesh object are not automatically in that generated class scope.
-    - A solid fraction that affects both transport volume and equilibrium energy needs a volumeFractionSource for solid plus a separate solidEquilibriumEnergySource with solidPhase solid.
-    - Put solid rho, Cv, and kappa in constant/physicalProperties.<solidPhase> using a valid heSolidThermo package. For constant isotropic Foundation v10 solid transport, the registered thermoType entry is transport constIsoSolid, not the fluid-style constIso. Do not place those thermophysical coefficients directly in the solidEquilibriumEnergySource dictionary.
-    - Keep fixed volume fractions dimensionless, finite, and within their public bounds, and initialize any phase temperature field required by the solid energy model.
+    - 每个 volumeFractionSource 项都要将 volumePhase 设置为 phase suffix，并在 solver 启动前创建 constant/alpha.<volumePhase>。只写入 0/alpha.<volumePhase> 无法满足模型查找规则。
+    - Foundation v10 setFields 不接受 -time 选项。普通 time-zero 字段应运行不带 -time 的 setFields；不得使用 setFields -time constant 创建 constant/alpha.<volumePhase>。应改用受支持的 coded postProcess initializer，或直接生成完整 constant 字段。
+    - 使用能写入 constant instance 的可用原生 initializer 生成空间变化 constant alpha field。一种 Foundation v10 模式是在 system/controlDict 下配置 coded function object，通过不带 -func 的 postProcess 执行，并用 -time constant 选择输入；使用 -func <inlineName> 会请求单独安装的 function-object 配置。若使用独立生成的 dictionary，传入相对于 case root 的完整位置，例如 -dict system/initControlDict；裸 filename 会相对于 case root 解析，而不是 system 目录。
+    - 在 Foundation v10 coded function object 的 codeExecute block 中，以 `const fvMesh& m = mesh()` 获取 database，并使用 `m.time().constant()` 表示 constant instance。runTime 和裸 mesh object 等 solver-main 变量不会自动出现在生成类的 scope 中。
+    - 同时影响输运体积和平衡能量的固相分数，需要一个 solid 的 volumeFractionSource，以及另一个 solidPhase solid 的 solidEquilibriumEnergySource。
+    - 使用有效 heSolidThermo package 将固体 rho、Cv 和 kappa 放入 constant/physicalProperties.<solidPhase>。对 Foundation v10 常数各向同性固体输运，已注册 thermoType 项为 transport constIsoSolid，而不是流体风格的 constIso。不得把这些热物性系数直接放入 solidEquilibriumEnergySource dictionary。
+    - 固定体积分数必须无量纲、有限且位于公开界限内，并初始化固体能量模型所需的所有相温度字段。
   failure_signals:
     - Startup reports that volumePhase or solidPhase is undefined in fvModels.
     - Startup cannot find constant/alpha.volume or constant/alpha.solid after an initializer wrote only time-zero fields.
@@ -41,5 +41,5 @@ content:
     - Dynamic solid-thermo compilation reports Unknown transport type constIso and lists constIsoSolid.
     - Coded initializer compilation reports runTime undefined or asks whether mesh() was intended.
   validation:
-    - Require successful initialization and verify constant alpha fields exist before the solver command.
-    - Require normal completion, finite bounded fractions, and requested mass, energy, or profile observables.
+    - 要求初始化成功，并在 solver command 前确认 constant alpha field 已存在。
+    - 要求正常结束、体积分数有限且有界，并得到任务要求的质量、能量或 profile 观测量。

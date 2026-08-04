@@ -3,124 +3,92 @@ name: openfoam-author-native-case
 description: Use when an Agent must turn a public Foundation OpenFOAM v10 TaskSpec into native case dictionaries, direct typed commands, public run evidence, and bounded evidence-scoped repairs.
 ---
 
-# Author and verify a native OpenFOAM case
+# 编写并验证原生 OpenFOAM 算例
 
-## Core principle
+## 核心原则
 
-Own the CFD choices and file bytes, while letting the runtime own command
-policy and the evaluator own private truth. Start from an empty case. Never
-read a protected tutorial, target case, golden result, or private validator.
+由 Agent 负责 CFD 选择和文件字节，由 runtime 负责命令策略，由 evaluator 负责私有真值。
+必须从空算例开始，绝不能读取受保护的 tutorial、目标算例、golden result 或私有 validator。
 
-## Produce the execution plan
+## 生成执行计划
 
-Return one complete `ExecutionPlan` containing all files and commands:
+返回一个包含全部文件与命令的完整 `ExecutionPlan`：
 
-1. Select the application from the stated physics and installed commands.
-2. Declare every required native file in dependency order.
-3. Declare direct commands in phase order: mesh, check, initialize, solve,
-   and reconstruct when parallel. Add post-processing only when the public
-   task explicitly requires that command, not merely a derived measurement.
-   Use argv only—no shell, `Allrun`, redirection, command substitution, or
-   absolute host paths.
-   The runtime already changes directory to `/case`. Do not add `-case case`
-   or another `-case` argument. Keep generated files, dependencies, and
-   requested-output paths relative to that root (`1/U`, not `case/1/U`).
-   The Runner owns MPI launchers: set the solver as `executable`, set
-   `mpi_ranks`, and never emit `mpirun` or `orterun`.
-4. Keep the total step timeouts and MPI ranks inside the TaskSpec budget. The
-   sum of all command timeouts must be no greater than `max_wall_seconds`;
-   reserve mesh, initialization, decomposition, and reconstruction time first,
-   then assign only the remaining budget to the solver.
-5. Map every required output to solver logs or written fields that the
-   evaluator can inspect after the solve. Require mesh quality, normal
-   completion, requested final time, finite fields, and the relevant
-   conservation or physical invariant.
-   Bind `finite_fields` directly to the solve step; the validator checks its
-   log for non-finite markers. Do not invent an unavailable post-processing
-   function merely to prove finiteness.
-6. Use only the public physical inputs and do not invent missing values.
+1. 根据已声明的物理问题和已安装命令选择 application。
+2. 按依赖顺序声明所有必需的原生文件。
+3. 按阶段顺序声明直接命令：mesh、check、initialize、solve；并行时再声明 reconstruct。
+   只有公开任务明确要求执行某个后处理命令时才添加它，不能仅因评测器需要派生量就添加。
+   只能使用 argv，不得使用 shell、`Allrun`、重定向、命令替换或宿主机绝对路径。
+   runtime 已将工作目录切换到 `/case`。不要添加 `-case case` 或任何其他 `-case` 参数。
+   生成文件、依赖与 required-output 路径必须相对于该根目录（使用 `1/U`，而不是
+   `case/1/U`）。Runner 负责 MPI launcher：将求解器写入 `executable`，设置
+   `mpi_ranks`，绝不能生成 `mpirun` 或 `orterun`。
+4. 所有步骤的 timeout 总和与 MPI ranks 必须处于 TaskSpec 预算内。命令 timeout 总和
+   不得超过 `max_wall_seconds`；先为 mesh、initialize、decompose 和 reconstruct 预留
+   时间，再将剩余预算分配给求解器。
+5. 将每个 required output 映射到求解结束后 evaluator 可检查的 solver log 或写出字段。
+   验证项应覆盖网格质量、正常结束、要求的最终时刻、有限字段以及相关守恒量或物理不变量。
+   将 `finite_fields` 直接绑定到 solve step，由 validator 在该步骤日志中检查非有限值标记。
+   不要为了证明有限性而虚构不可用的后处理 function。
+6. 只能使用公开物理输入，不得编造缺失参数。
 
-## Author native files
+## 编写原生文件
 
-- Give every OpenFOAM dictionary a valid `FoamFile` header.
-- Make `system/controlDict` application match the execution plan.
-- Cover every mesh patch in every field.
-- For a two-dimensional extrusion, use one suppressed-direction cell and
-  matching `empty` mesh and field patches.
-- For a multi-block mesh, ensure every shared face has identical subdivisions
-  in both tangential directions and grading-compatible point locations. Define
-  named subdivision variables for integer cell counts in each topological edge
-  family and reuse them on every adjacent block instead of repeating unrelated
-  integer literals. For a 2D hex extruded from lower z to higher z, order its
-  four lower vertices counter-clockwise in x-y and map the four upper vertices
-  in the same order; verify this handedness for every block, not only the first.
-  OpenFOAM dictionary substitution is not arithmetic: never write `-$name` for
-  a negative coordinate. Use a literal negative scalar or define a separate
-  negative scalar and substitute that complete token.
-  Before emitting `blockMeshDict`, check the full adjacency graph, including
-  local block-axis direction and grading orientation; do not repair one
-  reported block pair while leaving another non-conformal shared face. At a
-  fluid-solid interface, match tangential subdivisions across the interface
-  independently of unrelated upstream, downstream, or radial cell counts.
-  Adjacent blocks must reuse the exact same vertex labels on their shared face;
-  coincident coordinates assigned new labels create disconnected topology.
-  Foundation v10 `blockMesh` has no `-merge-points` repair option: correct the
-  vertex and face topology instead of inventing a command flag. Account for
-  every exterior face in a named boundary patch. An unintended `defaultFaces`
-  patch or a one-dimensional `checkMesh` classification is evidence of missing
-  exterior faces, not a mesh-quality warning to ignore.
-- When geometry rotates or bends, transform the full local frame and
-  cross-section, including its face normals and porous or outlet axes. Moving
-  only the centerline while leaving the cross-section in global axes changes
-  the modeled area and resistance.
-- Keep constraint patch types consistent: mesh type `symmetryPlane` requires field type `symmetryPlane`, not `symmetry`. When appropriate, `#includeEtc "caseDicts/setConstraintTypes"` may derive Foundation v10 field constraints from the mesh.
-- For a regional initial condition, declare its dictionary and a native
-  initialization command after mesh checks and before the solver.
-- Keep optional diagnostics outside the required solve plan. Do not add
-  sampling, extrema, conservation, or convergence function objects merely to
-  create evaluator evidence; written fields and solver logs are sufficient.
-- When the public task explicitly requires all-time log evidence, use the
-  exact dynamically retrieved Foundation v10 diagnostic recipe and record it
-  at the required cadence.
-- For ordinary output-time measurements, let the evaluator inspect written fields instead of adding function objects.
-- Return all complete files in the same CaseBundle. Keep their patch, field,
-  and dictionary dependencies internally consistent.
+- 为每个 OpenFOAM dictionary 提供有效的 `FoamFile` header。
+- 保证 `system/controlDict` 中的 application 与执行计划一致。
+- 每个字段都必须覆盖网格中的每个 patch。
+- 对二维挤出网格，在受抑制方向只使用一个 cell，并在网格与字段中使用一致的 `empty` patch。
+- 对多块网格，保证每个共享面在两个切向方向上的划分数相同，点位与 grading 兼容。为每类
+  拓扑边的整数 cell 数定义具名变量，并在相邻 block 中复用，不能重复互不相关的整数字面量。
+  对从低 z 向高 z 挤出的二维 hex，四个底面顶点在 x-y 平面按逆时针排列，四个顶面顶点
+  保持同样映射；每个 block 都要验证手性，不能只检查第一个。OpenFOAM 字典替换不是算术：
+  负坐标绝不能写成 `-$name`，应使用负数字面量，或单独定义负标量并替换完整 token。
+  输出 `blockMeshDict` 前检查完整邻接图，包括局部 block 轴方向与 grading 方向；不能只修复
+  一个被报告的 block pair，却留下其他不共形共享面。在流固界面上，界面两侧的切向划分
+  必须相互匹配，且不能错误地与无关的上游、下游或径向 cell 数绑定。相邻 block 必须在共享
+  面复用完全相同的 vertex label；同坐标却使用新 label 会生成断开的拓扑。Foundation v10
+  `blockMesh` 不存在 `-merge-points` 修复选项，应修正 vertex/face 拓扑，不能虚构命令参数。
+  每个外表面都必须归入具名 boundary patch。意外出现 `defaultFaces`，或 `checkMesh` 将网格
+  判为一维，说明存在未声明外表面，不能把它当作可忽略的网格质量 warning。
+- 几何发生旋转或弯曲时，必须变换完整局部坐标系与截面，包括 face normal、porous axis
+  或 outlet axis。只移动中心线而让截面保持全局轴向，会改变建模面积和阻力。
+- 约束 patch 类型要一致：mesh type 为 `symmetryPlane` 时，field type 也必须是
+  `symmetryPlane`，不能写 `symmetry`。适当时可用
+  `#includeEtc "caseDicts/setConstraintTypes"` 从网格推导 Foundation v10 字段约束。
+- 对区域初始条件，在 mesh check 之后、solver 之前声明其 dictionary 和原生 initialize 命令。
+- 将可选诊断排除在必需求解计划之外。不要只为制造 evaluator 证据而添加 sampling、extrema、
+  conservation 或 convergence function object；写出字段和 solver log 已足够。
+- 公开任务明确要求全时段日志证据时，使用动态检索到的、精确的 Foundation v10 诊断配方，
+  并按要求频率记录。
+- 普通输出时刻的测量应由 evaluator 检查写出字段，不要添加 function object。
+- 在同一个 CaseBundle 中返回所有完整文件，并保证 patch、field 与 dictionary 依赖内部一致。
 
-## Preserve VOF boundedness
+## 保持 VOF 有界性
 
-When a two-fluid VOF task has a public phase-fraction tolerance:
+当两流体 VOF 任务声明了公开相分数容差时：
 
-1. Treat `maxCo` and `maxAlphaCo` as ceilings rather than accuracy targets.
-   For a strict bound, configure both strictly below the TaskSpec's allowed
-   maxima and choose a compatible `maxDeltaT`; copying the allowed maxima
-   leaves no stability headroom.
-2. Declare the Foundation v10 alpha controls explicitly, including
-   `nAlphaCorr`, `nAlphaSubCycles`, `MULESCorr`, and limiter settings when
-   applicable. No setting is proof of boundedness without observed evidence.
-3. Let the evaluator derive extrema and phase-volume history from written
-   fields after a successful solve.
-4. If a completed finite solve violates a bound, keep mesh, physics,
-   boundaries, and initialization fixed. First test one smaller
-   time-step/interface-Courant family. If the failure persists, test one alpha
-   correction, sub-cycling, or limiter family.
-5. Rerun the full interval and require boundedness and conservation together.
-   Never weaken a public threshold to manufacture a pass.
+1. 将 `maxCo` 和 `maxAlphaCo` 视为上限，而不是精度目标。遇到严格上限时，两者都应
+   严格低于 TaskSpec 允许的最大值，并选择兼容的 `maxDeltaT`；照抄允许上限不会留下稳定裕量。
+2. 显式声明 Foundation v10 alpha 控制，包括 `nAlphaCorr`、`nAlphaSubCycles`、
+   `MULESCorr`，以及适用时的 limiter 设置。没有观测证据时，任何配置都不能证明有界性。
+3. 求解成功后，由 evaluator 从写出字段计算 extrema 和 phase-volume history。
+4. 如果完整、有限的求解违反界限，保持 mesh、physics、boundary 和 initialization 不变。
+   先测试一个更小的 time-step/interface-Courant 参数族；若仍失败，再测试一个 alpha
+   correction、sub-cycling 或 limiter 参数族。
+5. 重跑完整时间区间，并同时要求有界性与守恒。绝不能通过放宽公开阈值制造通过结果。
 
-## Evaluate and repair
+## 评估与修复
 
-Run only the safety-validated typed plan. A zero exit code proves execution, not
-physics. Apply public checks in order and stop on the earliest failed layer.
+只能运行通过安全校验的 typed plan。零退出码只能证明命令完成，不能证明物理正确。
+按顺序执行公开检查，并在最早失败层停止。
 
-If repair is allowed, state: evidence, one cause, one minimal safe generated
-file or existing typed-command change, expected check, and one stable control.
-A repair may add a safe generated case file when the failure proves that a
-required dictionary is missing. Preserve the failed attempt. Do not repair
-environment failures, repeat an unchanged fingerprint, change public assets,
-or bundle unrelated hypotheses.
+若允许 repair，必须说明：证据、一个原因、一个最小安全的生成文件或已有 typed-command
+修改、预期检查，以及一个保持不变的 control。当失败证明确实缺少必需 dictionary 时，
+repair 可以新增一个安全的生成算例文件。保留失败 attempt。不要修复环境失败，不要重复
+未变化的 fingerprint，不要修改 public asset，也不要捆绑互不相关的假设。
 
-## Output contract
+## 输出契约
 
-Return the execution plan, generated-file hashes, static inspection, per-step
-logs, public checks, repair decision when present, scoped status, and immutable
-artifact directory. `PUBLIC_VALIDATION_PASS` never implies a private or formal
-golden pass.
+返回 execution plan、生成文件 hash、static inspection、逐步骤日志、公开检查、存在时的
+repair decision、限定范围的 status 和不可变 artifact 目录。`PUBLIC_VALIDATION_PASS`
+绝不代表已经通过私有或正式 golden 检查。

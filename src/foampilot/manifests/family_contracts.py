@@ -63,6 +63,8 @@ GENERIC_RULES: dict[str, SemanticRuleProvenance] = {
             "test_semantic_errors_capture_solver_application_and_field_mismatches",
             "tests/test_semantic_inspection.py::"
             "test_region_aware_manifest_accepts_fluid_solid_cht_layout",
+            "tests/test_semantic_inspection.py::"
+            "test_solver_created_output_may_use_a_descriptive_manifest_alias",
         ),
     ),
     "patch": SemanticRuleProvenance(

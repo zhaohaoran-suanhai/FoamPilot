@@ -1,4 +1,4 @@
 interface:
-  display_name: "buoyantFoam Case"
-  short_description: "Author and verify steady buoyant heat-transfer cases"
-  default_prompt: "Use $openfoam-buoyant-case to author or repair a Foundation v10 buoyantFoam case."
+  display_name: "buoyantFoam 浮力传热算例"
+  short_description: "编写、修复并验证 Foundation v10 稳态浮力传热算例"
+  default_prompt: "使用 $openfoam-buoyant-case 编写或修复一个 Foundation v10 buoyantFoam 算例。"

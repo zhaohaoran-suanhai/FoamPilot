@@ -145,20 +145,15 @@ flowchart TD
 
 这一阶段是本地确定性操作。最近 run 中通常约为 0.2 至 0.3 秒。
 
-注意：`foampilot preflight` 只检查本机 Python、OpenFOAM、bubblewrap
+注意：`foampilot preflight` 只检查本机 Python、OpenFOAM、执行后端
 和一个代表性 solver。它不检查远端模型服务是否健康。
 
 ### 4.2 动态知识和 Skill
 
-`load_agent_context()` 用 TaskSpec 的标题、需求和输出要求对公开知识库
-做本地检索，最多选择 5 条知识，然后加载：
-
-`src/foampilot/skills/openfoam-author-native-case/SKILL.md`
-
-当前内部模型提示中实际加载的是这一份通用 Skill。仓库虽然还包含
-benchmark、buoyant 和 `rhoCentralFoam` 等 Skills，但 canonical
-`load_agent_context()` 没有动态选择并注入这些 solver-family Skills。
-solver-family 专业内容目前主要依赖知识库 top-5 检索。
+`load_agent_context()` 按 solver family、mesh、boundary、physics/transport、
+startup/numerics 和可选 parallel/error 槽位检索公开知识；每个槽位至多选择一条，
+并根据 `CapabilityProfile` 注入通用 Skill 和可用的 solver-family Skill。它不是对整个
+知识库做无差别 top-N 填充。
 
 这一阶段通常约为几十毫秒，不是性能瓶颈。它的风险在于召回质量，而不
 是运行时间：
@@ -274,7 +269,7 @@ CLI 只在完整生成或最终错误时输出结构化结果。模型流虽然�
 - 串行：`executable + argv`；
 - 并行：Runner 注入 `mpirun -n N ... -parallel`。
 
-每一步在 bubblewrap 中执行：
+每一步优先在 bubblewrap 中执行：
 
 - case 目录挂载到 `/case`；
 - OpenFOAM 安装只读；
@@ -282,6 +277,10 @@ CLI 只在完整生成或最终错误时输出结构化结果。模型流虽然�
 - 网络隔离；
 - CPU 时间和地址空间受限；
 - stdout/stderr 分别落盘。
+
+`execution_backend=auto` 会缓存一次 bubblewrap 能力探测；namespace 被嵌套环境拒绝时，
+Runner 改用 audited host 后端，并保留 typed allowlist、cwd、资源限制与日志。host fallback
+不提供 network namespace 隔离，后端与原因会写入 step result。
 
 典型命令顺序为：
 

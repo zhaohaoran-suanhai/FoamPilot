@@ -45,11 +45,12 @@ foampilot preflight --json
 当前本机配置使用：
 
 - `/home/edwin/workplace/OpenFOAM-10`；
-- `/usr/local/bin/bwrap`；
+- `/usr/local/bin/bwrap`（推荐；`auto` 后端可降级）；
 - `/home/edwin/feal-venv-py312/bin/python`。
 
 如果 FoamPilot 本身运行在已经受限的开发沙箱中，bubblewrap 可能无法再次创建
-namespace。这属于环境阻断，不是 OpenFOAM 能力测试结果。
+namespace。`auto` 模式会把该探测记为非阻断并改用 audited host；preflight 和 step
+产物会记录实际后端。host fallback 不具有 network namespace 隔离。
 
 ## 校验、生成计划、求解和报告
 

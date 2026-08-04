@@ -3,61 +3,55 @@ name: openfoam-rhocentral-case
 description: Use when an Agent authors, repairs, or validates a Foundation OpenFOAM v10 rhoCentralFoam shock-tube or inviscid compressible transient case.
 ---
 
-# Work with rhoCentralFoam cases
+# 编写、修复与验证 rhoCentralFoam 算例
 
-## Solver semantics
+## 求解器语义
 
-Treat `deltaT` as the initial time step and `maxDeltaT` as the upper bound for
-adaptive growth. When `adjustTimeStep yes` is required, set a positive `maxCo`
-and require `maxDeltaT > deltaT`. A copied `maxDeltaT` from another tutorial is
-not evidence that it is appropriate for this mesh, thermodynamics, or end time.
+将 `deltaT` 视为初始时间步，将 `maxDeltaT` 视为自适应增长的上限。当任务要求
+`adjustTimeStep yes` 时，设置正的 `maxCo`，并保证 `maxDeltaT > deltaT`。从其他
+tutorial 复制的 `maxDeltaT` 不能证明它适合当前网格、热力学状态或结束时间。
 
-## Required workflow
+## 必需流程
 
-1. Derive density and heat-capacity ratio from the declared perfect-gas
-   properties. Do not substitute remembered air constants when public inputs
-   are available.
-2. Align the initial discontinuity with a cell face and make the transverse
-   directions geometrically one-dimensional.
-3. Use a coherent Foundation v10 thermodynamics model and inviscid transport
-   properties. Check every field and boundary against the mesh patch inventory.
-4. Gate `controlDict` before solving:
+1. 从声明的 ideal-gas properties 推导密度与比热比。存在公开输入时，不得使用记忆中的
+   空气常数替代。
+2. 将初始间断面与 cell face 对齐，并使横向在几何上保持一维。
+3. 使用内部一致的 Foundation v10 热力学模型和无黏输运属性，并对照 mesh patch 清单
+   检查每个 field 与 boundary。
+4. 求解前检查 `controlDict`：
    - `adjustTimeStep yes`;
-   - requested positive `maxCo`;
-   - `maxDeltaT` strictly greater than the initial `deltaT`;
-   - enough write precision to represent the adaptive steps.
-5. After a normal solver end, parse the actual Courant history. A value far
-   below the target can indicate that `maxDeltaT` is still the active limiter;
-   a value above the allowance is unsafe.
-6. Compute the exact ideal-gas Riemann wave speeds and positions from the
-   public initial states. Check rarefaction head, contact, and shock within the
-   declared cell-width tolerance.
-7. If any public check fails, return the check evidence to repair and change
-   the smallest causally related input. A zero exit code is not a physics pass.
+   - 任务要求的正 `maxCo`；
+   - `maxDeltaT` 严格大于初始 `deltaT`；
+   - write precision 足以表示自适应时间步。
+5. 求解器正常结束后，解析实际 Courant history。若数值远低于目标，可能说明
+   `maxDeltaT` 仍是 active limiter；若超过允许值，则不安全。
+6. 根据公开初始状态计算 ideal-gas Riemann 问题的精确波速与波位置，并在声明的 cell-width
+   容差内检查 rarefaction head、contact 和 shock。
+7. 任一公开检查失败时，将检查证据交给 repair，并只修改与原因直接相关的最小输入。
+   零退出码不等于 physics pass。
 
-## Evidence contract
+## 证据契约
 
-Report:
+报告以下内容：
 
-- `deltaT`, `maxDeltaT`, `maxCo`, and `adjustTimeStep`;
-- observed peak Courant number and its target ratio;
-- analytical and detected rarefaction, contact, and shock locations;
-- spatial tolerance in metres and cell widths;
-- a separate execution and public-physics verdict.
+- `deltaT`、`maxDeltaT`、`maxCo` 和 `adjustTimeStep`；
+- 观测到的 peak Courant number 及其相对目标比值；
+- 解析与检测得到的 rarefaction、contact 和 shock 位置；
+- 以米和 cell width 表示的空间容差；
+- 相互独立的 execution verdict 与 public-physics verdict。
 
-## Boundaries
+## 边界
 
-- Never use a target tutorial, private validator, or golden wave position.
-- Do not tune the time step until a private comparison passes.
-- Do not accept mass conservation and smooth profiles as substitutes for wave
-  propagation accuracy.
-- Stop as not proven when Courant or detected-wave evidence is absent.
+- 绝不能使用目标 tutorial、私有 validator 或 golden wave position。
+- 不得为了通过私有比较而调节时间步。
+- 不得用质量守恒和平滑 profile 代替波传播精度证据。
+- 缺少 Courant 或波检测证据时，以 not proven 停止。
 
-## Common mistakes
+## 常见错误
 
-| Mistake | Required correction |
+| 错误 | 必需修正 |
 | --- | --- |
-| `maxDeltaT` equals the initial `deltaT` | Give adaptive stepping room to grow and verify actual Co |
-| Reuse another compressible tutorial's cap | Derive controls from this mesh and public state |
-| Compare only final primitive profiles | Add exact public wave-position checks |
-| Treat `End` as success | Separate execution completion from physics acceptance |
+| `maxDeltaT` 等于初始 `deltaT` | 为自适应步长留出增长空间，并验证实际 Co |
+| 复用其他可压缩 tutorial 的上限 | 根据当前网格和公开状态推导控制量 |
+| 只比较最终 primitive profile | 添加精确的公开 wave-position 检查 |
+| 将 `End` 视为成功 | 分离 execution completion 与 physics acceptance |

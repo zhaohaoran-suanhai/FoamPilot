@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.simplefoam-rans-contract
-title: simpleFoam steady incompressible RANS contract
+title: simpleFoam 稳态不可压缩 RANS 契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,10 +9,10 @@ models: [incompressible, turbulent, steady, RANS, SIMPLE]
 tags: [simplefoam, simple, rans, kepsilon, wall-functions]
 applicability:
   conditions:
-    - The requested flow is steady, incompressible, and turbulent.
-    - A RANS closure and its inlet and wall boundary conditions are specified.
+    - 要求的流动为稳态、不可压缩且湍流。
+    - 已指定 RANS closure 及其入口和壁面 boundary condition。
   not_applicable:
-    - Compressibility, multiphase flow, or required transient behavior is present.
+    - 存在可压缩性、多相流或必需瞬态行为时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 simpleFoam application
@@ -24,20 +24,20 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: simpleFoam iterates the steady incompressible momentum and pressure equations with SIMPLE coupling and updates the selected viscosity and momentum-transport models.
+  summary: simpleFoam 使用 SIMPLE 耦合迭代稳态不可压缩动量与压力方程，并更新所选黏度和动量输运模型。
   rules:
-    - Provide physicalProperties, momentumTransport, U, p, every turbulence field required by the selected RANS model, fvSchemes, fvSolution, controlDict, and a valid mesh.
-    - Use steadyState time discretization and a SIMPLE dictionary with a valid pressure reference when pressure has no fixed-value anchor.
-    - For the Foundation v10 high-Reynolds-number separated-flow baseline, use SIMPLE consistent yes, a bounded linearUpwind velocity convection scheme, bounded limitedLinear 1 convection for k and epsilon, and equation relaxation near 0.9. Treat these as a coherent convergence baseline before substituting more diffusive upwind transport or weaker relaxation.
-    - When divSchemes/default is none, include the exact Foundation v10 viscous-stress entry div((nuEff*dev2(T(grad(U))))); otherwise simpleFoam can load the turbulence model and still fail on the first momentum assembly.
-    - Use one coherent wall-function set for the selected high- or low-Reynolds-number closure; do not mix k, epsilon or omega, and nut conditions from unrelated models.
-    - Configure relaxation for stable convergence and keep enough iteration and write budget to preserve a final state; add residualControl only when early stopping is explicitly needed.
-    - When MPI is used, decompose before solving, use executable simpleFoam with mpi_ranks on that typed command, and reconstruct before evaluator sampling; never embed mpirun or orterun because the Runner owns the launcher.
+    - 提供 physicalProperties、momentumTransport、U、p、所选 RANS model 要求的所有 turbulence field、fvSchemes、fvSolution、controlDict 与有效网格。
+    - 使用 steadyState 时间离散；压力无 fixed-value 锚点时，在 SIMPLE dictionary 中提供有效 pressure reference。
+    - Foundation v10 高 Reynolds 数分离流基线使用 SIMPLE consistent yes、有界 linearUpwind 速度对流 scheme、k 与 epsilon 的 bounded limitedLinear 1 对流，以及约 0.9 的 equation relaxation。在改用更耗散 upwind 输运或更弱 relaxation 前，将这些设置视为一组内部一致的收敛基线。
+    - divSchemes/default 为 none 时，加入精确 Foundation v10 黏性应力项 div((nuEff*dev2(T(grad(U)))))；否则 simpleFoam 即使成功加载 turbulence model，也会在第一次动量组装时失败。
+    - 为所选高或低 Reynolds 数 closure 使用一组内部一致 wall function；不得混用无关模型的 k、epsilon/omega 与 nut condition。
+    - 配置 relaxation 以稳定收敛，并保留足够 iteration 与 write budget 以保存最终状态；只有明确需要提前停止时才添加 residualControl。
+    - 使用 MPI 时，求解前 decompose；在 typed command 中以 executable simpleFoam 与 mpi_ranks 运行；evaluator 采样前 reconstruct。绝不能嵌入 mpirun 或 orterun，因为 launcher 由 Runner 负责。
   failure_signals:
     - A turbulence field or model coefficient dictionary is missing.
     - A wall function is incompatible with the selected RANS closure or patch type.
     - fvSchemes reports div((nuEff*dev2(T(grad(U))))) as undefined.
     - End is reached only because the iteration cap is exhausted while residuals, continuity, or flow balance remain poor; a normal exit at that cap is not convergence.
   validation:
-    - Require Mesh OK, normal solver completion, finite fields, and a reconstructed latest state.
-    - Check residual trends, continuity, inlet/outlet flow balance, and requested pressure or velocity observables independently.
+    - 要求 Mesh OK、solver 正常结束、字段有限且 latest state 已重构。
+    - 分别检查 residual trend、continuity、入口/出口流量平衡以及任务要求的压力或速度观测量。

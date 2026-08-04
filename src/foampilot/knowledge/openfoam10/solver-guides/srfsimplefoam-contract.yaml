@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.srfsimplefoam-contract
-title: SRFSimpleFoam steady rotating-frame contract
+title: SRFSimpleFoam 稳态旋转坐标系契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,10 +9,10 @@ models: [incompressible, steady, ras, srf, rotating-frame]
 tags: [srfsimplefoam, srf, rotating-frame, urel, simple, srfvelocity]
 applicability:
   conditions:
-    - Foundation v10 SRFSimpleFoam solves a steady incompressible flow in one rotating reference frame.
-    - Relative velocity Urel and SRFProperties define the rotating-frame formulation.
+    - Foundation v10 SRFSimpleFoam 在单一旋转参考系中求解稳态不可压缩流动。
+    - 相对速度 Urel 与 SRFProperties 定义旋转坐标系 formulation。
   not_applicable:
-    - The frame moves transiently, multiple mesh regions rotate, or the task uses an MRF or dynamic-mesh solver.
+    - 坐标系瞬态运动、多个 mesh region 旋转，或任务使用 MRF/dynamic-mesh solver 时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 SRFSimpleFoam application source
@@ -24,17 +24,17 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 SRFSimpleFoam reads Urel, SRFProperties, steady SIMPLE controls, and rotating-frame boundary fields before decomposition or solution.
+  summary: Foundation v10 SRFSimpleFoam 在 decomposition 或 solution 前读取 Urel、SRFProperties、稳态 SIMPLE 控制与旋转坐标系 boundary field。
   rules:
-    - Provide SRFProperties with one model, origin, non-zero axis, and its coefficients; provide Urel rather than U.
-    - Every patch using type SRFVelocity must include inletValue, relative, and value. This applies to inlet and wall patches alike; for a stationary inertial wall use inletValue uniform (0 0 0), relative no, and an initialized value.
-    - Use pressureInletOutletVelocity or another pressure-compatible outlet velocity, one pressure reference or fixed pressure, and turbulence fields compatible with the selected RAS model.
-    - Under divSchemes/default none, provide div(phi,Urel), transported turbulence entries, and div((nuEff*dev2(T(grad(Urel))))).
-    - For MPI provide a valid decomposeParDict before decomposePar, run SRFSimpleFoam with typed mpi_ranks, and reconstruct accepted fields.
+    - 提供包含一个 model、origin、非零 axis 及其 coefficient 的 SRFProperties；提供 Urel，而不是 U。
+    - 每个 type SRFVelocity patch 都必须包含 inletValue、relative 与 value。入口和壁面均如此；静止惯性壁面使用 inletValue uniform (0 0 0)、relative no 和已初始化 value。
+    - 使用 pressureInletOutletVelocity 或其他压力兼容出口速度、一个 pressure reference 或 fixed pressure，以及与所选 RAS model 兼容的 turbulence field。
+    - 在 divSchemes/default none 下提供 div(phi,Urel)、transported turbulence 项与 div((nuEff*dev2(T(grad(Urel)))))。
+    - 使用 MPI 时，在 decomposePar 前提供有效 decomposeParDict，以 typed mpi_ranks 运行 SRFSimpleFoam，并 reconstruct 已接受字段。
   failure_signals:
     - decomposePar or the solver reports inletValue, relative, or value missing from an SRFVelocity patch.
     - The executable cannot find Urel or SRFProperties.
     - fvSchemes reports a U-based rather than Urel-based momentum or viscous-stress operator.
   validation:
-    - Require Mesh OK, successful decomposition when parallel, normal completion, reconstruction, and finite Urel, p, and turbulence fields.
-    - Check the relative and inertial interpretation of inlet and wall velocities from task geometry.
+    - 要求 Mesh OK；并行时 decomposition 成功；正常结束并完成 reconstruction；Urel、p 与 turbulence field 有限。
+    - 根据任务几何检查入口与壁面速度的相对/惯性解释。

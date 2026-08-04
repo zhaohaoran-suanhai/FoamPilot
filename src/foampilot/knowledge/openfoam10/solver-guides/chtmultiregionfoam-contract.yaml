@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.chtmultiregionfoam-contract
-title: chtMultiRegionFoam region layout and control contract
+title: chtMultiRegionFoam 区域布局与控制契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,10 +9,10 @@ models: [conjugate-heat-transfer, fluid, solid, multiregion, PIMPLE]
 tags: [chtmultiregionfoam, cht, multiregion, splitmeshregions, regionproperties, interface]
 applicability:
   conditions:
-    - Foundation v10 chtMultiRegionFoam couples one or more fluid regions with one or more solid heat-conduction regions.
-    - A parent mesh is partitioned into named regions or compatible region meshes already exist.
+    - Foundation v10 chtMultiRegionFoam 将一个或多个流体区域与一个或多个固体导热区域耦合。
+    - 父网格被划分为具名区域，或兼容的区域网格已存在。
   not_applicable:
-    - The problem is single-region heat transfer or uses a different multi-region solver.
+    - 问题是单区域传热，或使用其他多区域求解器时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 chtMultiRegionFoam application source
@@ -24,22 +24,23 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 chtMultiRegionFoam has global multi-region controls plus per-region schemes, solvers, material models, fields, and conservatively coupled interface patches.
+  summary: Foundation v10 chtMultiRegionFoam 包含全局多区域控制，以及逐区域 scheme、solver、材料模型、字段和守恒耦合 interface patch。
   rules:
-    - List all fluid and solid names in constant/regionProperties and keep those names identical in constant/<region>, system/<region>, 0/<region>, and the meshes written under constant/<region>/polyMesh.
-    - When splitting a parent mesh by cell zones in Foundation v10, use splitMeshRegions -cellZones -defaultRegionName <name> -overwrite; -defaultRegion is not a valid v10 option.
-    - Supply the global system/fvSolution as well as every system/<region>/fvSolution. The global file owns the multi-region PIMPLE loop, while each regional file owns its field solvers and region-specific PIMPLE controls; regional files do not replace the global file.
-    - Supply system/<region>/fvSchemes for every region. Fluid schemes must cover the exact momentum, energy, turbulence, and pressure operators selected by the fluid formulation; solid schemes must cover its energy equation and transient or steady mode.
-    - For a compressible fluid region under divSchemes default none, include the pressure-density regex entry div(phi,(p|rho)) as well as the exact momentum, energy, turbulence, and viscous-stress entries.
-    - In system/<fluid>/fvSolution, provide explicit rho and rhoFinal diagonal solver entries in addition to p_rgh and p_rghFinal, velocity, energy, and turbulence solvers; the multi-region fluid loop looks up the density final entry during pressure correction.
-    - Put each region's physicalProperties, transport, radiation, fvModels, fvConstraints, and initial fields below its matching region directory. Every fluid region also needs constant/<fluid>/g, even when its value is (0 0 0); a root constant/g does not satisfy the regional lookup.
-    - Inventory the fluid turbulence model before solving and write its complete regional field set. A k-omega fluid normally needs 0/<fluid>/k, 0/<fluid>/omega, 0/<fluid>/nut, and 0/<fluid>/alphat in addition to U, p, p_rgh, and the energy variable; a k-epsilon fluid replaces omega with epsilon but still needs nut and alphat. Every field must cover the actual post-split regional patch names.
-    - Every regional radiationProperties dictionary uses the Foundation v10 selector key radiationModel. When radiation is disabled, write radiationModel none; the legacy-looking entry radiation off does not select a model.
-    - For a constant isotropic Foundation v10 solid thermo package using the supplied constant-volume heat capacity, use transport constIsoSolid, thermo eConst, energy sensibleInternalEnergy, nMoles 1 in specie, and Cv; constIso and solid hConst are not registered Foundation v10 combinations. Omitting nMoles can corrupt the initial sensible-energy-to-temperature conversion even when the written T field is positive.
-    - A uniform volumetric solid heat source belongs in constant/<solid>/fvModels with type heatSource, selectionMode all, and q in W/m3; select all is not the Foundation v10 selection key.
-    - After splitMeshRegions, inspect constant/<region>/polyMesh/boundary and write every regional field against the actual patch names. On both mapped-wall temperature interfaces use the Foundation v10 type compressible::turbulentTemperatureCoupledBaffleMixed, with Tnbr T and fluidThermo or solidThermo kappaMethod on the matching side; the unqualified turbulentTemperatureCoupledBaffleMixed name is not registered.
-    - Use root system/controlDict for time-step control and output. Keep deltaT, maxCo, maxDi, and maxDeltaT mutually consistent with both fluid Courant and solid diffusion limits. Treat maxCo and maxDi as upper caps rather than targets; if solid heating drives an energy-to-temperature inversion or negative temperature, reduce maxDi or maxDeltaT while preserving the requested end time and outputs.
-    - Validate the parent mesh before splitting, then verify region creation before invoking chtMultiRegionFoam. Foundation v10 has no -allRegions option for checkMesh; when a regional mesh check is needed, invoke checkMesh -region <name> once per fluid or solid region. Parallel decomposition, if requested, must decompose all regions coherently and remains Runner-owned.
+    - 在 constant/regionProperties 中列出所有 fluid 与 solid 名称，并保证这些名称在 constant/<region>、system/<region>、0/<region> 以及 constant/<region>/polyMesh 网格中完全一致。
+    - Foundation v10 按 cell zone 划分父网格时，使用 splitMeshRegions -cellZones -defaultRegionName <name> -overwrite；-defaultRegion 不是有效 v10 选项。
+    - 同时提供全局 system/fvSolution 和每个 system/<region>/fvSolution。全局文件负责多区域 PIMPLE loop，各区域文件负责其 field solver 与区域 PIMPLE 控制；区域文件不能替代全局文件。
+    - 为每个区域提供 system/<region>/fvSchemes。fluid scheme 必须覆盖流体 formulation 选择的精确 momentum、energy、turbulence 与 pressure operator；solid scheme 必须覆盖其能量方程及瞬态或稳态模式。
+    - 可压缩 fluid region 在 divSchemes default none 下，应包含 pressure-density regex 项 div(phi,(p|rho))，以及精确的 momentum、energy、turbulence 和 viscous-stress 项。
+    - 在 system/<fluid>/fvSolution 中，除 p_rgh、p_rghFinal、velocity、energy 与 turbulence solver 外，还要显式提供 rho 和 rhoFinal diagonal solver 项；多区域 fluid loop 在压力修正时会查找 density final 项。
+    - 将各区域的 physicalProperties、transport、radiation、fvModels、fvConstraints 与初始字段放入对应区域目录。每个 fluid region 还需要 constant/<fluid>/g，即使其值是 (0 0 0)；根目录 constant/g 不能满足区域查找。
+    - 求解前盘点 fluid turbulence model 并写出完整区域字段集。k-omega fluid 除 U、p、p_rgh 与 energy variable 外，通常需要 0/<fluid>/k、0/<fluid>/omega、0/<fluid>/nut 和 0/<fluid>/alphat；k-epsilon fluid 用 epsilon 替代 omega，但仍需要 nut 和 alphat。每个字段都必须覆盖 split 后实际区域 patch 名。
+    - 每个区域 radiationProperties dictionary 都使用 Foundation v10 selector key radiationModel。关闭 radiation 时写 radiationModel none；看似旧式的 radiation off 不会选择模型。
+    - 对使用给定定容比热的 Foundation v10 常数各向同性 solid thermo package，使用 transport constIsoSolid、thermo eConst、energy sensibleInternalEnergy、specie 中 nMoles 1 和 Cv；constIso 与 solid hConst 不是已注册 Foundation v10 组合。即使写出的 T 为正，省略 nMoles 也可能破坏初始 sensible-energy 到 temperature 的转换。
+    - 均匀体积固体热源放在 constant/<solid>/fvModels 中，使用 type heatSource、selectionMode all 与单位 W/m3 的 q；select all 不是 Foundation v10 selection key。
+    - splitMeshRegions 后检查 constant/<region>/polyMesh/boundary，并按实际 patch 名编写每个区域字段。两侧 mapped-wall 温度界面都使用 Foundation v10 类型 compressible::turbulentTemperatureCoupledBaffleMixed，设置 Tnbr T，并在对应侧使用 fluidThermo 或 solidThermo kappaMethod；未限定名称的 turbulentTemperatureCoupledBaffleMixed 未注册。
+    - 使用根 system/controlDict 控制时间步与输出。deltaT、maxCo、maxDi 和 maxDeltaT 必须同时与 fluid Courant 与 solid diffusion 限制一致。将 maxCo 与 maxDi 视为上限而非目标；若固体加热导致 energy-to-temperature 反演或负温度，在保持要求 end time 与输出的同时减小 maxDi 或 maxDeltaT。
+    - 对尚未用网格与材料尺度证明稳定的加热固体，初始采用 `maxDi <= 1`，并让 maxDeltaT 允许求解器真正满足该限制；不得用 maxDi 200 之类宽松值掩盖固体扩散数。只有在独立稳定性证据支持时才逐步放宽。
+    - 划分前验证父网格，调用 chtMultiRegionFoam 前确认区域创建成功。Foundation v10 checkMesh 没有 -allRegions 选项；需要区域网格检查时，对每个 fluid/solid region 分别执行一次 checkMesh -region <name>。若要求并行，所有区域必须一致分解，且 launcher 仍由 Runner 负责。
   failure_signals:
     - splitMeshRegions rejects -defaultRegion and lists -defaultRegionName.
     - chtMultiRegionFoam cannot find system/fvSolution even though regional fvSolution files exist.
@@ -57,5 +58,5 @@ content:
     - A strong solid source reaches a negative temperature after several steps while the reported solid diffusion number is near an overly permissive maxDi cap.
     - checkMesh rejects -allRegions as an invalid option before chtMultiRegionFoam can start.
   validation:
-    - Require a valid parent mesh, the intended non-empty regions and interface, normal completion through the requested time, and finite fluid and solid temperature fields.
-    - Check interface heat balance, energy response to sources, fluid continuity, and task-derived temperature or velocity metrics without using a target-case solution.
+    - 要求父网格有效，预期区域与界面非空，求解正常推进到要求时刻，fluid 与 solid 温度字段有限。
+    - 在不使用目标算例解的前提下，检查界面热平衡、能量对源项的响应、fluid continuity 以及任务给定的温度或速度指标。

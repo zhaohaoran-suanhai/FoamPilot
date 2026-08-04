@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.twoliquidmixingfoam-contract
-title: twoLiquidMixingFoam miscible-liquid startup contract
+title: twoLiquidMixingFoam 可混溶液体启动契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,10 +9,10 @@ models: [incompressible, miscible, two-liquid, phase-fraction, transient]
 tags: [twoliquidmixingfoam, miscible, phase-fraction, maxalphaco, p-rgh]
 applicability:
   conditions:
-    - Foundation v10 twoLiquidMixingFoam transports the fraction of two incompressible miscible liquids.
-    - Density and viscosity differ by phase and molecular diffusion is declared.
+    - Foundation v10 twoLiquidMixingFoam 输运两种不可压缩可混溶液体的组分比例。
+    - 各相密度与黏度不同，并已声明分子扩散。
   not_applicable:
-    - The phases are immiscible with a sharp VOF interface or have independent velocities.
+    - 各相不混溶并具有尖锐 VOF 界面，或具有独立速度时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 twoLiquidMixingFoam application source
@@ -24,20 +24,20 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 twoLiquidMixingFoam needs two phase property dictionaries, a bounded alpha field, reduced pressure, gravity, diffusion controls, and both flow and phase Courant limits.
+  summary: Foundation v10 twoLiquidMixingFoam 需要两个 phase property dictionary、有界 alpha field、缩减压力、重力、扩散控制，以及 flow/phase 两类 Courant 限制。
   rules:
-    - Declare the two phase names and diffusion coefficients in phaseProperties and provide one physicalProperties.<phase> dictionary for each phase.
-    - Provide U, p_rgh, the transported alpha.<phase> field, g, momentumTransport, fvSchemes, fvSolution, and a native initialization step when the starting interface is regional.
-    - Under divSchemes/default none, write the exact transported-fraction key div(phi,alpha); Foundation v10 twoLiquidMixingFoam looks up this generic operator name even when the field on disk is alpha.<phase>. Do not substitute div(phi,alpha.<phase>).
-    - controlDict must include maxCo and maxAlphaCo as a required control entry pair when adaptive time stepping is used, plus a positive maxDeltaT. The solver reads maxAlphaCo directly; maxCo alone is insufficient.
-    - In fvSolution give the transported alpha.<phase> solver dictionary nAlphaSubCycles and nAlphaCorr explicitly, together with a scalar solver, smoother, tolerance, and relTol. These controls belong with the alpha solver entry rather than only in PIMPLE.
-    - Keep p_rgh dimensions [1 -1 -2 0 0 0 0], use fixedFluxPressure on closed moving-fluid walls, and keep alpha boundary conditions consistent with phase entry and exit.
-    - Under divSchemes/default none, provide every requested momentum, alpha, diffusion, and viscous-stress operator using the exact field group name.
+    - 在 phaseProperties 中声明两个 phase name 与 diffusion coefficient，并为每相提供一个 physicalProperties.<phase> dictionary。
+    - 提供 U、p_rgh、被输运 alpha.<phase> field、g、momentumTransport、fvSchemes 与 fvSolution；初始界面具有区域分布时还要提供原生 initialization step。
+    - 在 divSchemes/default none 下写入精确 transported-fraction key div(phi,alpha)；即使磁盘 field 名为 alpha.<phase>，Foundation v10 twoLiquidMixingFoam 也查找这一通用 operator name。不得替换为 div(phi,alpha.<phase>)。
+    - 使用自适应时间步时，controlDict 必须成对包含 maxCo 与 maxAlphaCo，并提供正 maxDeltaT。solver 直接读取 maxAlphaCo，只有 maxCo 不足。
+    - 在 fvSolution 的 transported alpha.<phase> solver dictionary 中显式给出 nAlphaSubCycles 与 nAlphaCorr，并提供 scalar solver、smoother、tolerance 与 relTol。这些控制属于 alpha solver entry，不能只放在 PIMPLE 中。
+    - 保持 p_rgh 量纲 [1 -1 -2 0 0 0 0]；封闭运动流体壁面使用 fixedFluxPressure；alpha boundary condition 与 phase 进入/流出保持一致。
+    - 在 divSchemes/default none 下，使用精确 field group name 提供所有被请求 momentum、alpha、diffusion 与 viscous-stress operator。
   failure_signals:
     - Startup reports maxAlphaCo is undefined in controlDict.
     - A phase-specific physicalProperties dictionary or alpha field cannot be found.
     - fvSolution/solvers/alpha.<phase> reports nAlphaSubCycles or nAlphaCorr as undefined.
     - p_rgh uses kinematic-pressure dimensions instead of dynamic pressure.
   validation:
-    - Require successful initialization, Mesh OK, normal completion, finite U, p_rgh and alpha, and task-derived phase bounds and inventory checks.
-    - Use both flow and phase Courant evidence when judging time-step adequacy.
+    - 要求初始化成功、Mesh OK、正常结束、U、p_rgh 与 alpha 有限，并通过任务给定 phase bound 与 inventory 检查。
+    - 判断时间步是否充分时，同时使用 flow 与 phase Courant 证据。

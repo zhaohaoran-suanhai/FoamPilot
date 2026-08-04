@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.boundary.buoyant-pressure-semantics
-title: buoyantFoam thermodynamic and reduced-pressure semantics
+title: buoyantFoam 热力学压力与缩减压力语义
 fork: foundation
 version: "10"
 knowledge_type: boundary_condition
@@ -9,10 +9,10 @@ models: [compressible, buoyant, p_rgh]
 tags: [buoyantfoam, pressure, p_rgh, reference]
 applicability:
   conditions:
-    - A Foundation v10 compressible buoyant solver uses p and p_rgh.
-    - Gravity and a thermodynamic operating pressure are present.
+    - Foundation v10 可压缩浮力求解器同时使用 p 与 p_rgh。
+    - 问题包含重力和热力学工作压力。
   not_applicable:
-    - The solver uses only incompressible kinematic pressure.
+    - 求解器只使用不可压缩运动压力时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 buoyantFoam pressure equation
@@ -24,13 +24,13 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: buoyantFoam solves the hydrostatic-reduced pressure p_rgh and reconstructs thermodynamic p from p_rgh, density, gravitational head, and the pressure reference.
+  summary: buoyantFoam 求解静水压缩减压力 p_rgh，并根据 p_rgh、密度、重力压头和压力参考重构热力学压力 p。
   rules:
-    - Keep p as thermodynamic pressure for the compressible equation of state.
-    - Keep p_rgh consistent with p minus hydrostatic head and the chosen pressure reference.
-    - For a closed cavity initialized at a uniform thermodynamic operating pressure with fixedFluxPressure walls, use a uniform zero reduced-pressure gauge as the stable baseline; do not duplicate the operating pressure in both p and p_rgh.
-    - Treat pRefCell and pRefValue as the reduced-pressure gauge anchor, not as a replacement for operating pressure. For a closed cavity with constant/pRef set to the thermodynamic operating pressure and p_rgh initialized to zero, use pRefValue 0 in PIMPLE; putting the operating pressure in pRefValue duplicates the reference in the reduced-pressure solve.
-    - Use pressure boundary conditions that match the velocity flux and the closed or open nature of each patch.
+    - 保持 p 为可压缩状态方程使用的热力学压力。
+    - 保证 p_rgh 与 p 减去静水压头及所选压力参考后的结果一致。
+    - 对采用 fixedFluxPressure 壁面、以均匀热力学工作压力初始化的封闭腔体，稳定基线是均匀零缩减压力；不要在 p 和 p_rgh 中重复写入工作压力。
+    - 将 pRefCell 与 pRefValue 作为缩减压力规范的锚点，而不是工作压力的替代。封闭腔体若在 constant/pRef 中设置热力学工作压力并将 p_rgh 初始化为零，则 PIMPLE 中应使用 pRefValue 0；把工作压力写入 pRefValue 会在缩减压力求解中重复加入参考压力。
+    - 压力边界条件必须与速度通量以及各 patch 的封闭或开放性质一致。
   failure_signals:
     - p is initialized near zero for a perfect-gas operating-pressure case.
     - p and p_rgh encode incompatible hydrostatic states.
@@ -38,5 +38,5 @@ content:
     - A pRefValue meaning is copied from an unrelated pressure formulation.
     - constant/pRef is the operating pressure but PIMPLE also uses that operating pressure as pRefValue instead of the reduced-pressure gauge value zero.
   validation:
-    - Inventory p, p_rgh, gravity datum, operating pressure, pRefCell, and pRefValue together.
-    - Verify reconstructed thermodynamic pressure stays finite, positive, and physically plausible.
+    - 联合核对 p、p_rgh、重力基准、工作压力、pRefCell 和 pRefValue。
+    - 验证重构的热力学压力保持有限、为正且物理上合理。

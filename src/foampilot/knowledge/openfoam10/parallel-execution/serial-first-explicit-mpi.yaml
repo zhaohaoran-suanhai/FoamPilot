@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.parallel.serial-first-explicit-mpi
-title: Qualify serial execution before explicit local MPI
+title: 显式本地 MPI 前先验证串行执行
 fork: foundation
 version: "10"
 knowledge_type: parallel_execution
@@ -9,10 +9,10 @@ models: [local-mpi]
 tags: [mpi, serial, ranks, decomposition]
 applicability:
   conditions:
-    - A solver contract explicitly supports parallel execution.
-    - The case is large enough that measured MPI scaling may offset overhead.
+    - solver contract 明确支持并行执行。
+    - 算例规模足够大，实测 MPI scaling 可能抵消并行开销。
   not_applicable:
-    - The contract is serial-only or the case is too small to benefit.
+    - contract 仅支持串行，或算例过小而无法获益时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 decomposePar application
@@ -24,16 +24,16 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Establish a correct serial baseline before local MPI; parallel execution requires an explicit decomposition, bounded rank count, parallel solver flag, and reconstruction policy.
+  summary: 使用本地 MPI 前先建立正确的串行基线；并行执行需要显式 decomposition、受限 rank count、并行 solver flag 与 reconstruction policy。
   rules:
-    - Do not infer MPI support from solver availability alone.
-    - Declare a positive rank count no greater than the measured physical-core limit.
-    - "Match decomposition coefficients to the selected Foundation v10 method: use hierarchicalCoeffs for hierarchical and simpleCoeffs for simple; a generic coeffs dictionary is not read as either method's configuration."
-    - Use the approved Runner and preserve requested, eligible, and observed ranks separately.
+    - 不得仅根据 solver 可用性推断 MPI 支持。
+    - 声明正的 rank count，且不得超过实测物理核心上限。
+    - "decomposition coefficient 必须匹配所选 Foundation v10 method：hierarchical 使用 hierarchicalCoeffs，simple 使用 simpleCoeffs；通用 coeffs dictionary 不会被读取为任一方法的配置。"
+    - 使用已批准的 Runner，并分别保留 requested、eligible 与 observed rank。
   failure_signals:
     - MPI is launched without -parallel or without an explicit rank count.
     - decomposePar reports n or another method coefficient undefined even though it was placed under a generic coeffs dictionary.
     - Parallel results disagree with the qualified serial baseline.
   validation:
-    - The serial case passes before the MPI variant is accepted.
-    - Measure wall time and result parity rather than assuming more ranks are faster.
+    - 接受 MPI 变体前，串行算例必须先通过。
+    - 实测 wall time 与结果一致性，不能假设 rank 越多就越快。

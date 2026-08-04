@@ -360,9 +360,8 @@ def route_capability(
             ModelRequest(
                 purpose="route-openfoam-capability",
                 system_prompt=(
-                    "Select one candidate using only the public task and "
-                    "installed candidates. Return candidate, evidence, and "
-                    "unresolved_questions. Do not return confidence."
+                    "只能依据公开任务和已安装 candidate 选择一个 candidate。返回 "
+                    "candidate、evidence 与 unresolved_questions；不要返回 confidence。"
                 ),
                 user_prompt=json.dumps(
                     {

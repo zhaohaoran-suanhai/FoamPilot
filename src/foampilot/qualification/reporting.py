@@ -56,6 +56,8 @@ def classify_qualification(
     outcome: NativeAgentOutcome,
     manifest_issues: list[str],
     metrics: list[QualificationMetric],
+    *,
+    evaluation_level: str = "physics_qualification",
 ) -> QualificationStatus:
     """Preserve environment and Agent failures before physics comparison."""
 
@@ -82,6 +84,8 @@ def classify_qualification(
         return "FAIL_AGENT"
     if manifest_issues:
         return "FAIL_AGENT"
+    if evaluation_level == "public_validation":
+        return "PASS"
     if not metrics or any(
         metric.required and metric.passed is None
         for metric in metrics
@@ -302,6 +306,7 @@ def qualification_result(
     duration_seconds: float,
     message: str,
     expected_application: str | None = None,
+    evaluation_level: str = "physics_qualification",
 ) -> QualificationResult:
     """Convert one native outcome and evaluator evidence into one verdict."""
 
@@ -313,9 +318,11 @@ def qualification_result(
         outcome,
         manifest_issues,
         metrics,
+        evaluation_level=evaluation_level,
     )
     physics_pass = bool(
-        metrics
+        evaluation_level == "physics_qualification"
+        and metrics
         and all(
             not metric.required or metric.passed is True
             for metric in metrics
@@ -323,6 +330,7 @@ def qualification_result(
     )
     return QualificationResult(
         case_id=case_id,
+        evaluation_level=evaluation_level,
         status=verdict,
         workflow_state=outcome.summary.workflow_state.value,
         native_status=outcome.summary.native_status,
@@ -453,14 +461,15 @@ def markdown_report(report: QualificationReport) -> str:
         ),
         "",
         (
-            "| Case | Verdict | Workflow | Native status | Attempts | "
+            "| Case | Level | Verdict | Workflow | Native status | Attempts | "
             "Logical | Transport | Seconds |"
         ),
-        "|---|---:|---|---|---:|---:|---:|---:|",
+        "|---|---|---:|---|---|---:|---:|---:|---:|",
     ]
     for result in report.results:
         lines.append(
-            f"| {result.case_id} | {result.status} | "
+            f"| {result.case_id} | {result.evaluation_level} | "
+            f"{result.status} | "
             f"{result.workflow_state} | {result.native_status} | "
             f"{result.attempts} | {result.logical_model_requests} | "
             f"{result.transport_attempts} | "

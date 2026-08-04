@@ -1,0 +1,31 @@
+schema_version: 1
+task_id: two-liquid-lock-exchange
+title: Miscible two-liquid lock exchange
+prompt: >-
+  Starting from an empty case directory, build the Foundation v10
+  twoLiquidMixingFoam lock-exchange benchmark. Use a closed two-dimensional
+  tank 10 m long and 2 m high, extruded 2 m with a 200 by 40 by 1 mesh and
+  empty front/back faces. Preserve left, right, bottom, top, and frontBack
+  patches. Define water and a denser sludge-like miscible phase with the
+  Foundation phaseProperties and separate physicalProperties dictionaries.
+  Initialize U=0 and p_rgh consistently. Use setFields so alpha.sludge=1 in
+  the left half x<5 m and 0 in the right half, with closed no-slip walls and
+  gravity downward. Run to 100 s with initial deltaT=0.05 s, adjustable time
+  stepping, maxCo=maxAlphaCo=0.5, maxDeltaT=1 s, and write every 1 s.
+  Generate every native file, run blockMesh, checkMesh, setFields and
+  twoLiquidMixingFoam serially without reading or copying an existing case.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1800, max_mpi_ranks: 1, memory_mib: 3072}
+required_outputs: [mesh quality log, completed twoLiquidMixingFoam log, U p_rgh and alpha.sludge fields at 100 s]
+acceptance_requirements: [checkMesh reports Mesh OK, twoLiquidMixingFoam reaches 100 s and ends normally, required fields remain finite, alpha.sludge stays between zero and one]
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: twoLiquidMixingFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 100}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+  - {name: bounded-phase, kind: bounded_field, parameters: {field: alpha.sludge, minimum: 0, maximum: 1}}
+  - {name: final-phase, kind: requested_output, parameters: {path: 100/alpha.sludge}}
+  - {name: final-velocity, kind: requested_output, parameters: {path: 100/U}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

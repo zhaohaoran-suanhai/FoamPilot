@@ -1,0 +1,30 @@
+schema_version: 1
+task_id: pimple-blocked-channel
+title: Transient incompressible channel with a distributed blockage
+prompt: >-
+  Starting from an empty case directory, build the Foundation v10
+  pimpleFoam blocked-channel benchmark as three separated two-dimensional
+  channels, each 256 by 32 units and one empty cell thick. Use a uniform
+  256 by 32 mesh in the upper and lower channels. In the middle channel use
+  five conformal blocks whose lower and upper walls form a smooth narrowed
+  section between x=32 and x=224, with minimum height 16 units. Preserve
+  common inlet, outlet, walls, and frontAndBack patches. Use nu=1e-5 m2/s,
+  laminar Newtonian transport, inlet U=(1 0 0) m/s, fixed outlet p=0, and an
+  fvModel volume-fraction source that fills the distributed blockage before
+  solving. Integrate to 0.03 s, initial deltaT=1e-4 s, adjustable time step
+  with maxCo=5, and write every 0.001 s. Generate all files, run blockMesh,
+  checkMesh and the required native initialization, then pimpleFoam.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1200, max_mpi_ranks: 1, memory_mib: 3072}
+required_outputs: [mesh quality log, completed pimpleFoam log, U p and tracer fields at 0.03 s]
+acceptance_requirements: [checkMesh reports Mesh OK, pimpleFoam reaches 0.03 s and ends normally, required fields remain finite]
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: pimpleFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 0.03}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+  - {name: final-velocity, kind: requested_output, parameters: {path: 0.03/U}}
+  - {name: final-tracer, kind: requested_output, parameters: {path: 0.03/tracer}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

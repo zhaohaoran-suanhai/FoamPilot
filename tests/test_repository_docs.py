@@ -31,9 +31,9 @@ def test_repository_documents_the_offline_improvement_boundary() -> None:
 
     assert "foampilot improve analyze" in combined
     assert "foampilot improve compare" in combined
-    assert "offline" in combined
-    assert "no automatic promotion" in combined
+    assert "完全离线" in combined
+    assert "不会自动 promotion" in combined
     assert (
-        "Official examples are unavailable during blind authoring and repair."
+        "盲编写与 repair 期间无法访问官方 example"
         in combined
     )

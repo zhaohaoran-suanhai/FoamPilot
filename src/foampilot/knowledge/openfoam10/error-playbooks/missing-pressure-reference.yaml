@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.error.missing-pressure-reference
-title: Repair an unresolved pressure reference
+title: 修复未解析的压力参考
 fork: foundation
 version: "10"
 knowledge_type: error_playbook
@@ -9,10 +9,10 @@ models: [PISO, closed-domain]
 tags: [fatal-io, pressure, repair, fvsolution]
 applicability:
   conditions:
-    - The log explicitly reports that no reference cell can be set for p.
-    - Pressure boundary review confirms that no fixed-value pressure anchor exists.
+    - 日志明确报告无法为 p 设置 reference cell。
+    - 压力边界审查确认不存在 fixed-value 压力锚点。
   not_applicable:
-    - The log names another field or the domain already has a deliberate pressure anchor.
+    - 日志指向其他字段，或计算域已存在有意设置的压力锚点时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 pressure reference selection
@@ -24,13 +24,13 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Classify the exact fatal message, confirm the pressure nullspace, then make one minimal fvSolution repair in a new attempt.
+  summary: 先分类精确的 fatal message 并确认压力零空间，再在新的 attempt 中对 fvSolution 做一次最小修复。
   rules:
-    - Preserve the failed log and case before changing anything.
-    - Add one valid pRefCell and pRefValue under PISO.
-    - Re-run lint and the full approved pipeline in a new immutable attempt.
+    - 修改任何内容前，保留失败日志和算例。
+    - 在 PISO 下添加一个有效的 pRefCell 和 pRefValue。
+    - 在新的不可变 attempt 中重新运行 lint 和完整已批准流水线。
   failure_signals:
     - Unable to set reference cell for field p.
   validation:
-    - The new attempt no longer has the reference-cell fatal error.
-    - Completion, final-time, and continuity checks still pass.
+    - 新 attempt 不再出现 reference-cell fatal error。
+    - completion、final-time 与 continuity 检查仍然通过。

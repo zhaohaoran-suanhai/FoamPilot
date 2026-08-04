@@ -172,6 +172,35 @@ def test_explicit_installed_solver_routes_with_system_computed_high_confidence()
     )
 
 
+def test_explicit_disabled_thermal_stress_overrides_thermal_property_words():
+    profile = route_capability(
+        _task(
+            "Use solidEquilibriumDisplacementFoam for an isothermal elastic "
+            "beam with thermalStress disabled and alphav specified only as "
+            "a required material dictionary value."
+        ),
+        _environment("solidEquilibriumDisplacementFoam", "blockMesh"),
+        (),
+    )
+
+    assert profile.solver_executable == "solidEquilibriumDisplacementFoam"
+    assert profile.energy == "disabled"
+
+
+def test_explicit_shallow_water_solver_routes_to_shallow_water_physics():
+    profile = route_capability(
+        _task(
+            "Use shallowWaterFoam for transient shallow water flow over a "
+            "bed bump."
+        ),
+        _environment("shallowWaterFoam", "blockMesh"),
+        (),
+    )
+
+    assert profile.solver_executable == "shallowWaterFoam"
+    assert profile.physics_family == "shallow_water"
+
+
 def test_explicit_solver_that_is_not_installed_is_unresolved():
     with pytest.raises(RoutingError) as caught:
         route_capability(

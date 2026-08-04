@@ -231,6 +231,43 @@ def test_runner_wraps_parallel_solver_but_not_agent_shell(
     ]
 
 
+def test_runner_auto_falls_back_to_audited_host_execution(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    executor = RecordingExecutor(return_codes={"solve": 0})
+    config = _config().model_copy(update={"execution_backend": "auto"})
+    monkeypatch.setattr(
+        "foampilot.runtime.plan_runner.probe_bubblewrap",
+        lambda _bubblewrap: (False, "Operation not permitted"),
+    )
+    runner = PlanRunner(
+        runtime_config=config,
+        available_executables={"solve"},
+        workspace_root=tmp_path,
+        executor=executor,
+    )
+    case = tmp_path / "case"
+    case.mkdir()
+
+    result = runner.run(
+        case_dir=case,
+        commands=[_command("solve")],
+        budget=_budget(),
+    )
+
+    assert result.passed
+    assert result.steps[0].execution_backend == "host"
+    assert result.steps[0].backend_fallback_reason == (
+        "Operation not permitted"
+    )
+    invocation = executor.invocations[0]
+    assert invocation[0] == "/usr/bin/prlimit"
+    assert "/usr/local/bin/bwrap" not in invocation
+    assert invocation[-1] == "solve"
+    assert executor.shell_values == [False]
+
+
 def test_runner_allows_parallel_installed_utility_without_phase_label(
     tmp_path: Path,
 ) -> None:

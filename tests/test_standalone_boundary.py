@@ -3,6 +3,7 @@ from pathlib import Path
 
 def test_no_functional_source_worktree_or_legacy_references() -> None:
     root = Path(__file__).resolve().parents[1]
+    local_plans = root / "docs" / "superpowers"
     excluded_parts = {
         ".git",
         ".pytest_cache",
@@ -23,6 +24,8 @@ def test_no_functional_source_worktree_or_legacy_references() -> None:
         if not path.is_file():
             continue
         if excluded_parts.intersection(path.parts):
+            continue
+        if path.is_relative_to(local_plans):
             continue
         if path.name in {
             "LICENSE",

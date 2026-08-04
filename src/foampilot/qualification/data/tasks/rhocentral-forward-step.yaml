@@ -1,0 +1,29 @@
+schema_version: 1
+task_id: rhocentral-forward-step
+title: Supersonic flow over a forward-facing step
+prompt: >-
+  Starting from an empty case directory, build the Foundation v10
+  rhoCentralFoam forward-step benchmark. Use a two-dimensional channel from
+  x=0 to 3 m and y=0 to 1 m, with a 0.2 m high step beginning at x=0.6 m,
+  extruded 0.1 m. Use three conformal blocks with 48 by 16 cells below the
+  upstream step level, 48 by 64 above it upstream, and 192 by 64 downstream,
+  all one cell thick. Preserve inlet, outlet, bottom symmetry, top symmetry,
+  obstacle wall, and empty faces. Use laminar perfect-gas air and the
+  benchmark supersonic inlet state. Run rhoCentralFoam to 4 s with initial
+  deltaT=0.002 s, adjustable time stepping, maxCo=0.2, maxDeltaT=1 s, and
+  write every 0.1 s. Generate all files, run blockMesh and checkMesh, solve
+  serially, and do not read or copy a pre-existing case.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1200, max_mpi_ranks: 1, memory_mib: 3072}
+required_outputs: [mesh quality log, completed rhoCentralFoam log, p T rho and U fields at 4 s]
+acceptance_requirements: [checkMesh reports Mesh OK, rhoCentralFoam reaches 4 s and ends normally, required fields remain finite]
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: rhoCentralFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 4}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+  - {name: final-pressure, kind: requested_output, parameters: {path: 4/p}}
+  - {name: final-temperature, kind: requested_output, parameters: {path: 4/T}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

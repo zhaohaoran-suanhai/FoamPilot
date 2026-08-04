@@ -1,4 +1,4 @@
 interface:
-  display_name: "Author Native OpenFOAM Case"
-  short_description: "Author and verify native Foundation v10 cases"
-  default_prompt: "Use $openfoam-author-native-case to plan, author, run, and publicly validate a native OpenFOAM case."
+  display_name: "编写原生 OpenFOAM 算例"
+  short_description: "编写、执行并验证原生 Foundation v10 算例的完整闭环流程"
+  default_prompt: "使用 $openfoam-author-native-case 规划、编写、运行并公开验证一个原生 OpenFOAM 算例。"

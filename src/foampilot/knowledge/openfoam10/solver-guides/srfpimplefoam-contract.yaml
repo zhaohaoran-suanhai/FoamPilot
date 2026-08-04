@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.srfpimplefoam-contract
-title: SRFPimpleFoam single-rotating-frame transient contract
+title: SRFPimpleFoam 单旋转坐标系瞬态契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,11 +9,11 @@ models: [incompressible, transient, rotating-frame, SRF, PIMPLE, RANS]
 tags: [srfpimplefoam, srf, rotor, rotating, urel, freestream, pimple]
 applicability:
   conditions:
-    - The entire computational domain is expressed in one rotating reference frame.
-    - Foundation v10 SRFPimpleFoam solves relative velocity Urel with PIMPLE coupling.
+    - 整个计算域都在一个旋转参考系中表达。
+    - Foundation v10 SRFPimpleFoam 使用 PIMPLE 耦合求解相对速度 Urel。
   not_applicable:
-    - Only a subregion rotates or the task requires MRF or sliding-mesh interfaces.
-    - The solver advances absolute U rather than Urel.
+    - 只有子区域旋转，或任务需要 MRF/sliding-mesh interface 时不适用。
+    - 求解器推进绝对速度 U 而不是 Urel 时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 SRFPimpleFoam sources and official rotor2D dictionary pattern
@@ -25,15 +25,15 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 SRFPimpleFoam advances relative velocity Urel in a single rotating frame, so the field names, SRF freestream boundaries, viscous-stress scheme key, and PIMPLE controls must all use the SRF-specific semantics.
+  summary: Foundation v10 SRFPimpleFoam 在单一旋转参考系中推进相对速度 Urel，因此 field name、SRF freestream boundary、viscous-stress scheme key 与 PIMPLE 控制都必须采用 SRF 专用语义。
   rules:
-    - Provide SRFProperties, physicalProperties, momentumTransport, Urel, p, required turbulence fields, fvSchemes, fvSolution, and controlDict with application SRFPimpleFoam.
-    - On an inertial freestream, use SRFFreestreamVelocity for Urel with vector syntax such as UInf (1 0 0), not UInf uniform (1 0 0), and initialize its patch with value uniform (0 0 0); do not copy UInf into value, because that can make the initial flux appear to have specified inflow without adjustable outflow. For an external rotor surrounded by a circular far field, use p zeroGradient with pRefCell and pRefValue, and use inletOutlet with inletValue on k and epsilon; this is the coherent Foundation v10 SRF far-field combination. Use freestreamPressure only when an open pressure boundary is physically intended, and then provide both freestreamValue and value.
-    - Under divSchemes default none, provide div(phi,Urel) and the exact Foundation v10 stress key div((nuEff*dev2(T(grad(Urel))))), plus the transported turbulence-field entries required by the selected closure.
-    - For the transient external-rotor RANS baseline, use div(phi,Urel) Gauss limitedLinearV 1 and Gauss limitedLinear 1 for k and epsilon; these bounded limited schemes preserve the official SRF far-field behavior better than substituting upwind or linearUpwind without a task-specific accuracy study.
-    - Configure PIMPLE solvers and controls for Urel and p, not U, and preserve a valid pressure anchor through the freestream pressure boundary or a reference. Cover final iteration lookups with regex solver keys such as "Urel.*", "k.*", and "epsilon.*" or equivalent explicit Final aliases.
-    - When the task specifies a fixed deltaT, set adjustTimeStep no; maxCo remains a monitored stability limit rather than permission to change that requested time step.
-    - Use coherent rotor-wall Urel and turbulence wall functions for the selected RANS model.
+    - 提供 SRFProperties、physicalProperties、momentumTransport、Urel、p、必需 turbulence field、fvSchemes、fvSolution 与 controlDict，并将 application 设置为 SRFPimpleFoam。
+    - 惯性 freestream 上，Urel 使用 SRFFreestreamVelocity；UInf 采用 UInf (1 0 0) 等 vector syntax，而不是 UInf uniform (1 0 0)；patch 初始化为 value uniform (0 0 0)。不要把 UInf 复制到 value，否则初始通量可能表现为有 specified inflow 却无 adjustable outflow。圆形远场包围的外部 rotor 使用 p zeroGradient、pRefCell 与 pRefValue；k 和 epsilon 使用带 inletValue 的 inletOutlet，这是内部一致的 Foundation v10 SRF far-field 组合。只有物理上确实需要开放压力边界时才使用 freestreamPressure，并同时提供 freestreamValue 与 value。
+    - 在 divSchemes default none 下提供 div(phi,Urel) 与精确 Foundation v10 stress key div((nuEff*dev2(T(grad(Urel)))))，以及所选 closure 要求的 transported turbulence-field 项。
+    - 瞬态外部 rotor RANS 基线中，div(phi,Urel) 使用 Gauss limitedLinearV 1，k 与 epsilon 使用 Gauss limitedLinear 1。若没有任务专用精度研究，这些 bounded limited scheme 比直接替换为 upwind 或 linearUpwind 更能保持官方 SRF far-field 行为。
+    - 为 Urel 与 p（而不是 U）配置 PIMPLE solver 和 control，并通过 freestream pressure boundary 或 reference 保持有效压力锚点。用 "Urel.*"、"k.*"、"epsilon.*" 等 regex solver key 或等价显式 Final alias 覆盖 final iteration lookup。
+    - 任务指定固定 deltaT 时，设置 adjustTimeStep no；maxCo 仍只是被监测的稳定性限制，不代表允许改变要求的时间步。
+    - 为所选 RANS model 使用内部一致的 rotor-wall Urel 与 turbulence wall function。
   failure_signals:
     - freestreamPressure reports that freestreamValue is undefined.
     - SRFFreestreamVelocity expects a vector for UInf but reads the word uniform.
@@ -41,5 +41,5 @@ content:
     - fvSchemes reports div((nuEff*dev2(T(grad(Urel))))) as undefined because a U-based or Newtonian key was used.
     - fvSolution has a solver entry for U but not Urel.
   validation:
-    - Require Mesh OK, normal completion, finite Urel and pressure/turbulence fields, and the requested final time.
-    - Check global flow balance and rotating-frame velocity observables independently.
+    - 要求 Mesh OK、正常结束、Urel 与 pressure/turbulence 字段有限，并达到要求 final time。
+    - 独立检查全局流量平衡与旋转坐标系速度观测量。

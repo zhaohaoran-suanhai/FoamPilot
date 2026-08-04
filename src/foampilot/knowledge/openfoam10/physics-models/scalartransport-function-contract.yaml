@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.function.scalartransport-contract
-title: scalarTransport function-object dictionary contract
+title: scalarTransport function object 字典契约
 fork: foundation
 version: "10"
 knowledge_type: physics_model
@@ -15,11 +15,11 @@ activation_terms:
   - advection diffusion
 applicability:
   conditions:
-    - A Foundation v10 flow solver must also advance a passive or bounded volScalarField.
-    - The scalar is driven by an existing flux and should be solved from controlDict.
+    - Foundation v10 流动求解器还必须推进一个被动或有界 volScalarField。
+    - 该标量由已有通量驱动，并应从 controlDict 中配置求解。
   not_applicable:
-    - scalarTransportFoam is the primary application and owns the full solve.
-    - The field is static input data and should not be transported.
+    - scalarTransportFoam 是主 application 并负责完整求解时不适用。
+    - 字段是静态输入数据且不应输运时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 scalarTransport function-object source
@@ -31,17 +31,17 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: The Foundation v10 scalarTransport function object reads an explicit diffusion mode and uses the named scalar, flux, schemes, and fvSolution controls.
+  summary: Foundation v10 scalarTransport function object 读取显式 diffusion mode，并使用具名 scalar、flux、scheme 与 fvSolution 控制。
   rules:
-    - Prefer the native #includeFunc scalarTransport(fieldName) form when its defaults match the public task.
-    - In an explicit dictionary provide type scalarTransport, the scalar field name, and the required diffusion entry. Valid Foundation v10 diffusion modes are none, constant, and viscosity.
-    - For diffusion constant also provide D. For diffusion viscosity provide alphal and alphat. Do not omit diffusion even when no diffusion is intended; write diffusion none.
-    - Provide a readable scalar field, div(phi,schemesField), and the scalar solver controls requested by the selected bounded or unbounded transport path.
-    - Do not use a coded function object to replace this built-in behavior.
+    - 当默认值符合公开任务时，优先使用原生 #includeFunc scalarTransport(fieldName) 形式。
+    - 显式 dictionary 必须提供 type scalarTransport、scalar field name 和必需 diffusion 项。Foundation v10 有效 diffusion mode 为 none、constant 和 viscosity。
+    - diffusion constant 还要提供 D；diffusion viscosity 要提供 alphal 与 alphat。即使不需要扩散，也不能省略 diffusion，应写 diffusion none。
+    - 提供可读取的 scalar field、div(phi,schemesField)，以及所选有界或无界输运路径要求的 scalar solver control。
+    - 不得使用 coded function object 替代这一内置行为。
   failure_signals:
     - Startup reports keyword diffusion is undefined in controlDict/functions.
     - A constant diffusion mode cannot find D, or a viscosity mode cannot find alphal or alphat.
     - The scalar field is present but remains unchanged because no scalarTransport function object or solver was configured.
   validation:
-    - Require normal flow-solver completion and finite scalar values at the requested output times.
-    - Check task-derived scalar bounds or conservation separately from flow continuity.
+    - 要求 flow solver 正常结束，且 scalar 在要求输出时刻保持有限。
+    - 将任务给定的 scalar bound 或 conservation 与 flow continuity 分别检查。

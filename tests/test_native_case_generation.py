@@ -336,26 +336,41 @@ def test_bundle_prompt_keeps_diagnostics_outside_the_required_solve() -> None:
     )
 
     prompt = model.requests[0].system_prompt
-    assert "Generate only files and commands required to solve the case." in (
-        prompt
+    assert "只生成求解该算例必需的文件和命令" in prompt
+    assert (
+        "不要仅为制造评测证据而添加 function object、sampling、\n"
+        "extrema 或 residualControl"
+    ) in prompt
+    assert (
+        "求解成功后，由 evaluator 从 solver log 和写出字段计算观测量"
+    ) in prompt
+    assert (
+        "使用 MPI 时，设置 solver executable 和 mpi_ranks；绝不能生成\n"
+        "mpirun 或 orterun"
+    ) in prompt
+    assert (
+        "除非公开任务明确要求更严格 flag，否则只使用普通 checkMesh"
+    ) in prompt
+    assert "-allGeometry 或 -allTopology" in prompt
+
+
+def test_bundle_prompt_requires_applicable_retrieved_contract_rules() -> None:
+    model = RecordingModel([_plan()])
+
+    author_case_bundle(
+        _task(),
+        _environment("blockMesh", "icoFoam"),
+        _capability(),
+        model,
+        "public knowledge",
+        "portable skill",
+        budget=_model_window(ModelStage.GENERATION),
+        trace=InMemoryModelTraceSink(),
     )
-    assert (
-        "Do not add function objects, sampling, extrema, or residualControl "
-        "solely to produce evaluation evidence."
-    ) in prompt
-    assert (
-        "The evaluator derives measurements from solver logs and written "
-        "fields after a successful solve."
-    ) in prompt
-    assert (
-        "For MPI, set the solver executable and mpi_ranks; never emit "
-        "mpirun or orterun."
-    ) in prompt
-    assert (
-        "Use plain checkMesh unless the public task explicitly requires "
-        "stricter flags"
-    ) in prompt
-    assert "-allGeometry or -allTopology" in prompt
+
+    prompt = model.requests[0].system_prompt
+    assert "content.rules 视为必须落实的适用契约" in prompt
+    assert "公开任务明确冲突" in prompt
 
 
 def test_materializer_rejects_unsafe_and_protected_files(

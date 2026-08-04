@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.scalartransportfoam-contract
-title: scalarTransportFoam passive-scalar transport contract
+title: scalarTransportFoam 被动标量输运契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,11 +9,11 @@ models: [incompressible, passive-scalar, transport, steady, transient]
 tags: [scalartransportfoam, passive-scalar, scalar, transport, diffusivity, simple]
 applicability:
   conditions:
-    - A prescribed incompressible velocity field transports a passive scalar.
-    - Scalar diffusion is represented by one constant diffusivity.
+    - 给定不可压缩速度字段输运一个被动标量。
+    - 标量扩散由一个常数扩散率表示。
   not_applicable:
-    - The scalar changes density, momentum, or another solved flow property.
-    - Species reactions, compressibility, or tensor diffusivity are required.
+    - 标量会改变密度、动量或其他被求解流动属性时不适用。
+    - 需要组分反应、可压缩性或 tensor diffusivity 时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 scalarTransportFoam application source
@@ -25,15 +25,15 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 scalarTransportFoam solves steady or transient transport of field T by a prescribed U and flux phi, using simpleControl and a constant diffusivity DT.
+  summary: Foundation v10 scalarTransportFoam 使用 simpleControl 与常数扩散率 DT，求解给定 U 和 flux phi 对字段 T 的稳态或瞬态输运。
   rules:
-    - Provide readable T and U fields and flux-compatible boundary conditions on every mesh patch.
-    - Put the dimensioned scalar DT in constant/physicalProperties using the stream form DT DT [0 2 -1 0 0 0 0] value; the repeated name is required by the Foundation v10 dimensionedScalar lookup. The application does not read this input from constant/transportProperties.
-    - Provide a SIMPLE dictionary in system/fvSolution because the application constructs simpleControl before reading the fields, even when ddtSchemes selects a transient discretization.
-    - The advective div(phi,T) term makes the T equation an asymmetric matrix in general. Use an asymmetric-capable linear solver; the Foundation v10 scalar-transport pattern uses PBiCGStab with DILU. PCG with DIC is only for symmetric systems and is rejected when scalar advection is active.
-    - Define div(phi,T) and laplacian(DT,T) in system/fvSchemes, plus a non-none ddt scheme for transient transport.
-    - Supply a finite prescribed velocity before scalarTransportFoam. A separate native initialization solver may generate U and phi when the public task requires it.
-    - Control the scalar integration interval through controlDict and treat normal End as execution evidence rather than proof of scalar conservation.
+    - 提供可读取的 T 与 U 字段，并在每个 mesh patch 上使用通量兼容 boundary condition。
+    - 将 dimensioned scalar DT 放在 constant/physicalProperties 中，使用 stream 形式 DT DT [0 2 -1 0 0 0 0] value；Foundation v10 dimensionedScalar lookup 要求重复名称。application 不会从 constant/transportProperties 读取该输入。
+    - 在 system/fvSolution 中提供 SIMPLE dictionary，因为 application 在读取字段前就构造 simpleControl，即使 ddtSchemes 选择瞬态离散也一样。
+    - 对流项 div(phi,T) 通常使 T 方程成为非对称矩阵。使用支持非对称矩阵的 linear solver；Foundation v10 scalar-transport 模式使用带 DILU 的 PBiCGStab。带 DIC 的 PCG 只适用于对称系统，scalar advection 激活时会被拒绝。
+    - 在 system/fvSchemes 中定义 div(phi,T) 与 laplacian(DT,T)；瞬态输运还要使用非 none 的 ddt scheme。
+    - scalarTransportFoam 前提供有限的给定速度。公开任务需要时，可由独立原生 initialization solver 生成 U 与 phi。
+    - 通过 controlDict 控制标量积分区间；正常 End 是执行证据，而不是标量守恒证明。
   failure_signals:
     - Startup reports that SIMPLE is undefined in system/fvSolution.
     - Startup cannot find constant/physicalProperties or cannot look up DT.
@@ -41,6 +41,6 @@ content:
     - The T solve reports Unknown asymmetric matrix solver PCG because fvSolution selected a symmetric-only solver or preconditioner.
     - T or U is missing, has uncovered patches, or becomes non-finite.
   validation:
-    - Require mesh validity, successful velocity initialization when requested, normal completion, final time, and finite T and U.
-    - Check scalar inventory or boundary balance according to the public domain and boundary conditions.
-    - Compare a downstream scalar profile with an analytical or independently frozen reference when available.
+    - 要求网格有效；任务要求时速度初始化成功；正常结束并达到 final time；T 与 U 有限。
+    - 根据公开计算域与 boundary condition 检查 scalar inventory 或 boundary balance。
+    - 存在解析或独立冻结 reference 时，将下游 scalar profile 与其比较。

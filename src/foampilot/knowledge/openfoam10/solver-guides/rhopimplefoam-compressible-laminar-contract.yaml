@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.rhopimplefoam-compressible-laminar-contract
-title: rhoPimpleFoam compressible laminar contract
+title: rhoPimpleFoam 可压缩层流契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,10 +9,10 @@ models: [compressible, transient, laminar, Stokes, PIMPLE]
 tags: [rhopimplefoam, compressible, laminar, stokes, energy, rho, pimple]
 applicability:
   conditions:
-    - Foundation v10 rhoPimpleFoam advances transient compressible flow with a laminar momentum-transport model.
-    - The task uses the standard viscous stress rather than a viscoelastic constitutive model.
+    - Foundation v10 rhoPimpleFoam 使用层流动量输运模型推进瞬态可压缩流动。
+    - 任务使用标准黏性应力，而不是黏弹性本构模型。
   not_applicable:
-    - The task requires an incompressible solver, turbulence, or a non-Stokes laminar constitutive model.
+    - 任务需要不可压缩求解器、湍流或非 Stokes 层流本构模型时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 rhoPimpleFoam and Stokes momentum model sources
@@ -24,13 +24,13 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 rhoPimpleFoam couples compressible momentum, thermodynamic energy, and pressure with PIMPLE; its standard laminar runtime model is Stokes rather than Newtonian.
+  summary: Foundation v10 rhoPimpleFoam 通过 PIMPLE 耦合可压缩动量、热力学能量与压力；其标准层流 runtime model 是 Stokes，而不是 Newtonian。
   rules:
-    - For standard compressible laminar viscous flow, set simulationType laminar and model Stokes in constant/momentumTransport. Newtonian is not a registered Foundation v10 compressible laminarModel type.
-    - Provide coherent U, p, T or the selected energy variable, thermophysical physicalProperties, momentumTransport, fvSchemes, fvSolution, and controlDict.
-    - Under divSchemes default none, cover div(phi,U), the selected energy convection term such as div(phi,e) or div(phi,h), div(phi,K), the pressure-density regex key div(phi,(p|rho)), and the exact viscous-stress key div(((rho*nuEff)*dev2(T(grad(U))))).
-    - Configure explicit solver entries for rho and rhoFinal, p and pFinal, U and UFinal, and the selected energy field and its Final entry; Foundation v10 rhoPimpleFoam looks up rhoFinal during the final outer corrector even when rho uses a diagonal solver.
-    - Keep pressure dimensions and thermophysical energy form consistent with the selected fluid thermo package, and choose deltaT or adaptive Courant controls appropriate to compressible propagation and transport.
+    - 标准可压缩层流黏性流动在 constant/momentumTransport 中设置 simulationType laminar 和 model Stokes。Newtonian 不是已注册的 Foundation v10 可压缩 laminarModel type。
+    - 提供内部一致的 U、p、T 或所选 energy variable、热物性 physicalProperties、momentumTransport、fvSchemes、fvSolution 与 controlDict。
+    - 在 divSchemes default none 下覆盖 div(phi,U)、所选能量对流项（如 div(phi,e) 或 div(phi,h)）、div(phi,K)、pressure-density regex key div(phi,(p|rho))，以及精确黏性应力 key div(((rho*nuEff)*dev2(T(grad(U)))))。
+    - 为 rho/rhoFinal、p/pFinal、U/UFinal 以及所选 energy field/其 Final 项配置显式 solver entry；即使 rho 使用 diagonal solver，Foundation v10 rhoPimpleFoam 仍会在最后 outer corrector 中查找 rhoFinal。
+    - pressure dimension 与 thermophysical energy form 必须与所选 fluid thermo package 一致，并选择适合可压缩传播与输运的 deltaT 或自适应 Courant 控制。
   failure_signals:
     - Startup reports Unknown laminarModel type Newtonian and lists Stokes among the valid types.
     - fvSolution reports that rhoFinal is undefined in solvers after model and field construction succeeds.
@@ -38,5 +38,5 @@ content:
     - fvSchemes reports that div(phi,(p|rho)) is undefined after all thermophysical models were constructed.
     - physicalProperties, momentumTransport, rho, p, U, or the selected energy field is unreadable or dimensionally inconsistent.
   validation:
-    - Require Mesh OK, normal completion through the requested time, finite primitive and thermodynamic fields, and acceptable conservation.
-    - Check task-derived pressure, temperature, density, velocity, mass, or energy observables without target-case leakage.
+    - 要求 Mesh OK、正常推进到要求时刻、primitive 与热力学字段有限且守恒可接受。
+    - 在不泄漏目标算例的前提下，检查任务给定的压力、温度、密度、速度、质量或能量观测量。

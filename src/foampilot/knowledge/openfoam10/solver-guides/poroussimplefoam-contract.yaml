@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.poroussimplefoam-contract
-title: porousSimpleFoam steady Darcy-Forchheimer contract
+title: porousSimpleFoam 稳态 Darcy-Forchheimer 契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,10 +9,10 @@ models: [incompressible, steady, porous, DarcyForchheimer, SIMPLE]
 tags: [poroussimplefoam, porous, darcyforchheimer, resistance, cellzone, coordinatesystem]
 applicability:
   conditions:
-    - Foundation v10 porousSimpleFoam solves steady incompressible flow with resistance in one or more porous cell zones.
-    - Darcy and Forchheimer resistance coefficients and their local coordinate axes are known.
+    - Foundation v10 porousSimpleFoam 求解一个或多个 porous cell zone 中含阻力的稳态不可压缩流动。
+    - Darcy 与 Forchheimer 阻力系数及其局部坐标轴已知。
   not_applicable:
-    - The task requires compressible, transient, deforming, or unresolved pore-scale flow.
+    - 任务需要可压缩、瞬态、变形或未解析孔隙尺度流动时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 porousSimpleFoam application source
@@ -24,20 +24,16 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 porousSimpleFoam reads native porosity models separately from generic fvModels and applies Darcy-Forchheimer resistance in declared cell zones and local coordinate axes.
+  summary: Foundation v10 porousSimpleFoam 独立于通用 fvModels 读取原生 porosity model，并在已声明 cell zone 与局部坐标轴中施加 Darcy-Forchheimer 阻力。
   rules:
-    - Declare native resistance models in constant/porosityProperties. For Darcy-Forchheimer resistance, use type DarcyForchheimer with the intended cellZone, d, f, and coordinateSystem; a generic constant/fvModels explicitPorositySource is not the native porosity-model list read by porousSimpleFoam.
-    - Treat the startup message "No porosity models present" as proof that the resistance dictionary, model type, or cell-zone selection was not loaded, even if a generic fvModel reports that it was selected.
-    - Create and verify every referenced porous cellZone before solving, and keep local Darcy and Forchheimer axes orthonormal and aligned with the physical porous medium.
-    - When a duct or porous section changes direction, rotate the full local cross-section and its face normals together with the centerline, including the shared inlet interface of the rotated block. Build that interface by transforming its vertices about the declared rotation origin. If a straight upstream block is attached, place all of its inlet vertices on one common plane normal to the inlet axis at the specified upstream axial coordinate while retaining the corresponding transverse coordinates of the transformed interface. Do not move every interface vertex upstream by the same vector, recenter the face, or renormalize its projected width; those choices create a slanted inlet face or alter the benchmark area and pressure loss. Also rotate the resistance and outlet axes into the same frame.
-    - For a high-flow k-epsilon RANS duct baseline, put profile turbulentBL in flowRateInletVelocity, use turbulentIntensityKineticEnergyInlet for k and turbulentMixingLengthDissipationRateInlet for epsilon, and use patch-compatible inletOutlet conditions at the outlet. A five-percent inlet intensity and mixing length near one tenth of the hydraulic width are reasonable starting values when the task does not prescribe turbulence quantities. Apply model-consistent wall functions to k, epsilon, and nut on every wall-class patch; porous-section slip walls still use turbulence wall functions because slip is the U condition, not a reason to turn turbulence fields into zeroGradient or calculated patches.
+    - 在 constant/porosityProperties 中声明原生 resistance model。Darcy-Forchheimer 阻力使用 type DarcyForchheimer，并提供目标 cellZone、d、f 与 coordinateSystem；通用 constant/fvModels explicitPorositySource 不是 porousSimpleFoam 读取的原生 porosity-model 列表。
+    - 将启动消息 "No porosity models present" 视为 resistance dictionary、model type 或 cell-zone selection 未加载的证据，即使通用 fvModel 报告已被选择也不例外。
+    - 求解前创建并验证每个被引用的 porous cellZone，同时让局部 Darcy 与 Forchheimer 轴正交，并与物理 porous medium 对齐。
+    - duct 或 porous section 改变方向时，随中心线一起旋转完整局部截面及其 face normal，包括旋转 block 的共享入口界面。通过围绕声明 rotation origin 变换顶点来构建该界面。若连接直线上游 block，其全部入口顶点必须位于一个垂直于 inlet axis、处在指定上游轴向坐标的公共平面，同时保留变换后界面对应的横向坐标。不得将每个 interface vertex 沿相同 vector 上移、重置 face 中心或重新归一化投影宽度；这些操作会形成倾斜入口面，或改变基准面积与压降。resistance axis 和 outlet axis 也要旋转到同一坐标系。
+    - 高流量 k-epsilon RANS duct 基线中，在 flowRateInletVelocity 设置 profile turbulentBL；k 使用 turbulentIntensityKineticEnergyInlet，epsilon 使用 turbulentMixingLengthDissipationRateInlet；出口使用与 patch 兼容的 inletOutlet condition。当任务未规定湍流量时，5% 入口强度和约为水力宽度十分之一的 mixing length 可作为起点。每个 wall-class patch 上的 k、epsilon 与 nut 都采用模型一致 wall function；porous section 的 slip wall 仍使用 turbulence wall function，因为 slip 是 U condition，不是把湍流字段改为 zeroGradient 或 calculated patch 的理由。
     - >-
-      Initialize strictly positive internal k and epsilon values that are
-      consistent with the inlet scale. Do not use zero merely because U starts
-      from rest; the k-epsilon model evaluates nut from k and epsilon during
-      startup, and zero internal turbulence fields can trigger a floating-point
-      divide before inlet values propagate.
-    - Use steadyState discretization, a complete SIMPLE pressure-velocity setup, coherent inlet and outlet pressure or velocity boundaries, and finite non-negative resistance coefficients. For the Foundation v10 angled porous-duct baseline use Gauss linear gradients, corrected laplacians and surface-normal gradients, nUCorrectors 2, and nNonOrthogonalCorrectors 0; do not enable consistent SIMPLE unless the pressure-drop response has been deliberately revalidated. A robust starting point uses equation relaxation 0.7 for U and 0.9 for k and epsilon; weaker relaxation can leave a fixed-iteration qualification materially unconverged.
+      将 internal k 与 epsilon 初始化为严格正值，并与入口尺度一致。不要仅因 U 从静止开始就使用零值；k-epsilon 模型在启动期间根据 k 与 epsilon 计算 nut，零 internal turbulence field 可能在入口值传播前触发浮点除零。
+    - 使用 steadyState 离散、完整 SIMPLE 压力-速度设置、内部一致的入口/出口压力或速度边界，以及有限非负阻力系数。Foundation v10 斜向 porous-duct 基线采用 Gauss linear gradient、corrected laplacian 与 surface-normal gradient、nUCorrectors 2 和 nNonOrthogonalCorrectors 0；除非已经专门重新验证压降响应，否则不要启用 consistent SIMPLE。稳健起点是 U 的 equation relaxation 0.7，k 与 epsilon 为 0.9；更弱 relaxation 可能使固定迭代评测明显未收敛。
   failure_signals:
     - Startup prints No porosity models present although porous resistance is required.
     - The configured cellZone is absent or empty.
@@ -46,5 +42,5 @@ content:
     - Startup traps in kEpsilon::correctNut after reporting bounding k or epsilon with a zero minimum and zero average.
     - The iteration cap is reached with non-negligible cumulative continuity error or inlet-outlet imbalance even though the process exits normally.
   validation:
-    - Require Mesh OK, a loaded non-empty porosity model, normal completion, finite fields, and acceptable continuity.
-    - Check inlet-to-outlet flow balance and pressure loss independently of solver return code.
+    - 要求 Mesh OK、加载非空 porosity model、正常结束、字段有限且 continuity 可接受。
+    - 独立于 solver return code 检查入口-出口流量平衡与压降。

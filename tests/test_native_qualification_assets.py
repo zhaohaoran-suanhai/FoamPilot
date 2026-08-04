@@ -133,8 +133,8 @@ def test_native_authoring_skill_keeps_optional_diagnostics_external() -> None:
         / "SKILL.md"
     ).read_text(encoding="utf-8")
 
-    assert "The Runner owns MPI launchers" in skill
-    assert "Keep optional diagnostics outside the required solve plan." in skill
+    assert "Runner 负责 MPI launcher" in skill
+    assert "将可选诊断排除在必需求解计划之外" in skill
     assert (
         "configure native volume-field-value function objects" not in skill
     )
@@ -151,12 +151,11 @@ def test_native_authoring_skill_separates_all_time_log_evidence() -> None:
     ).read_text(encoding="utf-8")
 
     assert (
-        "When the public task explicitly requires all-time log evidence"
+        "公开任务明确要求全时段日志证据时"
         in skill
     )
     assert (
-        "For ordinary output-time measurements, let the evaluator inspect "
-        "written fields"
+        "普通输出时刻的测量应由 evaluator 检查写出字段"
         in skill
     )
 
@@ -204,7 +203,7 @@ def test_volume_fraction_initializer_uses_control_dict_function_object() -> None
 
     for fragment in (
         "system/controlDict",
-        "without -func",
+        "不带 -func",
         "-time constant",
     ):
         assert fragment in rules
@@ -226,7 +225,7 @@ def test_solver_contracts_cover_observed_foundation_v10_failure_shields() -> Non
         "of10.solver.potentialfoam-contract": (
             "div(div(phi,U))",
             "-writep",
-            "solver for p",
+            "为 p 配置 linear solver",
         ),
         "of10.solver.simplefoam-rans-contract": (
             "executable simpleFoam",
@@ -239,13 +238,13 @@ def test_solver_contracts_cover_observed_foundation_v10_failure_shields() -> Non
         ),
         "of10.solver.rhocentralfoam-contract": (
             "timeFormat general",
-            "initial directory named 0",
+            "名为 0 的初始目录",
             "(rho|rhoU|rhoE)",
             "solver diagonal",
         ),
         "of10.solver.buoyantfoam-contract": (
             "div(phi,K)",
-            "single scalar values",
+            "单个 scalar value",
             "momentumPredictor no",
             "bounded Gauss limitedLinear 0.2",
             "rho 1.0",
@@ -255,15 +254,15 @@ def test_solver_contracts_cover_observed_foundation_v10_failure_shields() -> Non
             "DT DT [0 2 -1 0 0 0 0]",
             "SIMPLE",
             "laplacian(DT,T)",
-            "asymmetric matrix",
+            "非对称矩阵",
             "PBiCGStab",
             "DILU",
         ),
         "of10.solver.pimplefoam-maxwell-contract": (
             "selectionMode all",
-            "U source subdictionary",
-            "explicit vector",
-            "implicit scalar",
+            "U source 子字典",
+            "显式 vector",
+            "隐式 scalar",
         ),
         "of10.solver.rhopimplefoam-compressible-laminar-contract": (
             "model Stokes",
@@ -286,7 +285,7 @@ def test_solver_contracts_cover_observed_foundation_v10_failure_shields() -> Non
             "Gauss limitedLinearV 1",
             "adjustTimeStep no",
             "UInf (1 0 0)",
-            "not UInf uniform",
+            "而不是 UInf uniform",
         ),
         "of10.solver.mhdfoam-contract": (
             "BPISO",
@@ -315,7 +314,7 @@ def test_solver_contracts_cover_observed_foundation_v10_failure_shields() -> Non
             "selectionMode all",
             "compressible::turbulentTemperatureCoupledBaffleMixed",
             "checkMesh -region <name>",
-            "no -allRegions",
+            "没有 -allRegions",
             "rhoFinal",
             "div(phi,(p|rho))",
             "radiationModel none",
@@ -339,7 +338,7 @@ def test_native_authoring_skill_pairs_constraint_patch_types() -> None:
     ).read_text(encoding="utf-8")
 
     assert (
-        "mesh type `symmetryPlane` requires field type `symmetryPlane`"
+        "mesh type 为 `symmetryPlane` 时，field type 也必须是"
         in skill
     )
     assert '#includeEtc "caseDicts/setConstraintTypes"' in skill
@@ -356,14 +355,14 @@ def test_native_authoring_skill_requires_multiblock_face_conformity() -> None:
     ).read_text(encoding="utf-8")
     normalized = " ".join(skill.split())
 
-    assert "every shared face has identical subdivisions" in normalized
-    assert "check the full adjacency graph" in normalized
-    assert "named subdivision variables" in normalized
-    assert "grading-compatible point locations" in normalized
-    assert "counter-clockwise in x-y" in normalized
-    assert "never write `-$name`" in normalized
-    assert "fluid-solid interface" in normalized
-    assert "tangential subdivisions" in normalized
+    assert "每个共享面在两个切向方向上的划分数相同" in normalized
+    assert "检查完整邻接图" in normalized
+    assert "定义具名变量" in normalized
+    assert "点位与 grading 兼容" in normalized
+    assert "在 x-y 平面按逆时针排列" in normalized
+    assert "负坐标绝不能写成 `-$name`" in normalized
+    assert "流固界面" in normalized
+    assert "切向划分" in normalized
 
 
 def test_native_authoring_skill_covers_topology_geometry_and_budget_shields() -> None:
@@ -377,8 +376,8 @@ def test_native_authoring_skill_covers_topology_geometry_and_budget_shields() ->
     ).read_text(encoding="utf-8")
     normalized = " ".join(skill.split())
 
-    assert "reuse the exact same vertex labels" in normalized
+    assert "复用完全相同的 vertex label" in normalized
     assert "-merge-points" in normalized
     assert "defaultFaces" in normalized
-    assert "sum of all command timeouts" in normalized
-    assert "full local frame and cross-section" in normalized
+    assert "命令 timeout 总和" in normalized
+    assert "完整局部坐标系与截面" in normalized

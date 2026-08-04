@@ -1,0 +1,30 @@
+schema_version: 1
+task_id: laminar-planar-contraction
+title: Viscoelastic planar contraction flow
+prompt: >-
+  Starting from an empty case directory, build a two-dimensional 4-to-1
+  planar contraction benchmark for pimpleFoam. Use an upstream half-height
+  of 0.0128 m, a downstream half-height of 0.0032 m, contraction plane at
+  x=0, an upstream length 0.0128 m, downstream length 0.0256 m, and a
+  one-cell empty extrusion. Use a conformal multi-block mesh refined near
+  the re-entrant corner. Preserve inlet, outlet, wall, symmetry, and empty
+  patches. Use the laminar Maxwell model with the Foundation benchmark
+  physical dimensions, prescribe a fully developed inlet velocity with
+  mean 0.01 m/s, fixed outlet pressure, no-slip wall, and symmetry on the
+  centreline. Integrate to 0.25 s with deltaT=2e-4 s and write every 0.01 s.
+  Generate U, p, sigma and every dictionary, run blockMesh and checkMesh,
+  solve serially, and do not read or copy an existing tutorial.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 900, max_mpi_ranks: 1, memory_mib: 2048}
+required_outputs: [mesh quality log, completed pimpleFoam log, U p and sigma fields at 0.25 s]
+acceptance_requirements: [checkMesh reports Mesh OK, pimpleFoam reaches 0.25 s and ends normally, required fields remain finite]
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: pimpleFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 0.25}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+  - {name: final-velocity, kind: requested_output, parameters: {path: 0.25/U}}
+  - {name: final-stress, kind: requested_output, parameters: {path: 0.25/sigma}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

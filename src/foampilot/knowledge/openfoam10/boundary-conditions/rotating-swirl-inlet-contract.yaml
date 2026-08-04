@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.boundary.rotating-swirl-inlet-contract
-title: Native cylindrical and swirling inlet velocity contract
+title: 原生圆柱坐标与旋流入口速度契约
 fork: foundation
 version: "10"
 knowledge_type: boundary_condition
@@ -16,10 +16,10 @@ activation_terms:
   - rpm
 applicability:
   conditions:
-    - A velocity inlet requires axial, radial, or tangential motion about a declared axis.
-    - A native Foundation v10 boundary condition should replace custom coded patch logic.
+    - 速度入口需要围绕已声明轴线定义轴向、径向或切向运动。
+    - 应使用原生 Foundation v10 边界条件替代自定义 coded patch 逻辑。
   not_applicable:
-    - The patch has uniform Cartesian velocity without rotation.
+    - patch 只有均匀 Cartesian 速度且不存在旋转时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 cylindricalInletVelocity patch-field source
@@ -31,16 +31,16 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Native Foundation v10 cylindrical and swirling inlet patch fields need a complete geometric frame and velocity functions before any utility reads the field.
+  summary: 原生 Foundation v10 圆柱坐标与旋流入口 patch field 必须在任何 utility 读取字段前提供完整几何坐标系和速度函数。
   rules:
-    - For cylindricalInletVelocity provide origin, a non-zero axis, axialVelocity, radialVelocity, rpm, and an initialized value entry.
-    - For swirlInletVelocity provide origin, a non-zero axis, axialVelocity, radialVelocity, tangentialVelocity, and value.
-    - For swirlFlowRateInletVelocity provide flowRate, rpm, value, and explicitly state origin and axis for deterministic geometry even though the implementation can infer defaults.
-    - Keep the frame consistent with the mesh and inlet normal. Check units and signs of rpm, flow rate, and axial velocity independently.
-    - refineHexMesh -noFields can avoid mapping fields during refinement, but it does not make an incomplete boundary dictionary valid for the later solver. Every written field must still construct successfully.
+    - cylindricalInletVelocity 必须提供 origin、非零 axis、axialVelocity、radialVelocity、rpm 和已初始化的 value 项。
+    - swirlInletVelocity 必须提供 origin、非零 axis、axialVelocity、radialVelocity、tangentialVelocity 和 value。
+    - swirlFlowRateInletVelocity 必须提供 flowRate、rpm 与 value；即使实现能够推断默认值，也要显式声明 origin 和 axis，以获得确定性几何定义。
+    - 坐标系必须与网格和入口法向一致，并分别检查 rpm、flow rate 和 axial velocity 的单位与符号。
+    - refineHexMesh -noFields 可以避免细化期间映射字段，但不能使不完整的 boundary dictionary 在后续 solver 中变为合法；每个写出字段仍必须能够成功构造。
   failure_signals:
     - blockMesh succeeds but a field-reading utility reports origin, axis, axialVelocity, radialVelocity, tangentialVelocity, flowRate, rpm, or value as undefined.
     - The solver starts with a zero or reversed inlet because the declared axis and patch normal disagree.
   validation:
-    - Require all preprocessing utilities to read U successfully before the main solve.
-    - Confirm the inlet velocity has the requested axial flux and tangential direction without using a target-case field.
+    - 主要求解前，要求所有 preprocessing utility 都能成功读取 U。
+    - 在不使用目标算例字段的前提下，确认入口速度具有要求的轴向通量与切向方向。

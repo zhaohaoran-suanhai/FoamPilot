@@ -1,0 +1,28 @@
+schema_version: 1
+task_id: laminar-planar-couette
+title: Transient Maxwell planar Couette flow
+prompt: >-
+  Starting from an empty case directory, build a two-dimensional periodic
+  planar Couette benchmark in a 0.1 m square extruded 0.01 m, with a uniform
+  20 by 20 by 1 mesh. Pair the x-normal faces cyclically, make the lower wall
+  stationary and the upper wall move at (1 0 0) m/s, and make front/back
+  empty. Use pimpleFoam with constant base nu=1.5e-5 m2/s and the laminar
+  Maxwell model with nuM=1 m2/s and lambda=5 s. Initialize U, p, and sigma
+  to zero, use a consistent closed-domain pressure reference, integrate from
+  0 to 25 s with deltaT=0.005 s, and write every 0.5 s. Generate all native
+  files, run blockMesh and checkMesh, solve serially, and do not read or copy
+  a pre-existing case.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 900, max_mpi_ranks: 1, memory_mib: 2048}
+required_outputs: [mesh quality log, completed pimpleFoam log, U p and sigma fields at 25 s]
+acceptance_requirements: [checkMesh reports Mesh OK, pimpleFoam reaches 25 s and ends normally, required fields remain finite]
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: pimpleFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 25}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+  - {name: final-velocity, kind: requested_output, parameters: {path: 25/U}}
+  - {name: final-stress, kind: requested_output, parameters: {path: 25/sigma}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

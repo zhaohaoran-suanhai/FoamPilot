@@ -1,4 +1,4 @@
 interface:
-  display_name: "rhoCentralFoam Case"
-  short_description: "Author and verify compressible central-flow cases"
-  default_prompt: "Use $openfoam-rhocentral-case to author or repair a Foundation v10 rhoCentralFoam case."
+  display_name: "rhoCentralFoam 可压缩流算例"
+  short_description: "编写、修复并验证 Foundation v10 中心格式可压缩流算例"
+  default_prompt: "使用 $openfoam-rhocentral-case 编写或修复一个 Foundation v10 rhoCentralFoam 算例。"

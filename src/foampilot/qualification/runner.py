@@ -75,10 +75,13 @@ def load_reference(case_id: str) -> dict[str, object]:
 
 def validate_qualification_inputs(
     case_ids: list[str],
+    *,
+    public_validation_only: set[str] | None = None,
 ) -> list[str]:
     """Validate every selected task and evaluator asset before execution."""
 
     issues: list[str] = []
+    public_only = public_validation_only or set()
     for case_id in case_ids:
         try:
             task = load_task_spec(
@@ -88,6 +91,9 @@ def validate_qualification_inputs(
                 raise ValueError(
                     f"task_id {task.task_id!r} does not match {case_id!r}"
                 )
+            if case_id in public_only:
+                _expected_application(task)
+                continue
             validation = load_private_validation(case_id)
             reference = load_reference(case_id)
             if validation.case_id != case_id:
@@ -101,6 +107,21 @@ def validate_qualification_inputs(
         except Exception as error:
             issues.append(f"{case_id}: {type(error).__name__}: {error}")
     return issues
+
+
+def _expected_application(task) -> str:
+    candidates = [
+        check.parameters.get("executable")
+        for check in task.public_checks
+        if check.kind == "command_executed"
+        and isinstance(check.parameters.get("executable"), str)
+    ]
+    if len(candidates) != 1:
+        raise ValueError(
+            "public-validation task must declare exactly one "
+            "command_executed target solver"
+        )
+    return str(candidates[0])
 
 
 def evaluate_case_copy(
@@ -130,6 +151,8 @@ def qualify_outcome(
     *,
     artifact_store: ArtifactStore,
     duration_seconds: float,
+    evaluation_level: str = "physics_qualification",
+    expected_application: str | None = None,
 ) -> dict[str, object]:
     """Create one raw report record from native and evaluator evidence."""
 
@@ -137,7 +160,8 @@ def qualify_outcome(
     metrics: list[QualificationMetric] = []
     message = outcome.summary.message
     if (
-        outcome.status == "PUBLIC_VALIDATION_PASS"
+        evaluation_level == "physics_qualification"
+        and outcome.status == "PUBLIC_VALIDATION_PASS"
         and not manifest_issues
     ):
         case_dir = native_case_dir(outcome)
@@ -171,9 +195,12 @@ def qualify_outcome(
         "metrics": metrics,
         "duration_seconds": duration_seconds,
         "message": message,
-        "expected_application": load_private_validation(
-            case_id
-        ).expected_application,
+        "expected_application": (
+            expected_application
+            if evaluation_level == "public_validation"
+            else load_private_validation(case_id).expected_application
+        ),
+        "evaluation_level": evaluation_level,
     }
 
 
@@ -182,6 +209,7 @@ def _run_one(
     *,
     run_root: Path,
     gateway: ModelGateway,
+    evaluation_level: str = "physics_qualification",
 ) -> dict[str, object]:
     task = load_task_spec(qualification_data_path("tasks", case_id))
     config = RuntimeConfig.local_foundation_v10().model_copy(
@@ -199,6 +227,12 @@ def _run_one(
         outcome,
         artifact_store=store,
         duration_seconds=time.monotonic() - started,
+        evaluation_level=evaluation_level,
+        expected_application=(
+            _expected_application(task)
+            if evaluation_level == "public_validation"
+            else None
+        ),
     )
 
 
@@ -236,7 +270,15 @@ def run_qualification_suite(
     if workers not in {1, 2}:
         raise ValueError("workers must be 1 or 2")
     selected = [item.case_id for item in suite.cases]
-    issues = validate_qualification_inputs(selected)
+    public_only = {
+        item.case_id
+        for item in suite.cases
+        if item.evaluation_level == "public_validation"
+    }
+    issues = validate_qualification_inputs(
+        selected,
+        public_validation_only=public_only,
+    )
     if issues:
         raise ValueError(
             "qualification inputs are invalid: " + "; ".join(issues)
@@ -259,22 +301,27 @@ def run_qualification_suite(
         )
     raw_results: list[dict[str, object]] = []
     parallel = [
-        item.case_id
+        item
         for item in suite.cases
         if not item.exclusive
     ]
     with ThreadPoolExecutor(
         max_workers=min(workers, suite.max_workers)
     ) as executor:
-        futures = {
-            executor.submit(
+        futures = {}
+        for item in parallel:
+            arguments = {
+                "run_root": run_root,
+                "gateway": active_gateway,
+            }
+            if item.evaluation_level != "physics_qualification":
+                arguments["evaluation_level"] = item.evaluation_level
+            future = executor.submit(
                 _run_one,
-                case_id,
-                run_root=run_root,
-                gateway=active_gateway,
-            ): case_id
-            for case_id in parallel
-        }
+                item.case_id,
+                **arguments,
+            )
+            futures[future] = item.case_id
         for future in as_completed(futures):
             raw_results.append(future.result())
     for item in suite.cases:
@@ -285,6 +332,7 @@ def run_qualification_suite(
                 item.case_id,
                 run_root=run_root,
                 gateway=active_gateway,
+                evaluation_level=item.evaluation_level,
             )
         )
 

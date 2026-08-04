@@ -25,6 +25,10 @@ class SuiteCase(StrictModel):
     case_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]*$")
     role: SuiteRole
     exclusive: bool = False
+    evaluation_level: Literal[
+        "physics_qualification",
+        "public_validation",
+    ] = "physics_qualification"
 
 
 class QualificationSuite(StrictModel):

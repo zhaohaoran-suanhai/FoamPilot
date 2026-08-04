@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.solver.interfoam-vof-contract
-title: interFoam incompressible two-fluid VOF contract
+title: interFoam 不可压缩两流体 VOF 契约
 fork: foundation
 version: "10"
 knowledge_type: solver_guide
@@ -9,10 +9,10 @@ models: [incompressible, isothermal, immiscible, vof, transient]
 tags: [interfoam, multiphase, vof, free-surface]
 applicability:
   conditions:
-    - Two incompressible isothermal immiscible fluids require transient interface capture.
-    - A phase-fraction field, velocity, and reduced pressure are defined on every patch.
+    - 两种不可压缩、等温、不混溶流体需要瞬态界面捕获。
+    - 每个 patch 都定义了相分数字段、速度和缩减压力。
   not_applicable:
-    - The fluids are miscible, compressible, or require resolved phase change.
+    - 流体可混溶、可压缩或需要解析相变时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 interFoam application
@@ -24,20 +24,20 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: interFoam advances two incompressible immiscible fluids with a VOF phase fraction, PIMPLE pressure-velocity coupling, interface compression, and gravity.
+  summary: interFoam 使用 VOF 相分数、PIMPLE 压力-速度耦合、界面压缩与重力，推进两种不可压缩不混溶流体。
   rules:
-    - In Foundation v10, provide constant/phaseProperties with the phase names and sigma, plus one constant/physicalProperties.<phase> dictionary per declared phase; each phase dictionary supplies viscosityModel, nu, and rho. Do not replace these grouped files with one aggregate constant/physicalProperties dictionary.
-    - Provide momentumTransport, g, U, p_rgh, and the named phase-fraction field.
-    - Use pressure dimensions [1 -1 -2 0 0 0 0] for p_rgh in Foundation v10 interFoam; use prghTotalPressure rather than totalPressure on an atmosphere patch.
-    - In system/fvSolution, provide phase-fraction controls and linear-solver settings for pcorr, pcorrFinal, p_rgh, p_rghFinal, and U. The final entries may inherit their base entries, for example pcorrFinal from $pcorr.
-    - When divSchemes uses default none, explicitly provide div(rhoPhi,U), div(phi,alpha), div(phirb,alpha), and the Foundation v10 laminar viscous-stress key div(((rho*nuEff)*dev2(T(grad(U))))). A missing exact key is a startup dictionary error, not a stability failure.
-    - Use positive transient time controls and limit both the flow and phase Courant numbers.
-    - Make the pressure reference and every phase, velocity, and pressure boundary condition consistent with the mesh patches.
-    - In Foundation v10, use constantAlphaContactAngle for a constant wall contact angle; alphaContactAngle is not a registered patch-field type.
-    - For a liquid reservoir connected through an open inlet, use alpha inletOutlet with inletValue and value equal to the reservoir phase, pair U with pressureInletOutletVelocity, and anchor p_rgh consistently. A fixedValue phase fraction prevents liquid from leaving through the same opening and can corrupt the phase inventory.
-    - For a low-speed capillary-rise baseline between prescribed-pressure reservoirs, use fixedValue p_rgh at both the liquid inlet and open atmosphere, pressureInletOutletVelocity for U, and PIMPLE momentumPredictor no with nCorrectors 3. Reserve prghTotalPressure for an atmosphere whose dynamic total-pressure semantics are actually required.
-    - For the Foundation v10 low-speed capillary-rise baseline, start with div(phi,alpha) Gauss interfaceCompression vanLeer 1, div(rhoPhi,U) Gauss upwind, nAlphaCorr 1, and nAlphaSubCycles 2. Add MULESCorr, extra limiter iterations, a separate div(phirb,alpha), or higher-order momentum convection only when the task calls for them and revalidate both interface height and phase inventory; those changes are not neutral benchmark refinements.
-    - Use a declared initialization utility before the solver when the initial interface is regional.
+    - Foundation v10 中，提供包含 phase name 与 sigma 的 constant/phaseProperties，并为每个声明 phase 提供一个 constant/physicalProperties.<phase> dictionary；每个 phase dictionary 提供 viscosityModel、nu 与 rho。不得用一个聚合 constant/physicalProperties dictionary 替代这些分组文件。
+    - 提供 momentumTransport、g、U、p_rgh 和具名 phase-fraction field。
+    - Foundation v10 interFoam 的 p_rgh 使用压力量纲 [1 -1 -2 0 0 0 0]；atmosphere patch 使用 prghTotalPressure，而不是 totalPressure。
+    - 在 system/fvSolution 中提供 phase-fraction 控制，以及 pcorr、pcorrFinal、p_rgh、p_rghFinal 与 U 的 linear solver 设置。final 项可以继承 base 项，例如 pcorrFinal 继承 $pcorr。
+    - divSchemes 使用 default none 时，显式提供 div(rhoPhi,U)、div(phi,alpha)、div(phirb,alpha) 和 Foundation v10 层流黏性应力 key div(((rho*nuEff)*dev2(T(grad(U)))))。缺少精确 key 是启动字典错误，不是稳定性失败。
+    - 使用正的瞬态时间控制，并同时限制 flow 与 phase Courant number。
+    - 压力参考以及每个 phase、velocity 与 pressure boundary condition 都必须与 mesh patch 一致。
+    - Foundation v10 的常数壁面接触角使用 constantAlphaContactAngle；alphaContactAngle 不是已注册 patch-field type。
+    - 对通过开放入口连接的液体 reservoir，alpha 使用 inletOutlet，且 inletValue 与 value 都等于 reservoir phase；U 配对 pressureInletOutletVelocity，并一致固定 p_rgh。fixedValue 相分数会阻止液体从同一开口流出，并可能破坏 phase inventory。
+    - 规定压力 reservoir 之间的低速 capillary-rise 基线，在液体入口和开放 atmosphere 都使用 fixedValue p_rgh，U 使用 pressureInletOutletVelocity，PIMPLE 使用 momentumPredictor no 与 nCorrectors 3。只有 atmosphere 确实需要动态总压语义时才使用 prghTotalPressure。
+    - Foundation v10 低速 capillary-rise 基线从 div(phi,alpha) Gauss interfaceCompression vanLeer 1、div(rhoPhi,U) Gauss upwind、nAlphaCorr 1 和 nAlphaSubCycles 2 开始。只有任务要求时才添加 MULESCorr、额外 limiter iteration、独立 div(phirb,alpha) 或高阶动量对流，并重新验证 interface height 与 phase inventory；这些变化不是中性的基准优化。
+    - 初始界面具有区域分布时，在 solver 前使用已声明的 initialization utility。
   failure_signals:
     - The phase-fraction field, a physicalProperties.<phase> dictionary, or either phase model cannot be read.
     - fvSolution reports pcorr, pcorrFinal, p_rgh, p_rghFinal, U, or the phase-fraction solver as undefined.
@@ -48,6 +48,6 @@ content:
     - A quasi-static capillary solution has a consistent interface height but a biased liquid inventory because total-pressure or under-corrected momentum coupling changed the reservoir exchange.
     - Phase fraction becomes non-finite or materially leaves the interval from zero to one.
   validation:
-    - Require normal completion, requested final time, and finite required fields.
-    - Derive phase-fraction minima, maxima, and volume-integral history from written fields after the solve.
-    - Check phase-volume conservation independently of process completion.
+    - 要求正常结束、达到要求 final time，且必需字段有限。
+    - 求解后从写出字段计算 phase-fraction minimum、maximum 与 volume-integral history。
+    - phase-volume conservation 必须独立于进程是否完成进行检查。

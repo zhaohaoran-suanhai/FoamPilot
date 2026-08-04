@@ -24,4 +24,4 @@ def test_native_skill_requires_vof_courant_headroom() -> None:
         "openfoam-author-native-case", "SKILL.md"
     ).read_text(encoding="utf-8")
 
-    assert "strictly below" in text
+    assert "严格低于 TaskSpec 允许的最大值" in text

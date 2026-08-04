@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.mesh.two-dimensional-empty-extrusion
-title: One-cell empty extrusion for two-dimensional meshes
+title: 二维网格的单层 empty 挤出
 fork: foundation
 version: "10"
 knowledge_type: mesh_pattern
@@ -9,10 +9,10 @@ models: [two-dimensional]
 tags: [blockmesh, empty, two-dimensional, mesh]
 applicability:
   conditions:
-    - The physical solution is two-dimensional and the mesh is a thin extrusion.
-    - The two front/back planes are normal to the suppressed solution direction.
+    - 物理解是二维的，网格为薄层挤出网格。
+    - 前后两个平面都垂直于被抑制的求解方向。
   not_applicable:
-    - Three-dimensional gradients or out-of-plane physics must be resolved.
+    - 必须解析三维梯度或面外物理时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 empty finite-volume patch field
@@ -24,15 +24,15 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: A two-dimensional finite-volume case uses one cell through the suppressed direction and empty mesh and field patches on both bounding planes.
+  summary: 二维有限体积算例在被抑制方向只使用一个 cell，并在两侧边界平面上的 mesh 与 field 中都采用 empty patch。
   rules:
-    - Use exactly one cell through the suppressed direction.
-    - Assign mesh type empty to both bounding planes.
-    - Assign field type empty on the same patch for every volume field.
-    - Every boundary face must match an actual block cell face. For a collapsed hex, keep the boundary face consistent with the repeated block vertices or avoid the degenerate block; do not invent a triangular boundary face that has no neighbour cell face.
+    - 被抑制方向必须恰好使用一个 cell。
+    - 两个边界平面的 mesh type 都设置为 empty。
+    - 每个 volume field 在相同 patch 上都设置 field type empty。
+    - 每个 boundary face 都必须对应实际的 block cell face。对塌缩 hex，应让 boundary face 与重复的 block vertex 保持一致，或避免使用退化 block；不得虚构没有相邻 cell face 的三角形 boundary face。
   failure_signals:
     - Mesh and field patch types disagree.
     - More than one solution cell exists through the suppressed direction.
   validation:
-    - checkMesh reports two geometric and two solution directions.
-    - Every field covers the empty patch with type empty.
+    - checkMesh 报告两个 geometric direction 和两个 solution direction。
+    - 每个字段都以 type empty 覆盖对应 empty patch。

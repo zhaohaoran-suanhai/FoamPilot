@@ -1,46 +1,40 @@
-# Agent integration
+# Agent 集成
 
-## Stable boundary
+## 稳定边界
 
-FoamPilot is a framework-neutral execution boundary. An external Agent may
-call the CLI or Python API, but the toolkit does not depend on an external
-agent framework.
+FoamPilot 是与框架无关的执行边界。外部 Agent 可以调用 CLI 或 Python API，但本工具包
+不依赖外部 agent framework。
 
-The external Agent must not run OpenFOAM directly, patch an immutable attempt,
-read an official target tutorial, inspect private golden data, or assign a
-formal benchmark PASS.
+外部 Agent 不得直接运行 OpenFOAM、修改不可变 attempt、读取官方目标 tutorial、检查私有
+golden data，或自行判定正式 benchmark PASS。
 
-## Canonical native loop
+## 规范原生闭环
 
-1. Load a public `TaskSpec`.
-2. Discover Foundation OpenFOAM v10 and installed native executables.
-3. Dynamically retrieve bounded public knowledge from the task text.
-4. Ask the model once for all generated files and typed commands.
-5. Apply deterministic path, command, resource, and protected-data policy.
-6. Materialize and statically inspect an empty case directory.
-7. Execute the typed commands through the sandboxed Runner.
-8. Apply evaluator-owned public checks and preserve the evidence.
-9. Permit only the configured evidence-scoped repair budget.
+1. 加载公开 `TaskSpec`。
+2. 发现 Foundation OpenFOAM v10 与已安装原生 executable。
+3. 根据任务文本动态检索有界公开知识。
+4. 一次性向模型请求全部生成文件与 typed command。
+5. 应用确定性路径、命令、资源与受保护数据 policy。
+6. 在空 case 目录中物化文件并执行静态检查。
+7. 通过沙箱 Runner 执行 typed command。
+8. 执行由 evaluator 负责的公开检查并保留证据。
+9. 只允许使用已配置、由证据限定范围的 repair 预算。
 
-No model reviewer sits between steps 4 and 5. There is no per-file model loop,
-preselected knowledge-ID allowlist, CaseSpec resolution, or renderer in the
-canonical path.
+步骤 4 与 5 之间没有 model reviewer。规范路径中不存在逐文件 model loop、预选
+knowledge-ID allowlist、CaseSpec resolution 或 renderer。
 
-### Conservative pre-solve gate
+### 保守求解前 gate
 
-Pre-solve inspection blocks only mechanically certain defects, such as an
-explicitly missing boundary patch or a known-incompatible Foundation v10
-dictionary construct. If includes, substitutions, or other dynamic syntax make
-the result uncertain, inspection records an advisory and lets OpenFOAM decide.
+求解前检查只阻止机械上确定的缺陷，例如显式缺少 boundary patch，或已知与 Foundation
+v10 不兼容的 dictionary construct。如果 include、substitution 或其他动态语法使结果不确定，
+inspection 只记录 advisory，并让 OpenFOAM 自己判定。
 
-A blocking static defect consumes the same evidence-scoped repair budget as a
-runtime failure; it does not terminate the task before the Agent can correct
-its files. During execution, an explicit `Failed N mesh checks` message from
-`checkMesh` stops later solver commands even when `checkMesh` returns zero.
-Ambiguous or unfamiliar log text is preserved as evidence and is not treated
-as a new hard-coded failure.
+阻断性静态缺陷与 runtime failure 消耗同一份由证据限定的 repair 预算，不会在 Agent 有机会
+修正文件前终止整个任务。执行期间，即使 `checkMesh` 返回零，只要明确出现
+`Failed N mesh checks`，后续 solver command 也会停止。含糊或未知日志文本只作为证据保留，
+不会被自动固化为新的 hard-coded failure。
 
-## Machine-readable commands
+## 机器可读命令
 
 ```bash
 foampilot validate TASK.yaml --json
@@ -67,13 +61,12 @@ foampilot improve compare BASELINE.json CURRENT.json \
   --json
 ```
 
-Exit codes are 0 for pass, 2 for invalid CLI input, 3 for an environment
-block, 4 for execution or public-validation failure, and 5 for an unexpected
-internal error.
+退出码：0 表示通过，2 表示 CLI 输入无效，3 表示 environment block，4 表示执行或
+public-validation 失败，5 表示未预期内部错误。
 
-## Python boundary
+## Python 边界
 
-The main integration types are:
+主要集成类型包括：
 
 - `TaskSpec`;
 - `ExecutionPlan`, `GeneratedFile`, and `NativeCommand`;
@@ -82,50 +75,42 @@ The main integration types are:
 - `PublicValidationReport`;
 - `ArtifactStore`.
 
-`NativeAgent.solve()` owns the full state machine. Adapters should preserve its
-JSON outcome and artifact paths rather than reimplementing generation,
-execution, validation, or repair.
+`NativeAgent.solve()` 负责完整状态机。Adapter 应保留其 JSON outcome 与 artifact path，
+而不是重新实现 generation、execution、validation 或 repair。
 
-## Retrieval and leakage
+## 检索与泄漏边界
 
-Formal retrieval excludes development-only entries. The toolkit records the
-selected knowledge IDs and source hashes for provenance, but the task does not
-choose those IDs.
+正式 retrieval 排除 development-only 条目。工具包记录被选择 knowledge ID 与 source hash
+用于溯源，但任务本身不选择这些 ID。
 
-Only general public material may enter the Agent prompt. Current target
-tutorial paths, private validators, golden values, and source mappings remain
-outside the Agent boundary.
+只有通用公开材料可以进入 Agent prompt。当前目标 tutorial path、私有 validator、
+golden value 与 source mapping 始终位于 Agent 边界之外。
 
-## Offline improvement boundary
+## 离线改进边界
 
-The improvement commands are a developer workflow over frozen evidence, not
-part of `NativeAgent.solve()`:
+improvement command 是在冻结证据上运行的 developer workflow，不属于
+`NativeAgent.solve()`：
 
 ```text
-frozen solve/qualification
+冻结 solve/qualification
 -> improve analyze
--> developer applies one candidate change
--> rerun qualification
+-> developer 应用一项 candidate change
+-> 重新运行 qualification
 -> improve compare
--> explicit promotion decision
+-> 显式 promotion decision
 ```
 
-There is no automatic promotion. The analyzer verifies the artifact manifest
-and requires a matching qualification result before it can hash an optional
-official example. Official examples are unavailable during blind authoring and
-repair. They may only be examined afterward to extract general principles;
-their paths, complete dictionaries, target-specific geometry, golden values,
-and evaluator tolerances never enter the model context.
+系统不会自动 promotion。Analyzer 先验证 artifact manifest，并要求匹配的 qualification
+result，之后才能为可选官方 example 计算 hash。盲编写与 repair 期间无法访问官方 example；
+只有事后才可检查它们以提取通用原则。其路径、完整 dictionary、目标专用几何、golden value
+和 evaluator tolerance 绝不进入 model context。
 
-Learning candidates and promotion reports are written exclusively to
-developer-selected paths beside run roots. They are not written into immutable
-runs and do not become package knowledge or Skills without explicit review and
-approval.
+Learning candidate 与 promotion report 只写入 developer 在 run root 旁选择的路径，
+不写入不可变 run；未经显式审查与批准，也不会成为 package knowledge 或 Skills。
 
-## Single execution path
+## 单一执行路径
 
-The earlier provider/CaseSpec/renderer and Agent-authored `Allrun` paths are
-not part of FoamPilot. Integrations use the native loop above; there is no
-legacy fallback or compatibility command surface.
+早期 provider/CaseSpec/renderer 与 Agent 编写 `Allrun` 的路径不属于 FoamPilot。
+所有集成都使用上述原生闭环，不存在 legacy fallback 或兼容命令面。
 
-See [Qualification](qualification.md) for the current evaluation boundary.
+当前评测边界见[受控评测](qualification.md)。

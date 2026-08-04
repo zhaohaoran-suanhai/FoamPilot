@@ -77,7 +77,7 @@ SHA256 manifest 覆盖，之后的修改能够被 `foampilot report` 检出。
 | `agent` | 生成完整 case bundle，并根据公开失败证据提出有限修复 |
 | `plans` / `manifests` | 定义 ExecutionPlan v3、CaseManifest、命令规范化和计划策略 |
 | `inspection` | 检查路径、文件、命令和高置信度跨文件语义一致性 |
-| `runtime` | 通过无网络 bubblewrap 沙箱执行 typed OpenFOAM 命令 |
+| `runtime` | 通过 bubblewrap 或 audited host 后端执行 typed OpenFOAM 命令 |
 | `validation` | 根据 TaskSpec 中的公开规则检查日志和写出的场 |
 | `workflow` / `artifacts` | 记录事件、检查点、续跑关系、摘要和内容哈希 |
 | `qualification` | 在普通求解之后执行与 Agent 隔离的外部物理评测 |
@@ -93,7 +93,7 @@ TaskSpec
   -> 计划规范化与安全策略
   -> 空目录物化 case
   -> 静态与跨文件语义检查
-  -> 沙箱内执行 OpenFOAM
+  -> bubblewrap 或 audited host 执行 OpenFOAM
   -> 公开验证
   -> 必要时定向修复并重新执行
   -> 状态总结和产物哈希
@@ -107,7 +107,9 @@ TaskSpec
 foampilot preflight --json
 ```
 
-`preflight` 检查 OpenFOAM、bubblewrap、工作目录和最小沙箱执行能力。
+`preflight` 检查 OpenFOAM、工作目录和执行后端。`auto` 模式只探测一次 bubblewrap；若嵌套
+环境拒绝 namespace，则报告非阻断 fallback 并选择 audited host。host 后端保留 typed
+allowlist、资源限制与日志，但不提供 network namespace 隔离。
 `solve` 自身仍会重新发现环境并检查目标版本和可写性，但不会把单独的完整
 preflight 报告当作运行输入。
 

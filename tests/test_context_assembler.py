@@ -166,7 +166,7 @@ def test_context_loads_general_and_at_most_one_matching_family_skill():
         "openfoam-author-native-case",
         "openfoam-rhocentral-case",
     )
-    assert "Treat `deltaT` as the initial time step" in rho.skills_text
+    assert "将 `deltaT` 视为初始时间步" in rho.skills_text
     assert generic.skill_names == ("openfoam-author-native-case",)
     assert len(rho.skill_names) <= 2
 

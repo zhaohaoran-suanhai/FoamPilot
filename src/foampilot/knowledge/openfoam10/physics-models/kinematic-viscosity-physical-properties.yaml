@@ -1,6 +1,6 @@
 schema_version: 1.0.0
 id: of10.physics.kinematic-viscosity-physical-properties
-title: Kinematic viscosity in Foundation v10 physicalProperties
+title: Foundation v10 physicalProperties 中的运动黏度
 fork: foundation
 version: "10"
 knowledge_type: physics_model
@@ -9,10 +9,10 @@ models: [constant-viscosity, incompressible]
 tags: [viscosity, physicalproperties, dimensions, laminar]
 applicability:
   conditions:
-    - The solver reads a constant incompressible kinematic viscosity.
-    - The supplied material property is nu in square metres per second.
+    - 求解器读取常数不可压缩运动黏度。
+    - 给定材料属性为以平方米每秒表示的 nu。
   not_applicable:
-    - Dynamic viscosity, non-Newtonian transport, or thermophysical properties are required.
+    - 需要动力黏度、非 Newtonian 输运或热物性时不适用。
 source:
   kind: official_source
   title: OpenFOAM Foundation v10 icoFoam field creation
@@ -24,14 +24,14 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 icoFoam reads constant kinematic viscosity nu from constant/physicalProperties with dimensions of length squared per time.
+  summary: Foundation v10 icoFoam 从 constant/physicalProperties 读取常数运动黏度 nu，其量纲为长度平方除以时间。
   rules:
-    - Store nu with dimensions [0 2 -1 0 0 0 0].
-    - Convert material data to square metres per second before authoring.
-    - Keep dynamic and kinematic viscosity distinct.
+    - nu 必须使用量纲 [0 2 -1 0 0 0 0]。
+    - 编写算例前，将材料数据转换为平方米每秒。
+    - 明确区分动力黏度与运动黏度。
   failure_signals:
     - physicalProperties or nu cannot be read.
     - Reynolds number is inconsistent by a density or unit factor.
   validation:
-    - Recompute Reynolds number from the authored length, velocity, and nu.
-    - Inspect the resolved physicalProperties value and dimensions.
+    - 使用已编写的长度、速度与 nu 重新计算 Reynolds number。
+    - 检查解析后的 physicalProperties 数值与量纲。
