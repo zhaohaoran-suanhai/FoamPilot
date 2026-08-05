@@ -37,3 +37,46 @@ def test_repository_documents_the_offline_improvement_boundary() -> None:
         "盲编写与 repair 期间无法访问官方 example"
         in combined
     )
+
+
+def test_repository_documents_stage_one_coverage_and_skill_boundaries() -> None:
+    root = Path(__file__).resolve().parents[1]
+    governance = (root / "docs/knowledge-governance.md").read_text(
+        encoding="utf-8"
+    )
+    overview = (root / "docs/system-overview.md").read_text(
+        encoding="utf-8"
+    )
+    self_checks = (root / "docs/solver-family-self-checks.md").read_text(
+        encoding="utf-8"
+    )
+    report = (
+        root / "docs/reports/2026-08-04-stage-1-knowledge-skills.md"
+    ).read_text(encoding="utf-8")
+    combined = "\n".join((governance, overview, self_checks, report))
+
+    assert "foampilot knowledge coverage" in combined
+    assert "通用 Skill + 至多一个物理族 Skill" in combined
+    assert "coverage 不等于求解能力已经通过验证" in combined
+    assert "失败日志只进入 error-playbook 检索槽位" in combined
+    assert "不可压缩真实 gate" in report
+    assert "PUBLIC_VALIDATION_PASS" in report
+
+
+def test_repository_documents_taskbuilder_without_a_second_solve_path() -> None:
+    root = Path(__file__).resolve().parents[1]
+    overview = (root / "docs/system-overview.md").read_text(encoding="utf-8")
+    quickstart = (root / "docs/independent-agent-quickstart.md").read_text(
+        encoding="utf-8"
+    )
+    integration = (root / "docs/agent-integration.md").read_text(
+        encoding="utf-8"
+    )
+    combined = "\n".join((overview, quickstart, integration))
+
+    assert "foampilot task draft" in combined
+    assert "foampilot task validate-draft" in combined
+    assert "foampilot task compile" in combined
+    assert "不持有 Runner" in integration
+    assert "同一个\n`NativeAgent.solve()`" in integration
+    assert "不会被猜测" in overview

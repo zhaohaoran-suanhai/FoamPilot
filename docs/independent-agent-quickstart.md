@@ -2,25 +2,26 @@
 
 ## 精简主路径的功能
 
-`foampilot solve` 将一份面向自然语言需求的公开 `TaskSpec` 转换为一次原生
-Foundation OpenFOAM v10 运行。FoamPilot 是独立的 Python 工具包。
+FoamPilot 可以把完整的中文或英文 CFD 请求编译为公开 `TaskSpec`，再由 `foampilot solve`
+执行一次原生 Foundation OpenFOAM v10 运行。已有结构化系统也可以直接提供 TaskSpec。
 
 运行流程如下：
 
 1. 校验公开任务；
 2. 发现本机 OpenFOAM 环境；
-3. 根据公开证据生成由系统负责的 `CapabilityProfile`；
-4. 按语义槽位最多检索一条有界公开知识，将无关槽位留空，并路由 Skills；
-5. 通过具备重试、deadline 和熔断能力的 Gateway，发起一次逻辑模型请求，生成
+3. 对声明的公开几何执行 hash、单位、surface/patch 和拓扑探测；
+4. 根据公开证据生成由系统负责的 `CapabilityProfile`；
+5. 按语义槽位最多检索一条有界公开知识，将无关槽位留空，并路由 Skills；
+6. 通过具备重试、deadline 和熔断能力的 Gateway，发起一次逻辑模型请求，生成
    完整 CaseBundle；
-6. 只对无歧义的 MPI wrapper 进行安全规范化，然后执行 typed policy；
-7. 将声明的文件写入空的 attempt 目录；
-8. 检查高置信度跨文件语义，并执行原生命令；
-9. 执行由 evaluator 负责的公开检查；
-10. 如果尝试预算允许，请求一次基于失败证据的定向修复；
-11. 如果可重试的模型后端故障中断生成或修复，将运行固化为 `DEFERRED`，
+7. 只对无歧义的 MPI wrapper 进行安全规范化，然后执行 typed policy；
+8. 将声明的文件写入空的 attempt 目录；
+9. 检查高置信度跨文件语义，并执行原生命令；
+10. 生成结构化网格质量报告并执行 evaluator 公开检查；
+11. 如果尝试预算允许，请求一次基于失败证据的定向修复；
+12. 如果可重试的模型后端故障中断生成或修复，将运行固化为 `DEFERRED`，
     并保存 strict resume 元数据；
-12. 为每个终态运行固化 artifact manifest。
+13. 为每个终态运行固化 artifact manifest。
 
 规范的 `ExecutionPlan` v3 结构为：
 
@@ -54,6 +55,50 @@ namespace。`auto` 模式会把该探测记为非阻断并改用 audited host；
 产物会记录实际后端。host fallback 不具有 network namespace 隔离。
 
 ## 校验、生成计划、求解和报告
+
+### 从自然语言生成 TaskSpec
+
+先把问题定义完整写入 `request.md`。单位、物性、边界数值、初始条件和瞬态终止时间应明确；
+几何附件必须以相对路径显式声明：
+
+```bash
+foampilot task draft \
+  --request-file request.md \
+  --asset geometry/body.stl \
+  --asset-root . \
+  --output task-draft.yaml \
+  --backend auto \
+  --model-name gpt-5.6-sol \
+  --json
+
+foampilot task validate-draft task-draft.yaml --json
+
+foampilot task compile task-draft.yaml \
+  --output task.yaml \
+  --json
+```
+
+不带附件时省略 `--asset` 和 `--asset-root`。`draft` 只把公开 request 和附件 metadata 交给
+模型，不读取目标 tutorial，也不运行 OpenFOAM。完整且有明确证据的事实可以直接确认；缺少
+高影响信息时返回 `TASK_REQUEST_INCOMPLETE` 或 `TASK_CONFIRMATION_REQUIRED`，并在 draft/review
+中给出中文问题。当前 CLI 不包含交互式澄清表单；补充 request 或由上游 Agent/界面记录
+`user_confirmation` 后，再生成并校验新的 draft。输出文件采用独占创建，不覆盖已有文件。
+模型进程、网络或服务暂时不可用时，`draft` 返回退出码 3、稳定 backend code、中文 message 和
+recovery，不会把问题记为 OpenFOAM failure。
+
+TaskSpec 生成后进入与手写任务完全相同的规范路径：
+
+```bash
+foampilot validate task.yaml --json
+
+foampilot solve task.yaml \
+  --run-root /tmp/foampilot-native-runs \
+  --backend auto \
+  --model-name gpt-5.6-sol \
+  --json
+```
+
+### 直接使用已有 TaskSpec
 
 ```bash
 foampilot validate examples/tasks/non-tutorial-side-driven-box.yaml --json
@@ -143,6 +188,7 @@ continuation 数量、传输尝试预算以及当前 OpenFOAM 能力。strict co
 ```text
 task.yaml
 environment.json
+geometry-facts.json              # 几何任务存在
 capability-profile.json
 agent-context.json
 resume-compatibility.json
@@ -163,6 +209,7 @@ attempt-01/
   generation-trace.json
   static-inspection.json
   run-result.json
+  mesh-quality-report.json       # 已进入原生执行时存在
   public-validation.json
   case/
     ... Agent 生成的 OpenFOAM 文件 ...

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 import json
+from pathlib import PurePosixPath
 import re
 from typing import Any, Literal
 
@@ -23,6 +24,7 @@ from foampilot.plans import (
     validate_execution_plan,
 )
 from foampilot.tasks import TaskSpec
+from foampilot.preprocessing import GeometryFacts, MeshQualityReport
 from foampilot.validation.models import (
     PublicValidationReport,
 )
@@ -57,6 +59,72 @@ class RepairStop(StrictModel):
 class RepairIssue(StrictModel):
     code: str
     detail: str
+
+
+_MESH_FAILURES = {"MESH_FAILED", "MESH_QUALITY_FAILED"}
+_MESH_DICTIONARIES = {
+    "system/blockMeshDict",
+    "system/snappyHexMeshDict",
+    "system/surfaceFeatureExtractDict",
+    "system/meshQualityDict",
+    "system/topoSetDict",
+    "system/decomposeParDict",
+}
+
+
+def _is_mesh_path(path: str) -> bool:
+    parsed = PurePosixPath(path)
+    return (
+        path in _MESH_DICTIONARIES
+        or parsed.suffix in {".geo", ".msh"}
+        or parsed.name in {"blockMeshDict", "snappyHexMeshDict"}
+    )
+
+
+def _is_initial_field(path: str) -> bool:
+    parts = PurePosixPath(path).parts
+    if len(parts) < 2:
+        return False
+    try:
+        return float(parts[0]) == 0.0
+    except ValueError:
+        return False
+
+
+def _named_block_span(text: str, name: str) -> tuple[int, int] | None:
+    match = re.search(rf"\b{re.escape(name)}\b", text)
+    if match is None:
+        return None
+    opening = text.find("{", match.end())
+    if opening < 0:
+        return None
+    depth = 0
+    for index in range(opening, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return opening, index
+    return None
+
+
+def _boundary_only_change(previous: str, revised: str) -> bool:
+    old_span = _named_block_span(previous, "boundaryField")
+    new_span = _named_block_span(revised, "boundaryField")
+    if old_span is None or new_span is None:
+        return False
+    old_without = previous[: old_span[0]] + previous[old_span[1] + 1 :]
+    new_without = revised[: new_span[0]] + revised[new_span[1] + 1 :]
+    return old_without == new_without
+
+
+def _mesh_prompt_files(current_files: dict[str, str]) -> dict[str, str]:
+    return {
+        path: content
+        for path, content in current_files.items()
+        if _is_mesh_path(path) or _is_initial_field(path)
+    }
 
 
 def failure_fingerprint(
@@ -114,6 +182,7 @@ def validate_repair_decision(
     *,
     task: TaskSpec,
     plan: ExecutionPlan,
+    report: PublicValidationReport | None = None,
     available_executables: set[str],
     current_files: dict[str, str],
 ) -> list[RepairIssue]:
@@ -127,6 +196,17 @@ def validate_repair_decision(
                 detail="repair file paths must be unique",
             )
         )
+    mesh_scoped = (
+        report is not None and report.failure_layer in _MESH_FAILURES
+    )
+    mesh_paths_changed = any(_is_mesh_path(path) for path in changed_paths)
+    patch_evidence = " ".join(
+        (
+            decision.cause,
+            *decision.evidence,
+            decision.stable_control,
+        )
+    ).lower()
     for generated in decision.changed_files:
         if generated.path in public_assets:
             issues.append(
@@ -152,6 +232,32 @@ def validate_repair_decision(
                     detail="repair content references a protected path",
                 )
             )
+        if mesh_scoped and not _is_mesh_path(generated.path):
+            if not _is_initial_field(generated.path):
+                issues.append(
+                    RepairIssue(
+                        code="MESH_REPAIR_UNRELATED_FILE",
+                        detail=(
+                            "mesh-scoped repair cannot change unrelated file "
+                            f"{generated.path}"
+                        ),
+                    )
+                )
+            elif not (
+                mesh_paths_changed
+                and any(term in patch_evidence for term in ("patch", "boundary"))
+                and (previous := current_files.get(generated.path)) is not None
+                and _boundary_only_change(previous, generated.content)
+            ):
+                issues.append(
+                    RepairIssue(
+                        code="MESH_REPAIR_FIELD_SCOPE",
+                        detail=(
+                            "initial fields may change only inside boundaryField "
+                            "for evidenced patch synchronization"
+                        ),
+                    )
+                )
 
     command_by_step = {item.step_id: item for item in plan.commands}
     changed_steps = [item.step_id for item in decision.changed_commands]
@@ -176,6 +282,16 @@ def validate_repair_decision(
                 )
             )
             continue
+        if mesh_scoped and command.stage not in {"mesh", "check"}:
+            issues.append(
+                RepairIssue(
+                    code="MESH_REPAIR_UNRELATED_COMMAND",
+                    detail=(
+                        "mesh-scoped repair cannot change command "
+                        f"{command.step_id} at stage {command.stage}"
+                    ),
+                )
+            )
         if command == command_by_step[command.step_id]:
             issues.append(
                 RepairIssue(
@@ -231,21 +347,52 @@ def request_repair(
     current_files: dict[str, str],
     knowledge_text: str,
     skills_text: str,
+    geometry_facts: GeometryFacts | None = None,
+    mesh_quality_report: MeshQualityReport | None = None,
     gateway: ModelGateway,
     budget: ModelBudgetWindow,
     trace: ModelTraceSink,
 ) -> RepairDecision:
+    mesh_scoped = report.failure_layer in _MESH_FAILURES
+    scoped_files = (
+        _mesh_prompt_files(current_files)
+        if mesh_scoped
+        else current_files
+    )
+    plan_payload = plan.model_dump(mode="json")
+    if mesh_scoped:
+        plan_payload["files"] = [
+            item.model_dump(mode="json")
+            for item in plan.files
+            if item.path in scoped_files or _is_mesh_path(item.path)
+        ]
     payload: dict[str, Any] = {
         "task": task.agent_payload(),
-        "plan": plan.model_dump(mode="json"),
+        "plan": plan_payload,
         "failed_public_report": report.model_dump(mode="json"),
         "failed_step_log": failed_log[-12000:],
-        "current_declared_files": current_files,
+        "current_declared_files": scoped_files,
         "dynamic_public_knowledge": knowledge_text,
         "portable_workflow_skill": skills_text,
+        "geometry_facts": (
+            geometry_facts.model_dump(mode="json")
+            if geometry_facts is not None
+            else None
+        ),
+        "mesh_quality_report": (
+            mesh_quality_report.model_dump(mode="json")
+            if mesh_quality_report is not None
+            else None
+        ),
         "repair_contract": (
             "因为 EVIDENCE 指向 CAUSE，只能修改或新增安全的算例相对路径生成文件，"
             "或修改已有 typed command；同时说明预期检查和一个保持不变的 control。"
+            + (
+                " 当前是 mesh-scoped repair：只能修改 mesh/check 命令和网格文件；"
+                "仅在 patch 同步有直接证据时，可只改初始场 boundaryField。"
+                if mesh_scoped
+                else ""
+            )
         ),
     }
     user_prompt = json.dumps(

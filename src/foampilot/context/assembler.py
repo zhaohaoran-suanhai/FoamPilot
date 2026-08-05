@@ -14,10 +14,14 @@ from foampilot.knowledge import (
 )
 from foampilot.routing import CapabilityProfile
 from foampilot.tasks import TaskSpec
+from foampilot.preprocessing import GeometryFacts
 
 from .models import AgentContext
 from .skill_registry import read_skills, select_skill_names
 from .slots import BASE_SLOTS, ERROR_SLOT, PARALLEL_SLOT, PRUNE_ORDER, ContextSlot
+
+
+_REPAIR_EVIDENCE_LIMIT_BYTES = 4096
 
 
 def _default_package_root() -> Path:
@@ -28,19 +32,42 @@ def _query_text(
     task: TaskSpec,
     capability: CapabilityProfile,
     slot: ContextSlot,
+    repair_evidence: str = "",
+    geometry_facts: GeometryFacts | None = None,
 ) -> str:
-    return " ".join(
-        (
-            task.title,
-            task.prompt,
-            *task.required_outputs,
-            *task.acceptance_requirements,
-            capability.physics_family,
-            capability.solver_family or "",
-            capability.solver_executable or "",
-            capability.mesh_family,
-            slot.query_terms,
+    parts = (
+        task.title,
+        task.prompt,
+        *task.required_outputs,
+        *task.acceptance_requirements,
+        capability.physics_family,
+        capability.solver_family or "",
+        capability.solver_executable or "",
+        capability.mesh_family,
+        slot.query_terms,
+    )
+    if slot.name == ERROR_SLOT.name and repair_evidence:
+        parts = (*parts, repair_evidence)
+    if slot.name == "mesh_pattern" and geometry_facts is not None:
+        parts = (
+            *parts,
+            json.dumps(
+                geometry_facts.model_dump(mode="json"),
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
         )
+    return " ".join(parts)
+
+
+def _bounded_repair_evidence(text: str) -> str:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    encoded = normalized.encode("utf-8")
+    if len(encoded) <= _REPAIR_EVIDENCE_LIMIT_BYTES:
+        return normalized
+    return encoded[-_REPAIR_EVIDENCE_LIMIT_BYTES:].decode(
+        "utf-8",
+        errors="ignore",
     )
 
 
@@ -115,6 +142,8 @@ def assemble_agent_context(
     *,
     package_root: str | Path | None = None,
     repair: bool = False,
+    repair_evidence: str = "",
+    geometry_facts: GeometryFacts | None = None,
     payload_limit_bytes: int = 32 * 1024,
 ) -> AgentContext:
     """Select context by semantic slot without irrelevant top-N fill."""
@@ -142,11 +171,18 @@ def assemble_agent_context(
     knowledge_slots: dict[str, str | None] = {}
     payloads: list[dict[str, object]] = []
     public_task_text = _public_task_text(task)
+    bounded_repair_evidence = _bounded_repair_evidence(repair_evidence)
     for slot in slots:
         matches = select_knowledge(
             corpus,
             KnowledgeQuery(
-                text=_query_text(task, capability, slot),
+                text=_query_text(
+                    task,
+                    capability,
+                    slot,
+                    bounded_repair_evidence,
+                    geometry_facts,
+                ),
                 solver=(
                     capability.solver_executable
                     if slot.solver_filtered
@@ -178,7 +214,7 @@ def assemble_agent_context(
             )
         )
 
-    skill_names = select_skill_names(capability)
+    skill_names = select_skill_names(capability, task=task)
     skills_text = read_skills(skills_root, skill_names)
     if len(skills_text.encode("utf-8")) > payload_limit_bytes:
         raise ValueError("selected Skills exceed the context payload budget")

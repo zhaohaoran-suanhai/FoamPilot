@@ -1,10 +1,17 @@
 {
-  "entry_count": 36,
+  "entry_count": 43,
   "files": {
     "boundary-conditions/buoyant-pressure-semantics.yaml": "6874a2f3f13831ebe1399e9cda9de9be85915af150ebebb2307891ae9721bc79",
     "boundary-conditions/incompressible-wall-pressure-pairing.yaml": "2cbfea47ad51561a0c8f9719f566235fb6ec44be8e875dcacb0dfa4dad8807b8",
     "boundary-conditions/rotating-swirl-inlet-contract.yaml": "8c5ab0f18595630ad29490f930baa1bd4df1ae6dec5705dd5ed1e333da370ed0",
+    "error-playbooks/boundary-patch-mismatch.yaml": "d1d498c0b2c3955de9dc2b596ba153a8f028a668d3c4ef0cc1331de48322f6ff",
+    "error-playbooks/missing-fvscheme-operator.yaml": "80645d00d3835c58214443f75ef610a2204878efd37826fc5a53cca1cc0098bf",
     "error-playbooks/missing-pressure-reference.yaml": "2f90a210da9fc553cf6ebb0f4d2be461e101ee8f01f7738cdbc06338ec459dcd",
+    "error-playbooks/missing-solver-dictionary.yaml": "8dbe5d80e58f0f8b8d4839c5c303172c7ae652a35cff6c6c4123a9a1a7823151",
+    "error-playbooks/thermo-state-instability.yaml": "c80e3499f1996a54166ffd10c8a4313ec9924d98f01f681ad542a9719b8cfb17",
+    "mesh-patterns/gmsh-physical-groups.yaml": "d61c522d72918666058d6a23cd9822720ab4474153e3628895676fc1b80a3e5a",
+    "mesh-patterns/multiblock-topology-consistency.yaml": "26e0ce8c3cf7252e342ead8b8c3bf9d9a6405425561d2da3891f728b7dc02d25",
+    "mesh-patterns/snappy-surface-workflow.yaml": "0f23efdee954b6cf2840b313b081f1841eefbf913a22068dd06cf5de87812d82",
     "mesh-patterns/two-dimensional-empty-extrusion.yaml": "345039b49331e7428c849608add5d1a9412a1ff1ba3e699002f9053fe038e73c",
     "numerics/interfoam-alpha-boundedness.yaml": "76bd2623ad21f439882928f1b41af28c517fdc738f8abc9c7eb23553264f0946",
     "numerics/piso-closed-pressure-reference.yaml": "34c63f673cbbde1119352204cfc104701e1da4d0090fb9fd393772a2916094fb",
@@ -35,7 +42,7 @@
     "solver-guides/srfpimplefoam-contract.yaml": "f988e2c7386dceb4d03f880cfaeaf24bacda5c62c7311db568288cafdf1cca75",
     "solver-guides/srfsimplefoam-contract.yaml": "ad35145f2a92b26a5d9341544f1f4720a6f00d94f2bef6d9818729ff8c9c9d0e",
     "solver-guides/twoliquidmixingfoam-contract.yaml": "322530ab99fe9c0d0cbd8aeb144afdb890199d7a8f81a68adacb34fa5c0e2993",
-    "validation-patterns/completion-conservation-physics.yaml": "725d619060f77e810d08e0afb894adc1f27cce76f02b903834fe641954dcae23",
+    "validation-patterns/completion-conservation-physics.yaml": "2c1ff66a090b7725e964e5142a27ade1ebcd6eeea9968dbcfbe8df0d8cf461cb",
     "validation-patterns/transport-wall-heat-balance.yaml": "d467797360bedbb14e4050b8e7a12bb985bc5ed3eab6d4cb3fb98259ac3eda1f"
   },
   "schema_version": 1

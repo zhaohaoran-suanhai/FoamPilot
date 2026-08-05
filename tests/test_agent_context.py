@@ -13,7 +13,7 @@ from foampilot.tasks import TaskSpec
 def _task() -> TaskSpec:
     return TaskSpec.model_validate(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "task_id": "two-fluid-column",
             "title": "Two-fluid column",
             "prompt": (

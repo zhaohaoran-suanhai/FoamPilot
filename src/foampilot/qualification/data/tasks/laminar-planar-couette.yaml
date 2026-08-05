@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 task_id: laminar-planar-couette
 title: Transient Maxwell planar Couette flow
 prompt: >-

@@ -1,0 +1,42 @@
+schema_version: 1.0.0
+id: of10.error.thermo-state-instability
+title: 诊断热力学状态与能量温度反演失稳
+fork: foundation
+version: "10"
+knowledge_type: error_playbook
+solvers: []
+models: [compressible, thermophysical]
+tags: [thermo, temperature, negative, nan, energy, repair]
+applicability:
+  conditions:
+    - 日志报告负初始温度、能量到温度转换不收敛、热物性超范围或非有限热力学字段。
+    - 算例使用可压缩、浮力或共轭换热热物性模型。
+  not_applicable:
+    - 纯不可压缩等温算例或仅有网格、patch、字典关键字错误时不适用。
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 energy-to-temperature inversion
+  locator: OpenFOAM-10/src/thermophysicalModels/specie/thermo/thermo/thermoI.H
+  sha256: 8904dd496ac69c0a1c4676ef0435f4d3549d2b9034b08b94ef7f1c2ac1871e66
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: 出现 negative temperature、energy-temperature conversion failed 或 NaN 时，先审计 thermo 套件与初边值，再调整时间步和数值稳定性。
+  rules:
+    - 保存首个非物理状态之前的日志、时间步、Courant 数和字段 extrema。
+    - 检查 thermoType、equationOfState、energy 字段、Cp/Cv、分子量和输运参数是否内部一致。
+    - 用公开状态关系核对 p、T、rho 与能量初值和边界值，禁止只对结果字段做裁剪。
+    - 初态正确后，再按顺序检查时间步、边界波动、能量离散和松弛；一次 repair 只改变一个原因族。
+  failure_signals:
+    - Negative initial temperature T0
+    - Energy -> temperature conversion failed to converge
+    - Maximum number of iterations exceeded
+    - negative temperature
+    - nan
+  validation:
+    - 初始 thermo state 可由公开物性重构且处于模型适用范围。
+    - 新 attempt 的 p、T、rho 与能量在全时段保持有限和物理可行。
+    - 实际 Courant、守恒和任务公开物理检查仍然通过。

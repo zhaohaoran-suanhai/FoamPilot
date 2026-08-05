@@ -35,13 +35,22 @@ class EnvironmentSnapshot(StrictModel):
     def executable_names(self) -> set[str]:
         return {item.name for item in self.commands}
 
+    @property
+    def available_executable_names(self) -> set[str]:
+        """Return every executable allowed in a typed plan."""
+
+        names = set(self.executable_names)
+        if self.gmsh is not None:
+            names.add("gmsh")
+        return names
+
     def agent_payload(self) -> dict[str, object]:
         return {
             "schema_version": self.schema_version,
             "distribution": self.distribution,
             "version": self.version,
             "workspace_writable": self.workspace_writable,
-            "executable_names": sorted(self.executable_names),
+            "executable_names": sorted(self.available_executable_names),
             "mpi_available": self.mpi_launcher is not None,
             "gmsh_available": self.gmsh is not None,
             "max_mpi_ranks": self.max_mpi_ranks,

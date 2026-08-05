@@ -1,0 +1,41 @@
+schema_version: 1.0.0
+id: of10.mesh.gmsh-physical-groups
+title: Gmsh physical group 到 OpenFOAM patch 的契约
+fork: foundation
+version: "10"
+knowledge_type: mesh_pattern
+solvers: [gmshToFoam]
+models: [gmsh, physical-groups]
+tags: [gmsh, gmsh-to-foam, physical-group, patch, region, mesh]
+applicability:
+  conditions:
+    - 网格由公开或 Agent 编写的 Gmsh .geo 生成，或由公开 .msh 转换。
+    - 任务依赖命名入口、出口、壁面、interface 或 volume region。
+  not_applicable:
+    - 不经过 Gmsh 的 blockMesh、snappyHexMesh 或已有 OpenFOAM mesh 时不适用。
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 gmshToFoam application source
+  locator: OpenFOAM-10/applications/utilities/mesh/conversion/gmshToFoam/gmshToFoam.C
+  sha256: 3bcdab94e2939cb0f856d618d7179d2eec77cddd8a875e57dd0ac52d28727806
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Gmsh 路线必须用 physical surface/volume 保留公开物理角色，并在 gmshToFoam 转换后核对 patch、zone 与 region。
+  rules:
+    - 在 .geo 中为每个必需边界和体区域声明稳定、唯一、可读的 physical group 名称。
+    - 只有环境显式发现 gmsh 时才运行 gmsh；使用固定 typed argv 生成受控 .msh。
+    - gmshToFoam 后核对 boundary、cellZone/faceZone 与 TaskSpec patch/region role，不得只接受自动编号。
+    - 二维网格转换后必须补齐一致的 empty 方向语义；多区域 interface 两侧必须可唯一对应。
+    - 转换完成后运行 checkMesh，并以公开 cell 数和质量阈值作为验证条件。
+  failure_signals:
+    - No physical groups detected
+    - zero-sized patch
+    - Cannot find patchField entry
+    - Failed mesh checks
+  validation:
+    - 每个声明 physical group 都有对应且非空的 OpenFOAM patch 或 zone。
+    - checkMesh 正常完成，region 数、patch 名和质量观测符合 TaskSpec。

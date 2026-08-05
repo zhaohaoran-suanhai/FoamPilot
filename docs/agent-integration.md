@@ -10,6 +10,8 @@ golden data，或自行判定正式 benchmark PASS。
 
 ## 规范原生闭环
 
+0. 可选：把自然语言和显式公开附件通过 `TaskDraft -> DraftReview -> TaskCompiler` 编译为
+   公开 `TaskSpec`；任何 blocking/confirmable 问题必须先解决。
 1. 加载公开 `TaskSpec`。
 2. 发现 Foundation OpenFOAM v10 与已安装原生 executable。
 3. 根据任务文本动态检索有界公开知识。
@@ -37,6 +39,10 @@ inspection 只记录 advisory，并让 OpenFOAM 自己判定。
 ## 机器可读命令
 
 ```bash
+foampilot task draft --request-file REQUEST.md --output DRAFT.yaml --json
+foampilot task validate-draft DRAFT.yaml --json
+foampilot task compile DRAFT.yaml --output TASK.yaml --json
+
 foampilot validate TASK.yaml --json
 foampilot plan TASK.yaml --output PLAN.json --model-name MODEL --json
 foampilot solve TASK.yaml --run-root RUN_ROOT --model-name MODEL --json
@@ -68,6 +74,7 @@ public-validation 失败，5 表示未预期内部错误。
 
 主要集成类型包括：
 
+- `TaskDraft`, `DraftReview`, `TaskCompilation`;
 - `TaskSpec`;
 - `ExecutionPlan`, `GeneratedFile`, and `NativeCommand`;
 - `NativeAgent`;
@@ -77,6 +84,11 @@ public-validation 失败，5 表示未预期内部错误。
 
 `NativeAgent.solve()` 负责完整状态机。Adapter 应保留其 JSON outcome 与 artifact path，
 而不是重新实现 generation、execution、validation 或 repair。
+
+TaskBuilder 是求解前边界，不持有 Runner，也不创建 solve run。上游 Agent 可以使用
+`extract_task_draft()`、`validate_task_draft()` 和 `compile_task_draft()`，但不得把模型推断的
+高影响值直接改写为 `user_confirmation`。完整 TaskSpec 产生后必须交给同一个
+`NativeAgent.solve()`，不能从对话层直接调用 OpenFOAM。
 
 ## 检索与泄漏边界
 

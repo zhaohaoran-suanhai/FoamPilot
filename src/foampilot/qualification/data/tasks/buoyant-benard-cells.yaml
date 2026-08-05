@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 task_id: buoyant-benard-cells
 title: Rayleigh-Benard convection cells
 prompt: >-

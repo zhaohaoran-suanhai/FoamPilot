@@ -1,5 +1,9 @@
 # FoamPilot Verified ExecutionPlan Reuse Design
 
+> 本文保留显式计划复用的详细组件设计。当前统一的实施顺序、TaskSpec v2/前处理适配、
+> qualification 边界和性能验收以
+> [Performance v1](design/performance-v1-design.md) 为准。
+
 **Status:** approved design, not yet implemented
 **Date:** 2026-07-31
 **Repository baseline:** local `main` working tree after Stage B

@@ -5,22 +5,44 @@ from __future__ import annotations
 from pathlib import Path
 
 from foampilot.routing import CapabilityProfile
+from foampilot.tasks import TaskSpec
 
 
 GENERAL_SKILL = "openfoam-author-native-case"
+MESH_SKILL = "openfoam-mesh-workflow"
 FAMILY_SKILLS = {
-    "buoyantFoam": "openfoam-buoyant-case",
-    "rhoCentralFoam": "openfoam-rhocentral-case",
+    "icoFoam": "openfoam-incompressible-pressure-velocity",
+    "pimpleFoam": "openfoam-incompressible-pressure-velocity",
+    "pisoFoam": "openfoam-incompressible-pressure-velocity",
+    "porousSimpleFoam": "openfoam-incompressible-pressure-velocity",
+    "simpleFoam": "openfoam-incompressible-pressure-velocity",
+    "SRFPimpleFoam": "openfoam-incompressible-pressure-velocity",
+    "SRFSimpleFoam": "openfoam-incompressible-pressure-velocity",
+    "rhoCentralFoam": "openfoam-compressible-transient",
+    "rhoPimpleFoam": "openfoam-compressible-transient",
+    "rhoSimpleFoam": "openfoam-compressible-transient",
+    "interFoam": "openfoam-multiphase-vof",
+    "twoLiquidMixingFoam": "openfoam-multiphase-vof",
+    "buoyantFoam": "openfoam-buoyant-cht",
+    "chtMultiRegionFoam": "openfoam-buoyant-cht",
+    "solidDisplacementFoam": "openfoam-solid-mechanics",
+    "solidEquilibriumDisplacementFoam": "openfoam-solid-mechanics",
+    "electrostaticFoam": "openfoam-scalar-field-transport",
+    "scalarTransportFoam": "openfoam-scalar-field-transport",
 }
 
 
 def select_skill_names(
     capability: CapabilityProfile,
+    *,
+    task: TaskSpec | None = None,
 ) -> tuple[str, ...]:
     names = [GENERAL_SKILL]
     family = FAMILY_SKILLS.get(capability.solver_executable or "")
     if family is not None:
         names.append(family)
+    if task is not None and (task.geometry is not None or task.mesh is not None):
+        names.append(MESH_SKILL)
     return tuple(names)
 
 

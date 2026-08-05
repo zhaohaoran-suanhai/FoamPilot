@@ -22,7 +22,10 @@ _APPLICATION = re.compile(
 _DIMENSIONS = re.compile(r"(?m)^\s*dimensions\s+\[([^]]+)\]\s*;")
 _COMMAND_STAGE: dict[str, CommandStage] = {
     "blockMesh": CommandStage.MESH,
+    "surfaceCheck": CommandStage.MESH,
+    "surfaceFeatureExtract": CommandStage.MESH,
     "snappyHexMesh": CommandStage.MESH,
+    "gmsh": CommandStage.MESH,
     "gmshToFoam": CommandStage.MESH,
     "checkMesh": CommandStage.CHECK,
     "setFields": CommandStage.INITIALIZE,

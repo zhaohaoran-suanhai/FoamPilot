@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 task_id: multiphase-dam-break
 title: Two-dimensional collapse of a water column around a floor obstacle
 prompt: >-

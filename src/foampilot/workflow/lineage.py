@@ -172,7 +172,7 @@ def build_resume_fingerprint(
         skill_ids=list(skill_ids),
         skill_hash=_hash_text(skills_text),
         openfoam_target=task.openfoam_target.model_dump(mode="json"),
-        executable_names=sorted(environment.executable_names),
+        executable_names=sorted(environment.available_executable_names),
     )
 
 

@@ -149,6 +149,47 @@ def test_parallel_and_repair_slots_are_conditional():
     assert "error_playbook" in context.knowledge_slots
 
 
+def test_repair_evidence_routes_the_matching_error_playbook_only_in_repair():
+    capability = _profile(
+        "icoFoam",
+        family="incompressible-laminar",
+    )
+    evidence = "Unable to set reference cell for field p"
+
+    generation = assemble_agent_context(
+        _task(),
+        capability,
+        repair_evidence=evidence,
+    )
+    repair = assemble_agent_context(
+        _task(),
+        capability,
+        repair=True,
+        repair_evidence=evidence,
+    )
+
+    assert "error_playbook" not in generation.knowledge_slots
+    assert (
+        repair.knowledge_slots["error_playbook"]
+        == "of10.error.missing-pressure-reference"
+    )
+
+
+def test_repair_evidence_is_bounded_before_retrieval():
+    context = assemble_agent_context(
+        _task(),
+        _profile("icoFoam", family="incompressible-laminar"),
+        repair=True,
+        repair_evidence=("irrelevant-prefix " * 10000)
+        + "Unable to set reference cell for field p",
+    )
+
+    assert (
+        context.knowledge_slots["error_playbook"]
+        == "of10.error.missing-pressure-reference"
+    )
+
+
 def test_context_loads_general_and_at_most_one_matching_family_skill():
     rho = assemble_agent_context(
         _task(),
@@ -164,11 +205,15 @@ def test_context_loads_general_and_at_most_one_matching_family_skill():
 
     assert rho.skill_names == (
         "openfoam-author-native-case",
-        "openfoam-rhocentral-case",
+        "openfoam-compressible-transient",
     )
-    assert "将 `deltaT` 视为初始时间步" in rho.skills_text
-    assert generic.skill_names == ("openfoam-author-native-case",)
+    assert "将 `deltaT` 视为初始步长" in rho.skills_text
+    assert generic.skill_names == (
+        "openfoam-author-native-case",
+        "openfoam-multiphase-vof",
+    )
     assert len(rho.skill_names) <= 2
+    assert len(generic.skill_names) <= 2
 
 
 def test_payload_budget_prunes_whole_optional_entries_without_truncation():

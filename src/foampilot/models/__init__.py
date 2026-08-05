@@ -27,6 +27,7 @@ from .errors import (
     BackendFailureKind,
 )
 from .gateway import GatewayRequestError, ModelGateway, ModelResult
+from .messages_zh import backend_error_payload_zh
 from .openai_compatible import (
     OpenAICompatibleBackend,
     OpenAICompatibleConfig,
@@ -67,6 +68,7 @@ __all__ = [
     "OpenAICompatibleConfig",
     "SharedCircuitBreaker",
     "codex_exec_config",
+    "backend_error_payload_zh",
     "doctor_backends",
     "load_backend_registry",
 ]

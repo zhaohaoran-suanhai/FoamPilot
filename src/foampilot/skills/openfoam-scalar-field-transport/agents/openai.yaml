@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenFOAM 标量与势场算例"
+  short_description: "编写和修复 Foundation v10 标量输运、扩散与静电势场算例"
+  default_prompt: "使用 $openfoam-scalar-field-transport 编写或修复标量输运与势场算例。"

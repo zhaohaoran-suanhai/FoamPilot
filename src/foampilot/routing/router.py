@@ -168,6 +168,37 @@ def _task_facts(task: TaskSpec) -> dict[str, str | bool]:
     }
 
 
+def _mesh_fact(task: TaskSpec, lexical_value: str) -> tuple[str, RouteEvidence | None]:
+    if task.mesh is not None and task.mesh.strategy != "auto":
+        value = task.mesh.strategy
+        return value, RouteEvidence(
+            source="task.mesh",
+            fact=f"explicit mesh strategy {value}",
+        )
+    if task.geometry is None:
+        return lexical_value, None
+    by_mode = {
+        "parametric": "blockMesh",
+        "surface": "snappyHexMesh",
+        "gmsh": "gmsh",
+        "openfoam_mesh": "provided",
+    }
+    value = by_mode[task.geometry.mode]
+    return value, RouteEvidence(
+        source="task.geometry",
+        fact=f"geometry mode {task.geometry.mode} selects mesh strategy {value}",
+    )
+
+
+def _required_mesh_executables(mesh_family: str) -> set[str]:
+    return {
+        "blockMesh": {"blockMesh"},
+        "snappyHexMesh": {"blockMesh", "snappyHexMesh"},
+        "gmsh": {"gmsh", "gmshToFoam"},
+        "provided": {"checkMesh"},
+    }.get(mesh_family, set())
+
+
 def _known_solvers(corpus: Sequence[KnowledgeEntry]) -> set[str]:
     result = set(SOLVER_CAPABILITIES)
     for entry in corpus:
@@ -382,7 +413,18 @@ def route_capability(
         model_unresolved.extend(suggestion.unresolved_questions)
 
     public_facts = _task_facts(task)
+    mesh_family, mesh_evidence = _mesh_fact(
+        task,
+        str(public_facts["mesh_family"]),
+    )
+    public_facts["mesh_family"] = mesh_family
+    if mesh_evidence is not None:
+        evidence.append(mesh_evidence)
     facts, conflicts = _merge_solver_facts(public_facts, selected)
+    missing_mesh_executables = sorted(
+        _required_mesh_executables(mesh_family)
+        - environment.available_executable_names
+    )
     public_critical_complete = all(
         public_facts[field] != "unknown"
         for field in ("regime", "compressibility", "phase_family")
@@ -392,7 +434,7 @@ def route_capability(
     state = RouteEvidenceState(
         explicit_solver=explicit is not None,
         solver_installed=installed_selected,
-        has_conflict=bool(conflicts),
+        has_conflict=bool(conflicts or missing_mesh_executables),
         compatible_candidate_count=len(candidates),
         critical_physics_complete=critical_complete,
         used_model_route=used_model,
@@ -400,6 +442,10 @@ def route_capability(
     confidence = calculate_confidence(state)
     unresolved = list(model_unresolved)
     unresolved.extend(conflicts)
+    unresolved.extend(
+        f"required mesh executable is unavailable: {name}"
+        for name in missing_mesh_executables
+    )
     if explicit is not None and explicit not in installed:
         unresolved.append(f"explicit solver is not installed: {explicit}")
     if not critical_complete:

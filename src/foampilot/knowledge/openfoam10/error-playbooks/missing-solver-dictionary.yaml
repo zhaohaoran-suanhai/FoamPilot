@@ -1,0 +1,40 @@
+schema_version: 1.0.0
+id: of10.error.missing-solver-dictionary
+title: 修复 fvSolution 中缺失的字段求解器配置
+fork: foundation
+version: "10"
+knowledge_type: error_playbook
+solvers: []
+models: []
+tags: [fvsolution, solvers, dictionary, undefined, repair]
+applicability:
+  conditions:
+    - 日志指出 system/fvSolution 缺少 solvers 段或某个实际求解字段的配置。
+    - 该字段由目标求解器或已声明物理模型创建并求解。
+  not_applicable:
+    - 字段文件本身不存在、dimensions 错误或缺少 fvSchemes 算子时不适用。
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 dictionary typed lookup diagnostics
+  locator: OpenFOAM-10/src/OpenFOAM/db/dictionary/dictionaryTemplates.C
+  sha256: 738a49e1ce839df116a12dcc2a648ed3876a90c4a8996cf8fb3abd8646791851
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: 日志出现 fvSolution solvers 或字段字典 undefined 时，只为实际求解字段补充相容的线性求解器和 Final 配置。
+  rules:
+    - 从 fatal message、CaseManifest fields 和目标 solver contract 确定精确字段名。
+    - 在 solvers 段加入该字段；仅当算法会请求 Final 变体时才加入字段正则或 Final 条目。
+    - 保留已有算法段和无关字段配置，不用整份模板覆盖 fvSolution。
+    - 若字段由前置 utility 创建，先确认 command 顺序，而不是伪造空字段。
+  failure_signals:
+    - keyword solvers is undefined in dictionary .../fvSolution
+    - keyword ... is undefined in dictionary .../fvSolution/solvers
+    - Cannot find a suitable solver for field
+  validation:
+    - 新 attempt 成功读取目标字段的求解器配置。
+    - 目标 solver 启动且不再出现相同字段配置错误。
+    - 新配置没有删除任务需要的算法控制或 relaxation。

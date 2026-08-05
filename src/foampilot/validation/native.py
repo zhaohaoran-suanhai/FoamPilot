@@ -25,7 +25,10 @@ _NUMBER = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
 _MESH_COMMANDS = {
     "blockMesh",
     "checkMesh",
+    "surfaceCheck",
+    "surfaceFeatureExtract",
     "snappyHexMesh",
+    "gmsh",
     "gmshToFoam",
     "cfMesh",
 }

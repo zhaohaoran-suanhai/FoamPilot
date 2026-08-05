@@ -2,6 +2,8 @@
   "acceptance_requirements": [
     "deterministic static inspection"
   ],
+  "geometry": null,
+  "mesh": null,
   "openfoam_target": {
     "distribution": "foundation",
     "version": "10"
@@ -25,7 +27,7 @@
     "max_wall_seconds": 60,
     "memory_mib": 1024
   },
-  "schema_version": 1,
+  "schema_version": 2,
   "task_id": "fp-mpi-duct",
   "title": "Synthetic replay fp-mpi-duct"
 }

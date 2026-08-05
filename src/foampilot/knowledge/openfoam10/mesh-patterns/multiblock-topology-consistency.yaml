@@ -1,0 +1,42 @@
+schema_version: 1.0.0
+id: of10.mesh.multiblock-topology-consistency
+title: blockMesh 多块网格拓扑一致性
+fork: foundation
+version: "10"
+knowledge_type: mesh_pattern
+solvers: [blockMesh]
+models: [multiblock]
+tags: [blockmesh, multiblock, topology, faces, vertices, mesh]
+applicability:
+  conditions:
+    - 几何由两个或更多相邻 hex block 构造，或包含曲边、分段加密与内部共享面。
+    - 网格需要保持共享面的点序、分段数和 grading 相容。
+  not_applicable:
+    - 单一规则 hex block，或网格完全由外部 surface/volume mesher 生成时不适用。
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 blockMesh topology checks
+  locator: OpenFOAM-10/src/mesh/blockMesh/blockMesh/blockMeshCheck.C
+  sha256: a986cc3eebe0c29a7e94e78b616afadedf0255ca394c44e12948f53712bc9c55
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: 多块 blockMesh 的共享面必须由相同几何顶点构成，patch face 必须匹配真实 block face，且相邻边分段保持一致。
+  rules:
+    - 为所有全局顶点分配唯一坐标和稳定 label，逐块使用外向一致的 hex 顶点顺序。
+    - 内部共享面不得再次列入 boundary；相邻 block 必须引用同一组全局顶点。
+    - 共享面的对应边采用相同 cell 数；grading 可以不同，但必须保持拓扑连通和正体积。
+    - curved edge/face 必须对应实际 block edge/face，不能引用不存在或重复的拓扑实体。
+    - blockMesh 后必须运行 checkMesh；修复 topology error 时优先修正最早报告的 face 或 edge。
+  failure_signals:
+    - Block mesh topology incorrect
+    - does not match any block faces
+    - does not correspond to a block edge
+    - inward-pointing faces
+  validation:
+    - blockMesh 正常结束且没有 undefined boundary faces，二维明确允许的前后面除外。
+    - checkMesh 报告正确 cell 数、patch 数、正体积和可接受的拓扑质量。
+    - 相邻 block 的共享面只形成内部面，不形成重复或裂开的边界面。

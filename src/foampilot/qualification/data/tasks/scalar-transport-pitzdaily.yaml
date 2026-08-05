@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 task_id: scalar-transport-pitzdaily
 title: Passive-scalar transport through a sudden-expansion channel
 prompt: >-

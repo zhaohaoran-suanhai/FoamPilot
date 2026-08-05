@@ -360,7 +360,7 @@ def _plan(spec: SyntheticFixtureSpec) -> ExecutionPlan:
 def _task(spec: SyntheticFixtureSpec, plan: ExecutionPlan) -> TaskSpec:
     return TaskSpec.model_validate(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "task_id": spec.fixture_id,
             "title": f"Synthetic replay {spec.fixture_id}",
             "prompt": (

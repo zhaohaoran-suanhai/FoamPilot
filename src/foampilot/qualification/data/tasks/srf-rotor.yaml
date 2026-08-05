@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 task_id: srf-rotor
 title: Turbulent flow around a rotor in a single rotating frame
 prompt: >-

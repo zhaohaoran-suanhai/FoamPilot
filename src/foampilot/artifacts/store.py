@@ -146,6 +146,7 @@ class ArtifactStore:
         native_statuses = {
             "STATIC_INSPECTION_FAILED",
             "MESH_FAILED",
+            "MESH_QUALITY_FAILED",
             "INITIALIZATION_FAILED",
             "SOLVER_FAILED",
             "POSTPROCESS_FAILED",

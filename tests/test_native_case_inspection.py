@@ -19,7 +19,7 @@ from foampilot.tasks import TaskSpec
 def _task() -> TaskSpec:
     return TaskSpec.model_validate(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "task_id": "inspect-native",
             "title": "Inspect native case",
             "prompt": "Solve a two-dimensional laminar enclosure.",

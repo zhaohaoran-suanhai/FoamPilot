@@ -1,0 +1,41 @@
+schema_version: 1.0.0
+id: of10.mesh.snappy-surface-workflow
+title: snappyHexMesh 表面网格工作流
+fork: foundation
+version: "10"
+knowledge_type: mesh_pattern
+solvers: [snappyHexMesh]
+models: [surface-meshing]
+tags: [snappyhexmesh, surface, stl, obj, refinement, layers, mesh]
+applicability:
+  conditions:
+    - 公开几何以已声明单位的 STL 或 OBJ surface 提供。
+    - 任务需要由 background mesh 捕捉 surface、生成 patch 或局部加密。
+  not_applicable:
+    - 简单参数化 blockMesh 或已提供完整 OpenFOAM polyMesh 时不适用。
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 snappyHexMesh application source
+  locator: OpenFOAM-10/applications/utilities/mesh/generation/snappyHexMesh/snappyHexMesh.C
+  sha256: 24c23e1a7a080ecd0f154cdd7c32134df2a883e327b27b566bf4ca9959c72573
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: snappyHexMesh 路线需要一致的 surface 名称、background mesh、捕捉位置、refinement 和可选 layer，并在生成后由 checkMesh 验证。
+  rules:
+    - geometry entry 和 refinementSurfaces 名称必须来自已经探测的公开 surface name，不能猜测或静默改名。
+    - background mesh 必须完整包围目标区域；locationInMesh/locationInMeshes 必须位于希望保留的公开区域内。
+    - 只在公开任务启用 boundary layer 时配置 addLayers，并让 layer patch 与 surface patch 精确匹配。
+    - 按 blockMesh、必要 feature 提取、snappyHexMesh、checkMesh 的依赖顺序声明 typed command。
+    - 生成后核对 patch、region、cell 数和公开 non-orthogonality/skewness 阈值。
+  failure_signals:
+    - Cannot find surface
+    - locationInMesh is not inside the mesh
+    - Did not find any surface within
+    - Failed mesh checks
+  validation:
+    - snappyHexMesh 正常结束，预期 surface 对应的 patch/region 存在且非空。
+    - checkMesh 通过 TaskSpec 明确声明的质量要求。

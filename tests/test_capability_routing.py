@@ -24,7 +24,7 @@ from foampilot.tasks import TaskSpec
 def _task(prompt: str) -> TaskSpec:
     return TaskSpec.model_validate(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "task_id": "route-test",
             "title": "Public routing task",
             "prompt": prompt,
@@ -50,6 +50,42 @@ def _task(prompt: str) -> TaskSpec:
             "protected_paths": ["/private/route-target"],
         }
     )
+
+
+def _geometry_task(prompt: str, *, mode: str, strategy: str) -> TaskSpec:
+    payload = _task(prompt).model_dump(mode="json")
+    payload["geometry"] = {
+        "mode": mode,
+        "dimensionality": "three_d",
+        "description": "Public geometry for routing",
+        "length_unit": "m",
+        "assets": (
+            []
+            if mode == "parametric"
+            else [
+                {
+                    "path": "geometry/input.stl",
+                    "format": "stl",
+                    "role": "flow-domain",
+                }
+            ]
+        ),
+        "parameters": (
+            {"length": {"value": 1.0, "unit": "m"}}
+            if mode == "parametric"
+            else {}
+        ),
+    }
+    payload["mesh"] = {"strategy": strategy}
+    if mode != "parametric":
+        payload["public_assets"] = [
+            {
+                "path": "geometry/input.stl",
+                "sha256": "b" * 64,
+                "purpose": "public routing geometry",
+            }
+        ]
+    return TaskSpec.model_validate(payload)
 
 
 def _environment(*executables: str) -> EnvironmentSnapshot:
@@ -175,6 +211,92 @@ def test_explicit_installed_solver_routes_with_system_computed_high_confidence()
         for evidence in profile.evidence
     )
 
+
+@pytest.mark.parametrize(
+    ("mode", "strategy", "expected"),
+    (
+        ("surface", "snappyHexMesh", "snappyHexMesh"),
+        ("surface", "gmsh", "gmsh"),
+        ("surface", "provided", "provided"),
+    ),
+)
+def test_explicit_mesh_strategy_overrides_prompt_guess(
+    mode: str,
+    strategy: str,
+    expected: str,
+) -> None:
+    profile = route_capability(
+        _geometry_task(
+            "Use icoFoam with blockMesh for transient laminar "
+            "incompressible single-phase flow.",
+            mode=mode,
+            strategy=strategy,
+        ),
+        _environment(
+            "icoFoam",
+            "blockMesh",
+            "snappyHexMesh",
+            "gmsh",
+            "gmshToFoam",
+            "checkMesh",
+        ),
+        (),
+    )
+
+    assert profile.mesh_family == expected
+    assert any(
+        item.source == "task.mesh"
+        and f"explicit mesh strategy {expected}" in item.fact
+        for item in profile.evidence
+    )
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    (
+        ("parametric", "blockMesh"),
+        ("surface", "snappyHexMesh"),
+    ),
+)
+def test_auto_mesh_strategy_is_derived_from_geometry_mode(
+    mode: str,
+    expected: str,
+) -> None:
+    profile = route_capability(
+        _geometry_task(
+            "Use icoFoam for transient laminar incompressible "
+            "single-phase flow.",
+            mode=mode,
+            strategy="auto",
+        ),
+        _environment("icoFoam", "blockMesh", "snappyHexMesh"),
+        (),
+    )
+
+    assert profile.mesh_family == expected
+    assert any(
+        item.source == "task.geometry" for item in profile.evidence
+    )
+
+
+def test_explicit_external_mesh_strategy_requires_discovered_tool() -> None:
+    with pytest.raises(RoutingError) as caught:
+        route_capability(
+            _geometry_task(
+                "Use icoFoam for transient laminar incompressible "
+                "single-phase flow.",
+                mode="surface",
+                strategy="gmsh",
+            ),
+            _environment("icoFoam", "gmshToFoam"),
+            (),
+        )
+
+    assert caught.value.code == "ROUTING_UNRESOLVED"
+    assert any(
+        "required mesh executable is unavailable: gmsh" in item
+        for item in caught.value.profile.unresolved_questions
+    )
 
 def test_explicit_disabled_thermal_stress_overrides_thermal_property_words():
     profile = route_capability(

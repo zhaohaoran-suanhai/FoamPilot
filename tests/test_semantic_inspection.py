@@ -30,7 +30,7 @@ def _task(*, reconstruct: bool = False) -> TaskSpec:
         requirements.append("reconstruct parallel results")
     return TaskSpec.model_validate(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "task_id": "semantic-test",
             "title": "Semantic inspection",
             "prompt": (
@@ -294,6 +294,39 @@ def test_command_stage_shape_is_checked_without_guessing_unknown_utility(
     report = inspect_semantics(tmp_path, _task(), plan)
 
     assert "SEMANTIC_COMMAND_STAGE_MISMATCH" in _codes(report)
+
+
+def test_external_and_surface_mesh_utilities_require_mesh_stage(
+    tmp_path: Path,
+) -> None:
+    plan = _plan()
+    plan.commands = [
+        NativeCommand(
+            step_id=f"mesh-{index}",
+            stage="solve",
+            executable=name,
+            args=[],
+            mpi_ranks=1,
+            timeout_seconds=10,
+        )
+        for index, name in enumerate((
+            "surfaceCheck",
+            "surfaceFeatureExtract",
+            "snappyHexMesh",
+            "gmsh",
+            "gmshToFoam",
+        ), start=1)
+    ] + [plan.commands[-1]]
+    _materialize(tmp_path, plan)
+
+    report = inspect_semantics(tmp_path, _task(), plan)
+
+    stage_issues = [
+        item
+        for item in report.issues
+        if item.code == "SEMANTIC_COMMAND_STAGE_MISMATCH"
+    ]
+    assert len(stage_issues) == 5
 
 
 def test_mpi_requires_decomposition_and_requested_reconstruction(

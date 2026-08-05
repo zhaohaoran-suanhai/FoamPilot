@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 task_id: pimple-blocked-channel
 title: Transient incompressible channel with a distributed blockage
 prompt: >-

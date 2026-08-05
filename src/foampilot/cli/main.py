@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+from hashlib import sha256
 import json
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from foampilot.agent import (
     NativeAgent,
@@ -25,6 +28,7 @@ from foampilot.improvement import (
 )
 from foampilot.knowledge import (
     KnowledgeQuery,
+    build_knowledge_coverage,
     load_knowledge_corpus,
     select_knowledge,
     verify_knowledge_manifest,
@@ -38,10 +42,13 @@ from foampilot.physics import (
 from foampilot.models import (
     BackendMode,
     BackendRegistry,
+    GatewayRequestError,
     JsonlModelTraceSink,
+    InMemoryModelTraceSink,
     ModelBudgetLedger,
     ModelGateway,
     ModelStage,
+    backend_error_payload_zh,
     doctor_backends,
     load_backend_registry,
 )
@@ -67,6 +74,13 @@ from foampilot.skills import (
     validate_skill,
 )
 from foampilot.tasks import load_task_spec
+from foampilot.tasks import PublicAsset
+from foampilot.taskbuilder import (
+    TaskDraft,
+    compile_task_draft,
+    extract_task_draft,
+    validate_task_draft,
+)
 
 
 COMMANDS = (
@@ -83,6 +97,7 @@ COMMANDS = (
     "audit",
     "qualify",
     "improve",
+    "task",
 )
 
 KNOWLEDGE_TYPES = (
@@ -95,6 +110,8 @@ KNOWLEDGE_TYPES = (
     "parallel_execution",
     "validation_pattern",
 )
+
+MAX_TASK_ASSET_BYTES = 256 * 1024 * 1024
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -148,11 +165,39 @@ def _parser() -> argparse.ArgumentParser:
     model_doctor.add_argument("--backend-config", type=Path)
     model_doctor.add_argument("--json", action="store_true")
 
+    task = subparsers.add_parser("task")
+    task_commands = task.add_subparsers(dest="task_command")
+    task_draft = task_commands.add_parser("draft")
+    task_draft.add_argument("--request-file", required=True, type=Path)
+    task_draft.add_argument("--asset", action="append", type=Path, default=[])
+    task_draft.add_argument("--asset-root", type=Path)
+    task_draft.add_argument(
+        "--protected-path",
+        action="append",
+        type=Path,
+        default=[],
+    )
+    task_draft.add_argument("--output", required=True, type=Path)
+    _add_backend_options(task_draft)
+    task_draft.add_argument("--json", action="store_true")
+
+    task_validate = task_commands.add_parser("validate-draft")
+    task_validate.add_argument("path", type=Path)
+    task_validate.add_argument("--json", action="store_true")
+
+    task_compile = task_commands.add_parser("compile")
+    task_compile.add_argument("path", type=Path)
+    task_compile.add_argument("--output", required=True, type=Path)
+    task_compile.add_argument("--json", action="store_true")
+
     knowledge = subparsers.add_parser("knowledge")
     knowledge_commands = knowledge.add_subparsers(dest="knowledge_command")
     knowledge_validate = knowledge_commands.add_parser("validate")
     knowledge_validate.add_argument("root", type=Path)
     knowledge_validate.add_argument("--json", action="store_true")
+    knowledge_coverage = knowledge_commands.add_parser("coverage")
+    knowledge_coverage.add_argument("root", type=Path)
+    knowledge_coverage.add_argument("--json", action="store_true")
     knowledge_search = knowledge_commands.add_parser("search")
     knowledge_search.add_argument("root", type=Path)
     knowledge_search.add_argument("query")
@@ -380,6 +425,188 @@ def _native_validate(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _load_task_draft(path: Path) -> TaskDraft:
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("TaskDraft root must be a mapping")
+    return TaskDraft.model_validate(payload)
+
+
+def _write_yaml_exclusive(path: Path, value: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("x", encoding="utf-8") as stream:
+        yaml.safe_dump(
+            value,
+            stream,
+            sort_keys=False,
+            allow_unicode=True,
+        )
+
+
+def _declared_task_assets(
+    request_file: Path,
+    paths: list[Path],
+    asset_root: Path | None,
+) -> list[PublicAsset]:
+    root = (asset_root or request_file.parent).resolve()
+    result: list[PublicAsset] = []
+    for relative in paths:
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError("--asset must be a safe path relative to --asset-root")
+        source = root / relative
+        if source.is_symlink() or not source.is_file():
+            raise ValueError(f"declared asset is missing or not a file: {relative}")
+        if source.stat().st_size > MAX_TASK_ASSET_BYTES:
+            raise ValueError(
+                "declared asset exceeds the 256 MiB size limit: "
+                f"{relative}"
+            )
+        digest = sha256()
+        with source.open("rb") as stream:
+            while chunk := stream.read(1024 * 1024):
+                digest.update(chunk)
+        result.append(
+            PublicAsset(
+                path=relative.as_posix(),
+                sha256=digest.hexdigest(),
+                purpose="user-declared public task asset",
+            )
+        )
+    return result
+
+
+def _task_builder(arguments: argparse.Namespace) -> int:
+    if arguments.task_command == "draft":
+        if arguments.output.exists():
+            raise ValueError(f"output already exists: {arguments.output}")
+        request = arguments.request_file.read_text(encoding="utf-8")
+        assets = _declared_task_assets(
+            arguments.request_file,
+            arguments.asset,
+            arguments.asset_root,
+        )
+        protected = tuple(
+            dict.fromkeys(
+                [
+                    str(RuntimeConfig.local_foundation_v10().tutorial_root),
+                    *(str(path.resolve()) for path in arguments.protected_path),
+                ]
+            )
+        )
+        draft = extract_task_draft(
+            request,
+            assets,
+            _native_gateway(arguments),
+            budget=ModelBudgetLedger.start(
+                total_model_deadline_seconds=120,
+                lineage_transport_attempt_limit=3,
+            ).open_stage(
+                ModelStage.TASK_EXTRACTION,
+                request_timeout_seconds=60,
+                stage_deadline_seconds=90,
+                max_transport_attempts=2,
+            ),
+            trace=InMemoryModelTraceSink(),
+            protected_paths=protected,
+        )
+        _write_yaml_exclusive(
+            arguments.output,
+            draft.model_dump(mode="json"),
+        )
+        passed = draft.status == "confirmed"
+        payload = {
+            "status": "PASS" if passed else "TASK_REQUEST_INCOMPLETE",
+            "draft_status": draft.status.value,
+            "draft_id": draft.draft_id,
+            "output": str(arguments.output),
+            "questions": [
+                item.model_dump(mode="json")
+                for item in draft.unresolved_questions
+            ],
+        }
+        _emit(
+            payload,
+            as_json=arguments.json,
+            human=(
+                f"PASS: 任务草稿已写入 {arguments.output}。"
+                if passed
+                else f"TASK_REQUEST_INCOMPLETE: 草稿已写入 {arguments.output}，请补充或确认问题。"
+            ),
+        )
+        return 0 if passed else 4
+
+    if arguments.task_command == "validate-draft":
+        review = validate_task_draft(_load_task_draft(arguments.path))
+        blocking = any(item.severity == "blocking" for item in review.issues)
+        status = (
+            "PASS"
+            if review.can_compile
+            else (
+                "TASK_REQUEST_INCOMPLETE"
+                if blocking
+                else "TASK_CONFIRMATION_REQUIRED"
+            )
+        )
+        payload = {
+            "status": status,
+            "can_compile": review.can_compile,
+            "draft_id": review.draft.draft_id,
+            "issues": [item.model_dump(mode="json") for item in review.issues],
+        }
+        _emit(
+            payload,
+            as_json=arguments.json,
+            human=(
+                "PASS: TaskDraft 可以编译。"
+                if review.can_compile
+                else f"{status}: 请先处理草稿问题。"
+            ),
+        )
+        return 0 if review.can_compile else 4
+
+    if arguments.task_command == "compile":
+        review = validate_task_draft(_load_task_draft(arguments.path))
+        if not review.can_compile:
+            payload = {
+                "status": "TASK_COMPILATION_FAILED",
+                "issues": [
+                    item.model_dump(mode="json") for item in review.issues
+                ],
+            }
+            _emit(
+                payload,
+                as_json=arguments.json,
+                human="TASK_COMPILATION_FAILED: 请先解决草稿问题。",
+            )
+            return 4
+        compilation = compile_task_draft(review)
+        _write_yaml_exclusive(
+            arguments.output,
+            compilation.task.model_dump(mode="json"),
+        )
+        payload = {
+            "status": "PASS",
+            "task_id": compilation.task.task_id,
+            "task_sha256": compilation.task_sha256,
+            "output": str(arguments.output),
+            "assumptions": [
+                item.model_dump(mode="json")
+                for item in compilation.assumptions
+            ],
+            "diagnostics": [
+                item.model_dump(mode="json")
+                for item in compilation.diagnostics
+            ],
+        }
+        _emit(
+            payload,
+            as_json=arguments.json,
+            human=f"PASS: TaskSpec 已写入 {arguments.output}。",
+        )
+        return 0
+    raise ValueError("a task subcommand is required")
+
+
 def _native_plan(arguments: argparse.Namespace) -> int:
     task = load_task_spec(arguments.path)
     config = RuntimeConfig.local_foundation_v10().model_copy(
@@ -426,12 +653,12 @@ def _native_plan(arguments: argparse.Namespace) -> int:
     plan = normalize_execution_plan(
         plan,
         task,
-        environment.executable_names,
+        environment.available_executable_names,
     ).plan
     issues = validate_execution_plan(
         plan,
         task,
-        environment.executable_names,
+        environment.available_executable_names,
     )
     if issues:
         raise ValueError(
@@ -517,7 +744,7 @@ def _native_inspect(arguments: argparse.Namespace) -> int:
         case_root=arguments.case_dir,
         task=task,
         plan=plan,
-        available_executables=environment.executable_names,
+        available_executables=environment.available_executable_names,
     )
     payload = {
         "status": "PASS" if report.passed else "STATIC_INSPECTION_FAILED",
@@ -617,6 +844,23 @@ def _knowledge(arguments: argparse.Namespace) -> int:
             ),
         )
         return 0 if not issues else 4
+    if arguments.knowledge_command == "coverage":
+        report = build_knowledge_coverage(
+            load_knowledge_corpus(arguments.root)
+        )
+        payload = {
+            "status": "PASS",
+            **report.model_dump(mode="json"),
+        }
+        _emit(
+            payload,
+            as_json=arguments.json,
+            human=(
+                "PASS: generated knowledge coverage for "
+                f"{len(report.families)} solver families."
+            ),
+        )
+        return 0
     if arguments.knowledge_command == "search":
         query = KnowledgeQuery(
             text=arguments.query,
@@ -891,8 +1135,37 @@ def main(argv: list[str] | None = None) -> int:
             "audit": _audit,
             "qualify": _qualify,
             "improve": _improve,
+            "task": _task_builder,
         }
         return handlers[arguments.command](arguments)
+    except GatewayRequestError as error:
+        as_json = bool(getattr(arguments, "json", False))
+        backend_payload = backend_error_payload_zh(error.failure)
+        status_prefix = (
+            "TASK_EXTRACTION"
+            if arguments.command == "task"
+            else "MODEL_REQUEST"
+        )
+        status = status_prefix + (
+            "_DEFERRED" if error.failure.retryable else "_FAILED"
+        )
+        payload = {
+            "status": status,
+            **backend_payload,
+            "logical_request_id": error.logical_request_id,
+            "transport_attempts": error.transport_attempts,
+            "backend_switches": error.backend_switches,
+            "deadline_reason": error.deadline_reason,
+        }
+        _emit(
+            payload,
+            as_json=as_json,
+            human=(
+                f"{status}: {backend_payload['message']} "
+                f"{backend_payload['recovery']}"
+            ),
+        )
+        return 3
     except (ValueError, OSError, json.JSONDecodeError) as error:
         as_json = bool(getattr(arguments, "json", False))
         _emit(

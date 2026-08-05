@@ -7,6 +7,7 @@ import json
 from foampilot.environment import EnvironmentSnapshot
 from foampilot.routing import CapabilityProfile
 from foampilot.tasks import TaskSpec
+from foampilot.preprocessing import GeometryFacts
 
 
 _BUNDLE_SYSTEM = """你是一个 OpenFOAM 工程 Agent。
@@ -46,9 +47,9 @@ def bundle_request_text(
     capability: CapabilityProfile,
     knowledge_text: str,
     skills_text: str,
+    geometry_facts: GeometryFacts | None = None,
 ) -> tuple[str, str]:
-    user = "\n\n".join(
-        (
+    sections = [
             "公开任务（PUBLIC TASK）\n" + _json(task.agent_payload()),
             "已安装环境（INSTALLED ENVIRONMENT）\n" + _json(environment.agent_payload()),
             (
@@ -57,8 +58,14 @@ def bundle_request_text(
             ),
             "动态公开知识（DYNAMIC PUBLIC KNOWLEDGE）\n" + knowledge_text,
             "可移植工作流 Skill（PORTABLE WORKFLOW SKILL）\n" + skills_text,
+    ]
+    if geometry_facts is not None:
+        sections.insert(
+            1,
+            "公开几何事实（PUBLIC GEOMETRY FACTS）\n"
+            + _json(geometry_facts.model_dump(mode="json")),
         )
-    )
+    user = "\n\n".join(sections)
     for protected in task.protected_paths:
         if protected in user:
             raise ValueError("model prompt contains a protected path")

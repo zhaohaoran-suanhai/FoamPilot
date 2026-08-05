@@ -1,0 +1,89 @@
+schema_version: 1
+cases:
+  - case_id: english-simple-flow-complete
+    request_text: Solve a steady laminar incompressible channel with declared geometry, fluid and boundaries.
+    expected_can_compile: true
+    expected_codes: []
+
+  - case_id: chinese-transient-flow-complete
+    request_text: 求解二维不可压缩瞬态层流通道，所有几何、物性、边界和终止时间已经给定。
+    set_facts:
+      physics.regime: transient
+    add_facts:
+      operating.end_time:
+        value: 1.0
+        unit: s
+    expected_can_compile: true
+    expected_codes: []
+
+  - case_id: surface-missing-unit
+    request_text: 使用公开 STL 表面划分外流场，但没有说明 STL 的长度单位。
+    set_facts:
+      geometry:
+        mode: surface
+        dimensionality: three_d
+        description: public body surface
+        assets:
+          - path: geometry/body.stl
+            format: stl
+            role: body
+    assets:
+      - path: geometry/body.stl
+        sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        purpose: public body surface
+    expected_can_compile: false
+    expected_codes: [TASK_UNIT_AMBIGUOUS]
+
+  - case_id: heat-transfer-missing-thermal-properties
+    request_text: 求解带温度的流动，但没有提供导热率和热容等热物性。
+    set_facts:
+      physics.energy: enabled
+    expected_can_compile: false
+    expected_codes: [TASK_REQUEST_INCOMPLETE]
+    expected_paths: [materials.thermal]
+
+  - case_id: vof-missing-initial-phase
+    request_text: 求解两相 VOF 流动，但没有说明初始相分布。
+    set_facts:
+      physics.phase_family: vof
+    expected_can_compile: false
+    expected_codes: [TASK_REQUEST_INCOMPLETE]
+    expected_paths: [initial.phase_fraction]
+
+  - case_id: solid-missing-material
+    request_text: 求解受载固体，但没有提供弹性材料参数。
+    set_facts:
+      physics.family: solid_mechanics
+    remove_facts: [materials.fluid]
+    expected_can_compile: false
+    expected_codes: [TASK_REQUEST_INCOMPLETE]
+    expected_paths: [materials.solid]
+
+  - case_id: cht-missing-solid-region
+    request_text: 求解流固共轭换热，但没有声明固体材料和第二个 region。
+    set_facts:
+      physics.family: conjugate_heat_transfer
+      physics.energy: enabled
+    add_facts:
+      materials.thermal:
+        conductivity:
+          value: 0.6
+          unit: W/m/K
+    expected_can_compile: false
+    expected_codes: [TASK_REQUEST_INCOMPLETE]
+    expected_paths: [materials.solid, geometry.region_roles]
+
+  - case_id: gmsh-asset-undeclared
+    request_text: 使用 Gmsh 文件生成网格，但附件没有声明为 public asset。
+    set_facts:
+      geometry:
+        mode: gmsh
+        dimensionality: two_d
+        description: gmsh channel
+        length_unit: m
+        assets:
+          - path: geometry/channel.geo
+            format: geo
+            role: gmsh_geometry
+    expected_can_compile: false
+    expected_codes: [TASK_ASSET_UNRESOLVED]

@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenFOAM 网格工作流"
+  short_description: "规划和修复 Foundation v10 的结构、表面与 Gmsh 网格流程"
+  default_prompt: "使用 $openfoam-mesh-workflow 根据公开几何事实规划、检查或修复 OpenFOAM 网格。"

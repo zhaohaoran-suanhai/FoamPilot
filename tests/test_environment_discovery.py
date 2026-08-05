@@ -5,6 +5,8 @@ from pathlib import Path
 import sys
 
 from foampilot.environment import (
+    CommandFact,
+    EnvironmentSnapshot,
     discover_environment,
     enrich_command_help,
 )
@@ -135,3 +137,30 @@ def test_discovery_uses_sourced_path_not_parent_process_path(
     )
 
     assert "icoFoam" in snapshot.executable_names
+
+
+def test_available_executable_names_include_optional_external_gmsh(
+    tmp_path: Path,
+) -> None:
+    snapshot = EnvironmentSnapshot(
+        schema_version=1,
+        distribution="foundation",
+        version="10",
+        openfoam_root=tmp_path / "OpenFOAM-10",
+        tutorial_root=tmp_path / "OpenFOAM-10/tutorials",
+        workspace_root=tmp_path / "runs",
+        workspace_writable=True,
+        commands=[
+            CommandFact(name="gmshToFoam", path=tmp_path / "gmshToFoam"),
+        ],
+        mpi_launcher=None,
+        gmsh=Path("/usr/bin/gmsh"),
+        max_mpi_ranks=1,
+    )
+
+    assert snapshot.executable_names == {"gmshToFoam"}
+    assert snapshot.available_executable_names == {"gmsh", "gmshToFoam"}
+    assert snapshot.agent_payload()["executable_names"] == [
+        "gmsh",
+        "gmshToFoam",
+    ]

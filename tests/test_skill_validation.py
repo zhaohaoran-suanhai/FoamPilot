@@ -172,3 +172,27 @@ def test_repository_native_authoring_skill_validates() -> None:
     assert "不要添加 `-case case`" in text
     assert "Runner 负责 MPI launcher" in text
     assert "将可选诊断排除在必需求解计划之外" in text
+
+
+@pytest.mark.parametrize(
+    "skill_name",
+    [
+        "openfoam-incompressible-pressure-velocity",
+        "openfoam-compressible-transient",
+        "openfoam-multiphase-vof",
+        "openfoam-buoyant-cht",
+        "openfoam-solid-mechanics",
+        "openfoam-scalar-field-transport",
+        "openfoam-mesh-workflow",
+    ],
+)
+def test_repository_family_skills_validate(skill_name: str) -> None:
+    package_root = Path(__file__).resolve().parents[1]
+    scenarios = load_skill_scenarios(
+        package_root / "src/foampilot/skills/scenarios.yaml"
+    )
+
+    assert validate_skill(
+        package_root / f"src/foampilot/skills/{skill_name}",
+        scenarios,
+    ) == []

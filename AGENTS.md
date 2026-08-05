@@ -11,13 +11,17 @@ FAISS、MCP、Case renderer、`Allrun` 或第二套兼容状态机。
 
 OpenFOAM 负责网格 utility 和数值求解。FoamPilot 负责 TaskSpec 校验、能力路由、公开
 上下文、模型编写 case、typed command、安全执行、公开验证、有限 repair、qualification
-和不可变证据。
+和不可变证据。可选 TaskBuilder 可以在 run 创建前把完整自然语言请求编译为相同 TaskSpec；
+它不得直接运行 OpenFOAM。
 
 ## 规范命令
 
 ```bash
 foampilot preflight --json
 foampilot model doctor --json
+foampilot task draft --request-file REQUEST.md --output DRAFT.yaml --json
+foampilot task validate-draft DRAFT.yaml --json
+foampilot task compile DRAFT.yaml --output TASK.yaml --json
 foampilot validate TASK.yaml --json
 foampilot plan TASK.yaml --output PLAN.json --backend auto --json
 foampilot solve TASK.yaml --run-root RUNS --backend auto --json
@@ -35,8 +39,13 @@ foampilot qualify suite \
 
 ## TaskSpec 与 case 编写
 
-- 将用户需求转换为保留几何、物理、工况、资源、输出和公开验收条件的最小 TaskSpec。
+- 完整自然语言请求可以经过 `TaskDraft -> DraftReview -> TaskCompiler`，但高影响模型推断不能
+  冒充 `user_confirmation`，缺少单位、物性、边界值或终止条件时不得进入 generation。
+- 将用户需求转换为保留几何、物理、工况、资源、输出和公开验收条件的最小 TaskSpec；
+  qualification 继续直接使用冻结 TaskSpec。
 - 默认从空 case 开始；只有 TaskSpec 显式声明并通过校验的 public asset 可以进入工作目录。
+- geometry/mesh 任务必须在路由前生成 GeometryFacts；STL/OBJ 单位、patch/region role 和
+  工程网格阈值只能来自明确任务事实，不能由模型或 probe 猜测。
 - 使用 Foundation OpenFOAM v10 的文件名、量纲、边界条件、字典语法和 executable。
 - 先根据任务事实与本机 executable 路由 solver family，再动态检索公开知识；TaskSpec
   不得预选 knowledge ID。

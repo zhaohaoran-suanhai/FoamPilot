@@ -15,7 +15,7 @@ from foampilot.tasks import (
 
 def _payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "task_id": "side-driven-box",
         "title": "Side-driven enclosure",
         "prompt": "Solve a laminar incompressible side-driven box.",
@@ -76,7 +76,7 @@ def test_task_rejects_removed_allowed_knowledge_field() -> None:
 def test_task_loader_rejects_unknown_fields(tmp_path: Path) -> None:
     path = tmp_path / "task.yaml"
     path.write_text(
-        "schema_version: 1\n"
+        "schema_version: 2\n"
         "task_id: x\n"
         "title: X\n"
         "prompt: Run a case.\n"
@@ -156,3 +156,150 @@ def test_public_asset_is_hash_verified_before_staging(
     asset.write_bytes(b"changed")
     with pytest.raises(ValueError, match="SHA256"):
         stage_public_assets(task, source, tmp_path / "other-case")
+
+
+def test_v2_accepts_parametric_surface_gmsh_and_provided_mesh_inputs() -> None:
+    asset = {
+        "path": "geometry/body.stl",
+        "sha256": "a" * 64,
+        "purpose": "public geometry",
+    }
+    common_geometry = {
+        "dimensionality": "three_d",
+        "description": "公开几何",
+        "patch_roles": [
+            {"name": "inletSurface", "role": "inlet"},
+            {"name": "bodySurface", "role": "wall"},
+        ],
+        "region_roles": [{"name": "fluid", "role": "fluid"}],
+    }
+    parametric = TaskSpec.model_validate(
+        _payload(
+            schema_version=2,
+            geometry={
+                **common_geometry,
+                "mode": "parametric",
+                "length_unit": "m",
+                "assets": [],
+                "parameters": {
+                    "channel_length": {"value": 1.0, "unit": "m"}
+                },
+            },
+            mesh={"strategy": "blockMesh"},
+        )
+    )
+    surface = TaskSpec.model_validate(
+        _payload(
+            schema_version=2,
+            public_assets=[asset],
+            geometry={
+                **common_geometry,
+                "mode": "surface",
+                "length_unit": "mm",
+                "assets": [
+                    {
+                        "path": "geometry/body.stl",
+                        "format": "stl",
+                        "role": "closed_body_surface",
+                    }
+                ],
+                "parameters": {},
+            },
+            mesh={"strategy": "snappyHexMesh"},
+        )
+    )
+    gmsh = TaskSpec.model_validate(
+        _payload(
+            schema_version=2,
+            public_assets=[{**asset, "path": "geometry/body.geo"}],
+            geometry={
+                **common_geometry,
+                "mode": "gmsh",
+                "length_unit": "cm",
+                "assets": [
+                    {
+                        "path": "geometry/body.geo",
+                        "format": "geo",
+                        "role": "gmsh_geometry",
+                    }
+                ],
+                "parameters": {},
+            },
+            mesh={"strategy": "gmsh"},
+        )
+    )
+    provided = TaskSpec.model_validate(
+        _payload(
+            schema_version=2,
+            public_assets=[
+                {**asset, "path": "mesh/constant/polyMesh/points"}
+            ],
+            geometry={
+                **common_geometry,
+                "mode": "openfoam_mesh",
+                "length_unit": "m",
+                "assets": [
+                    {
+                        "path": "mesh/constant/polyMesh/points",
+                        "format": "openfoam_mesh",
+                        "role": "poly_mesh_file",
+                    }
+                ],
+                "parameters": {},
+            },
+            mesh={"strategy": "provided"},
+        )
+    )
+
+    assert parametric.geometry is not None
+    assert surface.geometry.assets[0].format == "stl"
+    assert gmsh.mesh is not None and gmsh.mesh.strategy == "gmsh"
+    assert provided.geometry.mode == "openfoam_mesh"
+
+
+def test_v2_rejects_ambiguous_units_duplicate_roles_and_undeclared_assets() -> None:
+    surface = {
+        "mode": "surface",
+        "dimensionality": "three_d",
+        "description": "Surface body",
+        "assets": [
+            {
+                "path": "geometry/body.stl",
+                "format": "stl",
+                "role": "closed_body_surface",
+            }
+        ],
+        "parameters": {},
+        "patch_roles": [],
+        "region_roles": [],
+    }
+    with pytest.raises(ValidationError, match="length_unit"):
+        TaskSpec.model_validate(
+            _payload(schema_version=2, geometry=surface)
+        )
+    with pytest.raises(ValidationError, match="duplicate patch role"):
+        TaskSpec.model_validate(
+            _payload(
+                schema_version=2,
+                geometry={
+                    **surface,
+                    "length_unit": "m",
+                    "patch_roles": [
+                        {"name": "inlet", "role": "inlet"},
+                        {"name": "inlet", "role": "outlet"},
+                    ],
+                },
+            )
+        )
+    with pytest.raises(ValidationError, match="declared public asset"):
+        TaskSpec.model_validate(
+            _payload(
+                schema_version=2,
+                geometry={**surface, "length_unit": "m"},
+            )
+        )
+
+
+def test_v1_is_not_accepted_by_the_canonical_task_model() -> None:
+    with pytest.raises(ValidationError, match="schema_version"):
+        TaskSpec.model_validate(_payload(schema_version=1))

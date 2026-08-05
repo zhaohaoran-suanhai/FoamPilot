@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenFOAM 固体力学算例"
+  short_description: "编写和修复 Foundation v10 小变形线弹性固体力学算例"
+  default_prompt: "使用 $openfoam-solid-mechanics 编写或修复小变形固体力学算例。"

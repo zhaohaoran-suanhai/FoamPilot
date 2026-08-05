@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 task_id: solid-plate-hole
 title: Plane-stress elastic plate with a circular hole
 prompt: >-

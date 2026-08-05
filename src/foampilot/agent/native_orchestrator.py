@@ -41,6 +41,13 @@ from foampilot.plans import (
     normalize_execution_plan,
     validate_execution_plan,
 )
+from foampilot.preprocessing import (
+    GeometryFacts,
+    GeometryProbeError,
+    MeshQualityReport,
+    build_mesh_quality_report,
+    probe_geometry,
+)
 from foampilot.routing import (
     CapabilityProfile,
     RoutingError,
@@ -125,6 +132,7 @@ def _read_json(path: Path) -> dict[str, object]:
 _NATIVE_STATUSES: set[str] = {
     "STATIC_INSPECTION_FAILED",
     "MESH_FAILED",
+    "MESH_QUALITY_FAILED",
     "INITIALIZATION_FAILED",
     "SOLVER_FAILED",
     "POSTPROCESS_FAILED",
@@ -149,6 +157,7 @@ def _failure_record(
         "CASE_GENERATION_FAILED": FailureDomain.CASE,
         "STATIC_INSPECTION_FAILED": FailureDomain.INSPECTION,
         "MESH_FAILED": FailureDomain.MESH,
+        "MESH_QUALITY_FAILED": FailureDomain.MESH,
         "INITIALIZATION_FAILED": FailureDomain.INITIALIZATION,
         "SOLVER_FAILED": FailureDomain.SOLVER,
         "POSTPROCESS_FAILED": FailureDomain.POSTPROCESS,
@@ -281,6 +290,42 @@ def _status_for_report(
     if report.failure_layer is None:
         return "PUBLIC_VALIDATION_FAILED"
     return report.failure_layer
+
+
+def _with_mesh_quality(
+    report: PublicValidationReport,
+    quality: MeshQualityReport,
+) -> PublicValidationReport:
+    check = PublicValidationCheck(
+        name="mesh-quality-intent",
+        passed=quality.passed,
+        detail=(
+            "Mesh observations satisfy the declared MeshIntent."
+            if quality.passed
+            else "Mesh observations do not satisfy the declared MeshIntent: "
+            + ", ".join(quality.failed_requirements)
+        ),
+        observed={
+            "check_mesh_passed": quality.check_mesh_passed,
+            "cells": quality.cells,
+            "max_non_orthogonality": quality.max_non_orthogonality,
+            "max_skewness": quality.max_skewness,
+            "failed_requirements": ",".join(quality.failed_requirements),
+        },
+        limits={},
+    )
+    failure_layer = report.failure_layer
+    if (
+        not quality.passed
+        and failure_layer in {None, "PUBLIC_VALIDATION_FAILED"}
+    ):
+        failure_layer = "MESH_QUALITY_FAILED"
+    return report.model_copy(
+        update={
+            "checks": [*report.checks, check],
+            "failure_layer": failure_layer,
+        }
+    )
 
 
 def _inspection_validation_report(
@@ -499,11 +544,15 @@ class NativeAgent:
         capability: CapabilityProfile,
         *,
         repair: bool = False,
+        repair_evidence: str = "",
+        geometry_facts: GeometryFacts | None = None,
     ) -> AgentContext:
         selected = load_agent_context(
             task,
             capability,
             repair=repair,
+            repair_evidence=repair_evidence,
+            geometry_facts=geometry_facts,
         )
         return selected.model_copy(
             update={
@@ -546,11 +595,19 @@ class NativeAgent:
         task = load_parent_task(parent)
         environment = self._environment(self.artifact_store.root)
         capability = self._parent_capability(parent)
-        context = self._context(task, capability)
         effective_asset_root = public_asset_root
         parent_assets = parent / "public-assets"
         if effective_asset_root is None and parent_assets.is_dir():
             effective_asset_root = parent_assets
+        geometry_facts = probe_geometry(
+            task,
+            Path(effective_asset_root or parent),
+        )
+        context = self._context(
+            task,
+            capability,
+            geometry_facts=geometry_facts,
+        )
         current = build_resume_fingerprint(
             task=task,
             environment=environment,
@@ -705,6 +762,37 @@ class NativeAgent:
                 )
             effective_public_asset_root = public_snapshot
 
+        geometry_facts: GeometryFacts | None = None
+        if task.geometry is not None:
+            try:
+                geometry_facts = probe_geometry(
+                    task,
+                    Path(effective_public_asset_root or run_dir),
+                )
+            except GeometryProbeError as error:
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status=error.code,
+                    attempts=attempts,
+                    message=f"公开几何探测失败: {error}",
+                    model_calls=model_calls,
+                    primary_failure=FailureRecord(
+                        domain=FailureDomain.TASK,
+                        code=error.code,
+                        detail=str(error),
+                        message="公开几何输入无法安全、确定地解释。",
+                    ),
+                )
+            assert geometry_facts is not None
+            _write_json(run_dir / "geometry-facts.json", geometry_facts)
+            _record_event(
+                workflow,
+                stage=WorkflowStage.GEOMETRY_READY,
+                state=WorkflowEventState.COMPLETED,
+                evidence_paths=["geometry-facts.json"],
+            )
+
         try:
             if _continuation is not None:
                 capability = self._parent_capability(
@@ -797,7 +885,11 @@ class NativeAgent:
         )
 
         try:
-            context = self._context(task, capability)
+            context = self._context(
+                task,
+                capability,
+                geometry_facts=geometry_facts,
+            )
         except (OSError, ValueError) as error:
             return self._finish(
                 run_dir=run_dir,
@@ -861,6 +953,17 @@ class NativeAgent:
                 )
             )
             parent_case = _continuation.active_plan_path.parent / "case"
+            parent_mesh_quality_path = (
+                _continuation.active_plan_path.parent
+                / "mesh-quality-report.json"
+            )
+            parent_mesh_quality = (
+                MeshQualityReport.model_validate_json(
+                    parent_mesh_quality_path.read_text(encoding="utf-8")
+                )
+                if parent_mesh_quality_path.is_file()
+                else None
+            )
             current_files = _read_declared_files(
                 parent_case,
                 parent_plan,
@@ -877,6 +980,10 @@ class NativeAgent:
                     task,
                     capability,
                     repair=True,
+                    repair_evidence=(
+                        report.feedback() + "\n" + log_text
+                    ),
+                    geometry_facts=geometry_facts,
                 )
                 _write_json(
                     run_dir / "repair-agent-context.json",
@@ -909,6 +1016,8 @@ class NativeAgent:
                     current_files=current_files,
                     knowledge_text=repair_context.knowledge_text,
                     skills_text=repair_context.skills_text,
+                    geometry_facts=geometry_facts,
+                    mesh_quality_report=parent_mesh_quality,
                     gateway=self.gateway,
                     budget=model_ledger.open_stage(
                         ModelStage.REPAIR,
@@ -922,7 +1031,10 @@ class NativeAgent:
                     decision,
                     task=task,
                     plan=parent_plan,
-                    available_executables=environment.executable_names,
+                    report=report,
+                    available_executables=(
+                        environment.available_executable_names
+                    ),
                     current_files=current_files,
                 )
             except GatewayRequestError as error:
@@ -1054,7 +1166,7 @@ class NativeAgent:
             repair_normalization = normalize_execution_plan(
                 repaired,
                 task,
-                environment.executable_names,
+                environment.available_executable_names,
             )
             _write_json(
                 run_dir / "continuation-repair-normalization.json",
@@ -1083,6 +1195,7 @@ class NativeAgent:
                     self.gateway,
                     context.knowledge_text,
                     context.skills_text,
+                    geometry_facts=geometry_facts,
                     budget=model_ledger.open_stage(
                         ModelStage.GENERATION,
                         request_timeout_seconds=300,
@@ -1147,7 +1260,7 @@ class NativeAgent:
         normalization = normalize_execution_plan(
             plan,
             task,
-            environment.executable_names,
+            environment.available_executable_names,
         )
         _write_json(
             run_dir / "plan-normalization.json",
@@ -1173,7 +1286,7 @@ class NativeAgent:
         plan_issues = validate_execution_plan(
             plan,
             task,
-            environment.executable_names,
+            environment.available_executable_names,
         )
         if plan_issues:
             _write_json(run_dir / "plan-issues.json", plan_issues)
@@ -1241,7 +1354,9 @@ class NativeAgent:
                 case_root=case_root,
                 task=task,
                 plan=active_plan,
-                available_executables=environment.executable_names,
+                available_executables=(
+                    environment.available_executable_names
+                ),
             )
             _write_json(
                 attempt_root / "static-inspection.json",
@@ -1259,12 +1374,13 @@ class NativeAgent:
                     )
                 ],
             )
+            mesh_quality: MeshQualityReport | None = None
             if inspection.passed:
                 runner = self.runner
                 if runner is None:
                     runner = PlanRunner.from_runtime_config(
                         self.runtime_config,
-                        environment.executable_names,
+                        environment.available_executable_names,
                         workspace_root=run_dir,
                     )
                 run_result = runner.run(
@@ -1303,11 +1419,33 @@ class NativeAgent:
                         ],
                         occurred_at=step.finished_at,
                     )
+                mesh_quality = build_mesh_quality_report(
+                    run_result,
+                    task.mesh,
+                )
+                _write_json(
+                    attempt_root / "mesh-quality-report.json",
+                    mesh_quality,
+                )
+                _record_event(
+                    workflow,
+                    stage=WorkflowStage.MESH_QUALITY_COMPLETE,
+                    state=WorkflowEventState.COMPLETED,
+                    attempt=attempt_number,
+                    evidence_paths=[
+                        (
+                            f"attempt-{attempt_number:02d}/"
+                            "mesh-quality-report.json"
+                        )
+                    ],
+                )
                 report = validate_native_run(
                     task=task,
                     run_result=run_result,
                     case_root=case_root,
                 )
+                if task.mesh is not None:
+                    report = _with_mesh_quality(report, mesh_quality)
                 log_text = _run_log(run_result)
             else:
                 report = _inspection_validation_report(inspection)
@@ -1391,6 +1529,10 @@ class NativeAgent:
                     task,
                     capability,
                     repair=True,
+                    repair_evidence=(
+                        report.feedback() + "\n" + log_text
+                    ),
+                    geometry_facts=geometry_facts,
                 )
                 _write_json(
                     attempt_root / "repair-agent-context.json",
@@ -1446,6 +1588,8 @@ class NativeAgent:
                     current_files=current_files,
                     knowledge_text=repair_context.knowledge_text,
                     skills_text=repair_context.skills_text,
+                    geometry_facts=geometry_facts,
+                    mesh_quality_report=mesh_quality,
                     gateway=self.gateway,
                     budget=model_ledger.open_stage(
                         ModelStage.REPAIR,
@@ -1459,7 +1603,10 @@ class NativeAgent:
                     decision,
                     task=task,
                     plan=active_plan,
-                    available_executables=environment.executable_names,
+                    report=report,
+                    available_executables=(
+                        environment.available_executable_names
+                    ),
                     current_files=current_files,
                 )
             except GatewayRequestError as error:
@@ -1574,7 +1721,7 @@ class NativeAgent:
             repair_normalization = normalize_execution_plan(
                 repaired,
                 task,
-                environment.executable_names,
+                environment.available_executable_names,
             )
             _write_json(
                 attempt_root / "repair-plan-normalization.json",

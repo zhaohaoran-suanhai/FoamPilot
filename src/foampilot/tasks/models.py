@@ -14,6 +14,8 @@ from pydantic import (
     model_validator,
 )
 
+from .geometry import GeometryInput, MeshIntent
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -73,7 +75,7 @@ class PublicCheck(StrictModel):
 
 
 class TaskSpec(StrictModel):
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     task_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]*$")
     title: str = Field(min_length=1)
     prompt: str = Field(min_length=1)
@@ -84,6 +86,8 @@ class TaskSpec(StrictModel):
     public_checks: list[PublicCheck] = Field(min_length=1)
     public_assets: list[PublicAsset] = Field(default_factory=list)
     protected_paths: list[str] = Field(default_factory=list)
+    geometry: GeometryInput | None = None
+    mesh: MeshIntent | None = None
 
     @field_validator(
         "title",
@@ -131,6 +135,19 @@ class TaskSpec(StrictModel):
         asset_paths = [asset.path for asset in self.public_assets]
         if len(asset_paths) != len(set(asset_paths)):
             raise ValueError("duplicate public asset paths are not allowed")
+        if self.geometry is not None:
+            undeclared = sorted(
+                {
+                    asset.path
+                    for asset in self.geometry.assets
+                    if asset.path not in set(asset_paths)
+                }
+            )
+            if undeclared:
+                raise ValueError(
+                    "geometry asset must reference a declared public asset: "
+                    + ", ".join(undeclared)
+                )
         check_names = [check.name for check in self.public_checks]
         if len(check_names) != len(set(check_names)):
             raise ValueError("duplicate public check names are not allowed")

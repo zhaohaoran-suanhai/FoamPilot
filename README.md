@@ -16,7 +16,9 @@ Foundation 版本尚未完成 qualification。模型编写算例具有非确定�
 规范工作流如下：
 
 ```text
-公开 TaskSpec
+自然语言 + 显式公开附件（可选）
+-> 带来源的 TaskDraft、确定性 review 与 TaskSpec 编译
+公开 TaskSpec（也可直接提供）
 -> 基于证据的 CapabilityProfile
 -> 按槽位限制的公开知识与路由 Skills
 -> 模型一次编写完整 ExecutionPlan v3
@@ -63,6 +65,23 @@ namespace 可用时使用无网络 bubblewrap，不可用时选择有 executable
 报告所选后端与 fallback 原因，而不会因 bubblewrap 权限不足无限等待。
 
 ## 求解任务
+
+从完整自然语言请求生成规范 TaskSpec：
+
+```bash
+foampilot task draft \
+  --request-file request.md \
+  --output task-draft.yaml \
+  --backend auto \
+  --model-name gpt-5.6-sol \
+  --json
+foampilot task validate-draft task-draft.yaml --json
+foampilot task compile task-draft.yaml --output task.yaml --json
+```
+
+TaskBuilder 只提取带来源的事实并使用低风险确定性默认值。缺少单位、物性、边界值、初始条件、
+终止时间或工程容差时不会猜测，也不会进入 case generation。当前 CLI 是三个可审计步骤，
+尚未提供多轮聊天或交互式澄清表单。
 
 校验公开 TaskSpec：
 
@@ -114,8 +133,10 @@ foampilot skill validate \
   src/foampilot/skills/openfoam-author-native-case --json
 ```
 
-工具包包含一个通用原生算例编写 Skill，以及 benchmark、buoyant-flow 与
-`rhoCentralFoam` solver-family Skills。它们是公开行为指导，不是确定性 case template。
+工具包包含一个通用原生算例编写 Skill、一个网格工作流 Skill，以及不可压缩压力速度耦合、
+可压缩瞬态、VOF、浮力/CHT、固体力学和标量/势场六个物理族 Skill。运行时只装配通用 Skill、
+至多一个物理族 Skill，并在任务声明 geometry/mesh 时附加网格 Skill。它们是公开行为指导，
+不是确定性 case template。
 
 Routing confidence 由系统负责。明确指定且已安装的 solver 可以高置信度路由；唯一兼容的
 公开 solver-family candidate 可以中置信度路由；含糊或物理信息不完整的请求会在生成
@@ -250,6 +271,7 @@ python -m pip wheel . --no-deps --wheel-dir dist
 - [阶段 B routing/semantic 验收](docs/reports/2026-07-31-stage-b-acceptance.md)
 - [交付就绪报告](docs/reports/2026-07-30-delivery-readiness.md)
 - [独立真实算例 gate](docs/reports/2026-07-29-standalone-real-gate.md)
+- [下一阶段顺序演进规格](docs/design/README.md)
 - [许可证](LICENSE)
 - [来源与声明](NOTICE.md)
 - [内容来源说明](PROVENANCE.md)

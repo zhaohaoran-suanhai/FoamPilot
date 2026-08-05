@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 task_id: buoyant-cavity
 title: Turbulent natural convection in a tall heated enclosure
 prompt: >-

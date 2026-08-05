@@ -22,7 +22,7 @@ from foampilot.tasks import TaskSpec
 def task() -> TaskSpec:
     return TaskSpec.model_validate(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "task_id": "side-driven-box",
             "title": "Side-driven enclosure",
             "prompt": "Solve a laminar incompressible side-driven box.",

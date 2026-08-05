@@ -6,8 +6,13 @@ def test_all_reusable_skills_are_packaged() -> None:
     expected = {
         "openfoam-author-native-case",
         "openfoam-author-benchmark",
-        "openfoam-buoyant-case",
-        "openfoam-rhocentral-case",
+        "openfoam-incompressible-pressure-velocity",
+        "openfoam-compressible-transient",
+        "openfoam-multiphase-vof",
+        "openfoam-buoyant-cht",
+        "openfoam-solid-mechanics",
+        "openfoam-scalar-field-transport",
+        "openfoam-mesh-workflow",
     }
     assert expected <= {
         item.name

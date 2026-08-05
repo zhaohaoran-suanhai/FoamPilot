@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenFOAM 不可压缩流算例"
+  short_description: "编写和修复 Foundation v10 不可压缩压力速度耦合算例"
+  default_prompt: "使用 $openfoam-incompressible-pressure-velocity 编写或修复不可压缩压力速度耦合算例。"

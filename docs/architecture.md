@@ -1,10 +1,15 @@
 # 架构说明
 
-FoamPilot 只支持一条从公开 TaskSpec 到证据限定结果的规范路径。
+FoamPilot 只支持一条从公开 TaskSpec 到证据限定结果的规范求解路径。自然语言 TaskBuilder 是
+可选的求解前编译边界，最终仍产生同一个 TaskSpec，不建立第二条 Runner 或状态机。
 
 ## 组件
 
+- `taskbuilder`：从自然语言和显式公开附件 metadata 提取带来源事实，检查缺失信息并确定性
+  编译 TaskSpec；
 - `tasks`：严格校验公开要求与资源预算；
+- `preprocessing`：在路由前探测几何 hash、单位、bounds、surface/patch/region 事实，并从原生
+  日志生成 MeshQualityReport；
 - `knowledge`：包含来源信息的已审查 Foundation OpenFOAM v10 知识；
 - `skills`：用于算例编写和特定 solver family 的可移植行为指导；
 - `routing`：基于证据选择 solver family，并由系统计算 confidence；
@@ -25,9 +30,19 @@ FoamPilot 只支持一条从公开 TaskSpec 到证据限定结果的规范路径
 
 ## 数据流
 
+完整自然语言请求可以先经过 `TaskExtractor -> DraftValidator -> TaskCompiler`。模型只能做
+结构化事实提取；用户原文与附件来源由系统复核，高影响模型推断必须确认，系统默认值只由
+Compiler 引入。TaskBuilder 不调用 Runner，失败也不创建 solve run。qualification 继续直接
+使用冻结 TaskSpec。
+
 环境发现后，确定性 router 创建 `CapabilityProfile`。其依据包括任务中的显式事实、已安装
 executable 和已审查 solver-family metadata。只有 candidate set 含糊时才允许请求模型
 辅助路由，且模型不能自行提高 confidence。低置信度或信息不完整的 route 会在完整算例编写前停止。
+
+几何任务会在路由前 staging 已声明 public asset 并生成 `geometry-facts.json`。显式单位、
+patch/region role 或 mesh strategy 不得由 probe 猜测；必要的外部网格程序未被环境发现时在零
+generation 调用处结束。进入 native execution 后，每个 attempt 生成独立的
+`mesh-quality-report.json`，把日志观测值与 TaskSpec 阈值分开保存。
 
 ContextAssembler 随后在 solver-family、mesh、boundary、physics/transport、
 startup/numerics、可选 parallel 与可选 repair-error 槽位中各选择至多一条知识。缺少匹配

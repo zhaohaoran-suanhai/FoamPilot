@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenFOAM 浮力与共轭换热算例"
+  short_description: "编写和修复 Foundation v10 浮力传热及多区域共轭换热算例"
+  default_prompt: "使用 $openfoam-buoyant-cht 编写或修复浮力传热与共轭换热算例。"

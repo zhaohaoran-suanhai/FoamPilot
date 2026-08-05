@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 task_id: porous-angled-duct
 title: Steady turbulent flow through an angled porous duct
 prompt: >-

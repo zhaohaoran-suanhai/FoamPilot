@@ -1,4 +1,0 @@
-interface:
-  display_name: "buoyantFoam 浮力传热算例"
-  short_description: "编写、修复并验证 Foundation v10 稳态浮力传热算例"
-  default_prompt: "使用 $openfoam-buoyant-case 编写或修复一个 Foundation v10 buoyantFoam 算例。"

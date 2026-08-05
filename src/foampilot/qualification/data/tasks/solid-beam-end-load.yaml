@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 task_id: solid-beam-end-load
 title: Linear-elastic beam under an end traction
 prompt: >-

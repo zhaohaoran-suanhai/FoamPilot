@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 task_id: shallow-water-square-bump
 title: Rotating shallow-water flow over a square bump
 prompt: >-

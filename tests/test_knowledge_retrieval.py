@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from foampilot.environment import CommandFact, EnvironmentSnapshot
 from foampilot.knowledge import (
     KnowledgeQuery,
@@ -57,7 +59,7 @@ def _context_for_task(task):
 
 def test_reviewed_corpus_is_complete_frozen_and_has_no_target_solution() -> None:
     entries = load_knowledge_corpus(CORPUS)
-    assert len(entries) == 36
+    assert len(entries) == 43
     assert verify_knowledge_manifest(CORPUS, MANIFEST) == []
     boundedness = next(
         entry
@@ -79,6 +81,68 @@ def test_reviewed_corpus_is_complete_frozen_and_has_no_target_solution() -> None
     serialized = "\n".join(entry.model_dump_json() for entry in entries)
     assert "/tutorials/" not in serialized
     assert "contains_target_case_solution\":true" not in serialized
+
+
+def test_general_failure_playbooks_and_multiblock_pattern_are_present() -> None:
+    entry_ids = {entry.id for entry in load_knowledge_corpus(CORPUS)}
+
+    assert {
+        "of10.error.missing-fvscheme-operator",
+        "of10.error.missing-solver-dictionary",
+        "of10.error.thermo-state-instability",
+        "of10.error.boundary-patch-mismatch",
+        "of10.mesh.multiblock-topology-consistency",
+        "of10.mesh.snappy-surface-workflow",
+        "of10.mesh.gmsh-physical-groups",
+    } <= entry_ids
+
+
+@pytest.mark.parametrize(
+    ("query_text", "knowledge_type", "entry_id"),
+    [
+        (
+            "keyword div(phi,U) is undefined in dictionary fvSchemes",
+            "error_playbook",
+            "of10.error.missing-fvscheme-operator",
+        ),
+        (
+            "keyword solvers is undefined in dictionary fvSolution",
+            "error_playbook",
+            "of10.error.missing-solver-dictionary",
+        ),
+        (
+            "negative temperature invalid thermo state nan",
+            "error_playbook",
+            "of10.error.thermo-state-instability",
+        ),
+        (
+            "Cannot find patchField entry for inlet boundaryField mismatch",
+            "error_playbook",
+            "of10.error.boundary-patch-mismatch",
+        ),
+        (
+            "blockMesh inconsistent block face vertex labels topology",
+            "mesh_pattern",
+            "of10.mesh.multiblock-topology-consistency",
+        ),
+    ],
+)
+def test_general_failure_and_mesh_queries_route_deterministically(
+    query_text: str,
+    knowledge_type: str,
+    entry_id: str,
+) -> None:
+    matches = select_knowledge(
+        load_knowledge_corpus(CORPUS),
+        KnowledgeQuery(
+            text=query_text,
+            knowledge_types=(knowledge_type,),
+            limit=3,
+        ),
+    )
+
+    assert matches
+    assert matches[0].entry_id == entry_id
 
 
 def test_interfoam_knowledge_covers_v10_scheme_and_stability_margin() -> None:

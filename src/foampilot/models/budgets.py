@@ -10,6 +10,7 @@ import time
 
 
 class ModelStage(StrEnum):
+    TASK_EXTRACTION = "task_extraction"
     GENERATION = "generation"
     REPAIR = "repair"
     ROUTING = "routing"

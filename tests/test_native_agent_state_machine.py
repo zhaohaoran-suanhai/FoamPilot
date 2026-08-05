@@ -12,7 +12,7 @@ from foampilot.models import (
     BackendFailureKind,
     GatewayRequestError,
 )
-from foampilot.plans import GeneratedFile
+from foampilot.plans import GeneratedFile, NativeCommand
 from foampilot.runtime import (
     PlanRunResult,
     PlanStepResult,
@@ -76,6 +76,45 @@ class SequencePlanRunner:
         )
 
 
+class MeshQualityRunner:
+    def __init__(self, max_non_orthogonality: float) -> None:
+        self.max_non_orthogonality = max_non_orthogonality
+
+    def run(self, *, case_dir, commands, budget):
+        del budget
+        case = Path(case_dir)
+        log_dir = case / ".foampilot/logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        now = datetime.now(timezone.utc)
+        steps = []
+        for index, command in enumerate(commands, start=1):
+            stdout = log_dir / f"{index:02d}-{command.step_id}.stdout.log"
+            stderr = log_dir / f"{index:02d}-{command.step_id}.stderr.log"
+            if command.executable == "checkMesh":
+                stdout.write_text(
+                    "points: 100\nfaces: 200\ncells: 80\n"
+                    f"Mesh non-orthogonality Max: {self.max_non_orthogonality} "
+                    "average: 1\nMax skewness = 0.5 OK.\nMesh OK.\n",
+                    encoding="utf-8",
+                )
+            else:
+                stdout.write_text("Time = 1\nEnd\n", encoding="utf-8")
+            stderr.write_text("", encoding="utf-8")
+            steps.append(
+                PlanStepResult(
+                    step_id=command.step_id,
+                    command=[command.executable, *command.args],
+                    return_code=0,
+                    started_at=now,
+                    finished_at=now,
+                    timed_out=False,
+                    stdout_path=stdout,
+                    stderr_path=stderr,
+                )
+            )
+        return PlanRunResult(case_dir=case, steps=steps)
+
+
 def _runtime_config() -> RuntimeConfig:
     root = Path("/home/edwin/workplace/OpenFOAM-10")
     return RuntimeConfig(
@@ -131,7 +170,8 @@ def test_native_agent_reaches_public_validation_pass(
     )
     assert agent_context["knowledge_slots"]["solver_family_contract"]
     assert agent_context["skill_names"] == [
-        "openfoam-author-native-case"
+        "openfoam-author-native-case",
+        "openfoam-incompressible-pressure-velocity",
     ]
     assert (run_dir / "authored-execution-plan.json").is_file()
     assert (run_dir / "plan-normalization.json").is_file()
@@ -161,6 +201,137 @@ def test_native_agent_reaches_public_validation_pass(
     assert '"stage":"OPENFOAM_STEP_STARTED"' in workflow_events
     assert '"stage":"OPENFOAM_STEP_COMPLETE"' in workflow_events
     assert '"stage":"ROUTING_READY"' in workflow_events
+
+
+def test_native_agent_probes_geometry_before_routing_and_generation(
+    tmp_path: Path,
+) -> None:
+    payload = _task().model_dump(mode="json")
+    payload["geometry"] = {
+        "mode": "parametric",
+        "dimensionality": "two_d",
+        "description": "Unit cavity",
+        "length_unit": "m",
+        "parameters": {
+            "length": {"value": 1.0, "unit": "m"},
+            "height": {"value": 1.0, "unit": "m"},
+        },
+        "patch_roles": [
+            {"name": "movingWall", "role": "wall"},
+        ],
+    }
+    payload["mesh"] = {
+        "strategy": "blockMesh",
+        "quality": {"require_check_mesh_pass": False},
+    }
+    task = type(_task()).model_validate(payload)
+    model = RecordingModel([_plan()])
+
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=model,
+        runner=SequencePlanRunner([(0, "Time = 1\nEnd\n", "")]),
+    ).solve(task)
+
+    facts = json.loads(
+        (outcome.run_dir / "geometry-facts.json").read_text(encoding="utf-8")
+    )
+    assert facts["mode"] == "parametric"
+    events = [
+        json.loads(line)
+        for line in (outcome.run_dir / "workflow-events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    stages = [item["stage"] for item in events]
+    assert stages.index("GEOMETRY_READY") < stages.index("ROUTING_READY")
+    assert stages.index("GEOMETRY_READY") < stages.index(
+        "MODEL_GENERATION_STARTED"
+    )
+    assert "PUBLIC GEOMETRY FACTS" in model.requests[0].user_prompt
+
+
+def test_native_agent_persists_mesh_quality_report(
+    tmp_path: Path,
+) -> None:
+    payload = _task().model_dump(mode="json")
+    payload["mesh"] = {
+        "strategy": "blockMesh",
+        "quality": {
+            "require_check_mesh_pass": True,
+            "max_non_orthogonality": 70,
+        },
+    }
+    task = type(_task()).model_validate(payload)
+    plan = _plan()
+    plan.commands.insert(
+        1,
+        NativeCommand(
+            step_id="check-mesh",
+            stage="check",
+            executable="checkMesh",
+            timeout_seconds=10,
+        ),
+    )
+    model = RecordingModel([plan])
+    agent = NativeAgent(
+        gateway=model,
+        runtime_config=_runtime_config(),
+        artifact_store=ArtifactStore(tmp_path / "runs"),
+        environment_snapshot=_environment("blockMesh", "checkMesh", "icoFoam"),
+        runner=MeshQualityRunner(12.0),
+    )
+
+    outcome = agent.solve(task)
+
+    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    quality_path = outcome.run_dir / "attempt-01/mesh-quality-report.json"
+    quality = json.loads(quality_path.read_text(encoding="utf-8"))
+    assert quality["check_mesh_passed"] is True
+    assert quality["max_non_orthogonality"] == 12.0
+    assert quality["failed_requirements"] == []
+    events = (outcome.run_dir / "workflow-events.jsonl").read_text(
+        encoding="utf-8"
+    )
+    assert '"stage":"MESH_QUALITY_COMPLETE"' in events
+
+
+def test_mesh_quality_threshold_has_distinct_native_status(
+    tmp_path: Path,
+) -> None:
+    payload = _task().model_dump(mode="json")
+    payload["resource_budget"]["max_attempts"] = 1
+    payload["mesh"] = {
+        "strategy": "blockMesh",
+        "quality": {
+            "require_check_mesh_pass": True,
+            "max_non_orthogonality": 70,
+        },
+    }
+    task = type(_task()).model_validate(payload)
+    plan = _plan()
+    plan.commands.insert(
+        1,
+        NativeCommand(
+            step_id="check-mesh",
+            stage="check",
+            executable="checkMesh",
+            timeout_seconds=10,
+        ),
+    )
+    agent = NativeAgent(
+        gateway=RecordingModel([plan]),
+        runtime_config=_runtime_config(),
+        artifact_store=ArtifactStore(tmp_path / "runs"),
+        environment_snapshot=_environment("blockMesh", "checkMesh", "icoFoam"),
+        runner=MeshQualityRunner(82.0),
+    )
+
+    outcome = agent.solve(task)
+
+    assert outcome.status == "MESH_QUALITY_FAILED"
+    assert outcome.summary.primary_failure is not None
+    assert outcome.summary.primary_failure.domain == "mesh"
 
 
 def test_native_agent_normalizes_simple_mpi_launcher_before_policy(

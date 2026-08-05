@@ -16,6 +16,7 @@ from foampilot.models import (
 from foampilot.plans import ExecutionPlan
 from foampilot.routing import CapabilityProfile
 from foampilot.tasks import TaskSpec
+from foampilot.preprocessing import GeometryFacts
 
 from .prompts import bundle_request_text
 
@@ -28,6 +29,7 @@ def author_case_bundle(
     knowledge_text: str,
     skills_text: str,
     *,
+    geometry_facts: GeometryFacts | None = None,
     budget: ModelBudgetWindow,
     trace: ModelTraceSink,
 ) -> ExecutionPlan:
@@ -39,6 +41,7 @@ def author_case_bundle(
         capability,
         knowledge_text,
         skills_text,
+        geometry_facts,
     )
     return gateway.generate_structured(
         ModelRequest(

@@ -17,7 +17,7 @@ from foampilot.workflow import (
 def _write_task(path: Path) -> None:
     path.write_text(
         """
-schema_version: 1
+schema_version: 2
 task_id: cli-native
 title: CLI native task
 prompt: Solve a small laminar flow case.
@@ -236,10 +236,10 @@ def test_cli_validates_packaged_solver_skill_without_scenario_override(
     capsys,
 ) -> None:
     package_root = Path(__file__).resolve().parents[1] / "src/foampilot"
-    skill = package_root / "skills/openfoam-buoyant-case"
+    skill = package_root / "skills/openfoam-buoyant-cht"
 
     assert main(["skill", "validate", str(skill), "--json"]) == 0
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "PASS"
-    assert payload["skill_name"] == "openfoam-buoyant-case"
+    assert payload["skill_name"] == "openfoam-buoyant-cht"

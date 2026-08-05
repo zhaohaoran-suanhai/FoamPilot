@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 task_id: potential-cylinder
 title: Two-dimensional potential flow past a circular obstacle
 prompt: >-

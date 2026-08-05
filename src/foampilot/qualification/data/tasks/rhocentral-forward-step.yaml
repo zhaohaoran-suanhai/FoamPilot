@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 task_id: rhocentral-forward-step
 title: Supersonic flow over a forward-facing step
 prompt: >-

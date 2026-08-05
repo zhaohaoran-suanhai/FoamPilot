@@ -1,5 +1,11 @@
 """Structured, provenance-bearing OpenFOAM knowledge."""
 
+from .coverage import (
+    KnowledgeCoverageCell,
+    KnowledgeCoverageReport,
+    KnowledgeCoverageStatus,
+    build_knowledge_coverage,
+)
 from .io import (
     build_knowledge_manifest,
     knowledge_entry_json_schema,
@@ -19,6 +25,9 @@ from .retrieval import KnowledgeMatch, KnowledgeQuery, select_knowledge
 
 __all__ = [
     "PILOT_FAMILIES",
+    "KnowledgeCoverageCell",
+    "KnowledgeCoverageReport",
+    "KnowledgeCoverageStatus",
     "KnowledgeApplicability",
     "KnowledgeContent",
     "KnowledgeEntry",
@@ -26,6 +35,7 @@ __all__ = [
     "KnowledgeMatch",
     "KnowledgeQuery",
     "KnowledgeSource",
+    "build_knowledge_coverage",
     "build_knowledge_manifest",
     "knowledge_entry_json_schema",
     "load_knowledge_corpus",

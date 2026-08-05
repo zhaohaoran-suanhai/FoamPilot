@@ -1,0 +1,41 @@
+schema_version: 1.0.0
+id: of10.error.missing-fvscheme-operator
+title: 修复 fvSchemes 中缺失的离散算子
+fork: foundation
+version: "10"
+knowledge_type: error_playbook
+solvers: []
+models: []
+tags: [fvschemes, operator, dictionary, undefined, repair]
+applicability:
+  conditions:
+    - 求解日志明确指出某个算子关键字在 system/fvSchemes 中未定义。
+    - 缺失项属于目标求解器实际组装的方程，而不是未执行的可选后处理。
+  not_applicable:
+    - 日志报告的是字段、patch、物性或 fvSolution 求解器段缺失时不适用。
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 dictionary typed lookup diagnostics
+  locator: OpenFOAM-10/src/OpenFOAM/db/dictionary/dictionaryTemplates.C
+  sha256: 738a49e1ce839df116a12dcc2a648ed3876a90c4a8996cf8fb3abd8646791851
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: 日志出现 fvSchemes keyword 或 operator undefined 时，从目标方程识别唯一缺失离散项并做最小字典修复。
+  rules:
+    - 保留完整 fatal message，包括请求的关键字和字典路径。
+    - 对照目标求解器、已声明模型和现有字段确认该算子确实会被执行。
+    - 只在正确的 gradSchemes、divSchemes、laplacianSchemes、interpolationSchemes 或 snGradSchemes 段补充该项。
+    - 复用同一离散格式之前，确认通量、字段类型和稳态或瞬态语义相容。
+    - 在新 attempt 中重新运行静态检查、网格步骤和目标求解器。
+  failure_signals:
+    - keyword div(...) is undefined in dictionary .../fvSchemes
+    - keyword grad(...) is undefined in dictionary .../fvSchemes
+    - keyword laplacian(...) is undefined in dictionary .../fvSchemes
+  validation:
+    - 新 attempt 不再报告同一缺失算子。
+    - 没有为了消除报错而添加与目标方程无关的通配条目。
+    - 目标求解器启动后的字段保持有限。

@@ -1,0 +1,40 @@
+schema_version: 1.0.0
+id: of10.error.boundary-patch-mismatch
+title: 修复字段 boundaryField 与网格 patch 不一致
+fork: foundation
+version: "10"
+knowledge_type: error_playbook
+solvers: []
+models: []
+tags: [boundaryfield, patchfield, patch, mismatch, fatal-io, repair]
+applicability:
+  conditions:
+    - 日志报告字段中找不到某个 mesh patch 的 patchField entry，或 patch 类型与字段约束不相容。
+    - constant/polyMesh/boundary 已由当前 attempt 的网格生成步骤产生。
+  not_applicable:
+    - blockMesh 自身拓扑错误或字段 internalField、dimensions 错误时不适用。
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 geometric boundary field construction
+  locator: OpenFOAM-10/src/OpenFOAM/fields/GeometricFields/GeometricField/GeometricBoundaryField.C
+  sha256: 65628795a5949d6b97b72ada5c7aa2bae1e3e3c1b575209bbb3197556b10aef5
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: 出现 Cannot find patchField entry 或 boundaryField mismatch 时，以生成后的 mesh boundary 为唯一 patch 清单逐字段修复。
+  rules:
+    - 先保存并读取当前 attempt 的 constant/polyMesh/boundary，不从计划中的理想名称猜测 patch。
+    - 对每个初始字段建立 mesh patch 到 boundaryField entry 的一一对应表。
+    - 按物理职责选择 field patch 类型，并让 empty、symmetryPlane、cyclic 等 mesh constraint 与字段类型一致。
+    - 只修改受影响字段；若 mesh patch 命名错误，则在 mesh 输入中统一修复并重新生成网格。
+  failure_signals:
+    - Cannot find patchField entry for
+    - Cannot find patchField entry for cyclic
+    - Mesh and field patch types disagree
+  validation:
+    - 所有必需初始字段完整覆盖当前 mesh boundary 中的 patch。
+    - checkMesh 和目标求解器不再报告 patch 缺失或约束类型冲突。
+    - 修复后的入口、出口、壁面、对称和二维边界仍符合任务物理语义。

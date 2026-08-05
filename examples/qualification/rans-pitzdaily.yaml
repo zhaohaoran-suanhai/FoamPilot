@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 task_id: rans-pitzdaily
 title: Steady turbulent flow through a sudden-expansion channel
 prompt: >-

@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 task_id: buoyant-hot-room-boussinesq
 title: Steady Boussinesq natural convection in a heated room
 prompt: >-

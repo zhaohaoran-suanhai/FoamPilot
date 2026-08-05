@@ -28,6 +28,7 @@ from foampilot.plans import (
     GeneratedFile,
     NativeCommand,
 )
+from foampilot.preprocessing import BoundingBox, GeometryFacts
 from foampilot.routing import CapabilityProfile
 from foampilot.tasks import TaskSpec
 
@@ -79,7 +80,7 @@ def _model_window(stage: ModelStage):
 def _task() -> TaskSpec:
     return TaskSpec.model_validate(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "task_id": "native-generation",
             "title": "Native generation",
             "prompt": (
@@ -323,6 +324,47 @@ def test_bundle_prompt_has_no_review_or_evaluator_contract() -> None:
     assert "expected_evidence" not in prompt
     assert "satisfies_outputs" not in prompt
     assert "review-openfoam-plan" not in prompt
+
+
+def test_bundle_prompt_contains_bounded_public_geometry_facts() -> None:
+    model = RecordingModel([_plan()])
+    facts = GeometryFacts(
+        mode="surface",
+        source_hashes={"geometry/body.stl": "b" * 64},
+        declared_length_unit="mm",
+        bounding_box_m=BoundingBox(
+            minimum=(0.0, 0.0, 0.0),
+            maximum=(0.1, 0.02, 0.01),
+        ),
+        point_count=12,
+        face_count=20,
+        surface_names=("body",),
+        region_names=("fluid",),
+        closed_surface=True,
+        manifold_status="closed_manifold",
+        dimensionality_observation="three_d",
+        patch_role_matches=(),
+        topology_observations=("boundary_edges=0",),
+        warnings=(),
+    )
+
+    author_case_bundle(
+        _task(),
+        _environment("blockMesh", "icoFoam"),
+        _capability(),
+        model,
+        "public knowledge",
+        "portable skill",
+        geometry_facts=facts,
+        budget=_model_window(ModelStage.GENERATION),
+        trace=InMemoryModelTraceSink(),
+    )
+
+    prompt = model.requests[0].user_prompt
+    assert "PUBLIC GEOMETRY FACTS" in prompt
+    assert '"face_count": 20' in prompt
+    assert '"maximum"' in prompt
+    assert "/tmp/" not in prompt
 
 
 def test_bundle_prompt_keeps_diagnostics_outside_the_required_solve() -> None:

@@ -19,7 +19,7 @@ def _task(
 ) -> TaskSpec:
     return TaskSpec.model_validate(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "task_id": "native-validation",
             "title": "Native validation",
             "prompt": "Solve a transient two-fluid case.",

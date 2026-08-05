@@ -14,7 +14,7 @@ FoamPilot 是围绕 OpenFOAM 构建的单 Agent CFD 工作流，不是新的 CFD
 求解器。两者的职责边界如下：
 
 - OpenFOAM 负责网格工具、初始化工具、数值求解器和原生后处理程序；
-- FoamPilot 负责理解结构化任务、选择求解器族、组织公开知识、调用模型编写
+- FoamPilot 负责把完整自然语言请求编译为结构化任务、选择求解器族、组织公开知识、调用模型编写
   OpenFOAM case、约束执行、检查结果、有限修复和保存证据。
 
 FoamPilot 从空 case 目录开始工作。Agent 编写的是 OpenFOAM case 文件和执行
@@ -28,8 +28,9 @@ FAISS、MCP、预先存在的目标 tutorial、Case renderer 或 `Allrun` 脚本
 
 ### 3.1 TaskSpec
 
-当前 `foampilot solve` 的直接输入是 YAML 格式的 `TaskSpec`，而不是一段无结构
-的聊天消息。`TaskSpec` 包含：
+`foampilot solve` 的直接输入仍是 YAML 格式的 `TaskSpec`。普通用户可以先通过
+`foampilot task draft -> validate-draft -> compile`，把一份完整的中文或英文自然语言请求和
+显式声明的公开附件转换成相同的规范 `TaskSpec`。`TaskSpec` 包含：
 
 - 任务标识、标题和自然语言物理需求；
 - Foundation OpenFOAM 版本；
@@ -38,9 +39,12 @@ FAISS、MCP、预先存在的目标 tutorial、Case renderer 或 `Allrun` 脚本
 - 公开验收要求和公开检查；
 - 可选的公开输入文件及其 SHA256；
 - Agent 不得访问的受保护路径。
+- 可选的几何输入、显式长度单位、patch/region role 和网格质量意图。
 
-自然语言需求需要由用户或上游 Agent 转换成最小 `TaskSpec`。FoamPilot 当前没有
-提供自动完成该转换的对话式入口。
+TaskBuilder 不直接调用 OpenFOAM：模型只提取带来源的 `TaskDraft`，确定性 Validator 区分
+blocking、confirmable 和 advisory，Compiler 只填充公开可见的低风险运行默认值。单位、物性、
+边界值、初始条件、终止时间和工程容差等高影响事实缺失时不会被猜测，也不会进入 case generation。
+当前提供的是三个可审计 CLI/Python 步骤，尚未提供持续聊天会话、交互表单或一条命令完成澄清与求解。
 
 Agent 能看到任务的物理需求、资源、输出要求和公开资产说明，但看不到
 `public_checks`、受保护路径、qualification 私有规则或参考答案。
@@ -68,7 +72,9 @@ SHA256 manifest 覆盖，之后的修改能够被 `foampilot report` 检出。
 
 | 组件 | 职责 |
 | --- | --- |
+| `taskbuilder` | 从自然语言和公开附件 metadata 提取事实、检查缺失信息并确定性编译 TaskSpec |
 | `tasks` | 校验 TaskSpec、资源预算、公开资产和信息隔离规则 |
+| `preprocessing` | 探测公开几何事实并从原生日志构造网格质量报告 |
 | `environment` | 发现 Foundation OpenFOAM v10、可执行程序和本地运行条件 |
 | `routing` | 根据任务事实、已安装程序和知识元数据确定求解器及物理族 |
 | `knowledge` / `skills` | 提供经过审查的公开 OpenFOAM 知识和行为规范 |
@@ -85,8 +91,11 @@ SHA256 manifest 覆盖，之后的修改能够被 `foampilot report` 检出。
 ## 5. 规范运行流程
 
 ```text
-TaskSpec
+自然语言 + 显式公开附件（可选）
+  -> TaskDraft -> 确定性 review -> TaskSpec
+TaskSpec（也可直接提供）
   -> 环境发现
+  -> 公开资产 staging 与 GeometryProbe
   -> 求解器族路由
   -> 动态知识和 Skill 装配
   -> 模型生成完整 ExecutionPlan v3
@@ -113,7 +122,21 @@ allowlist、资源限制与日志，但不提供 network namespace 隔离。
 `solve` 自身仍会重新发现环境并检查目标版本和可写性，但不会把单独的完整
 preflight 报告当作运行输入。
 
-### 5.2 任务校验与运行目录创建
+### 5.2 自然语言任务构建（可选）
+
+```bash
+foampilot task draft --request-file request.md --output task-draft.yaml --json
+foampilot task validate-draft task-draft.yaml --json
+foampilot task compile task-draft.yaml --output task.yaml --json
+```
+
+Extractor 只能看到 request 正文和显式声明附件的相对路径、用途与 SHA256，不读取附件正文、
+宿主任意目录或受保护 tutorial。事实的 `source` 和 `evidence` 由系统复核：原文中不存在的
+`user_text`、无法对应附件 metadata 的 `public_asset` 会降级为未确认模型推断。完整请求可以直接
+编译；缺少高影响事实时返回稳定代码和中文恢复说明，用户或上游界面补充后再产生新的 draft。
+TaskDraft 属于求解前可编辑状态，不创建 run，也不计入 mesh/solver 失败率。
+
+### 5.3 任务校验与运行目录创建
 
 CLI 首先把 YAML 解析为严格的 `TaskSpec`。字段缺失、路径非法、资源参数非法或
 公开内容泄漏受保护路径时，任务在模型调用和 OpenFOAM 执行前被拒绝。
@@ -121,7 +144,7 @@ CLI 首先把 YAML 解析为严格的 `TaskSpec`。字段缺失、路径非法�
 合法任务会获得唯一的运行目录。之后的阶段通过 `workflow-events.jsonl` 按阶段记录，
 不会共用另一个任务的 case 或状态。
 
-### 5.3 环境发现与能力路由
+### 5.4 环境发现与能力路由
 
 FoamPilot 读取本机 OpenFOAM 发行版、版本和可执行程序清单。路由器使用：
 
@@ -134,7 +157,7 @@ FoamPilot 读取本机 OpenFOAM 发行版、版本和可执行程序清单。路
 信息或存在多个无法区分的候选时，会在完整 case 生成前停止。只有候选集合确实
 含糊时，路由器才允许一次受限模型建议。
 
-### 5.4 动态上下文装配
+### 5.5 动态上下文装配
 
 确定求解器族之后，ContextAssembler 按语义槽位检索公开知识，主要包括：
 
@@ -147,9 +170,19 @@ FoamPilot 读取本机 OpenFOAM 发行版、版本和可执行程序清单。路
 - 修复阶段的错误知识。
 
 每个槽位最多选取一条知识；没有可靠匹配时保留为空，而不是用无关条目填满提示。
-模型通常收到一份通用 case 编写 Skill 和至多一份求解器族 Skill。
+运行时采用“通用 Skill + 至多一个物理族 Skill”；任务声明 geometry/mesh 时再增加一个
+mesh Skill。通用 Skill 约束原生 case 编写和
+typed command，物理族 Skill 只补充不可压缩、可压缩、VOF、浮力/CHT、固体或标量/势场中
+与当前 solver 相符的一类判断。窄求解器没有可靠映射时只加载通用 Skill，不叠加多个 Skill。
 
-### 5.5 完整 case 生成
+repair 阶段使用公开验证反馈和失败日志尾部重新选择 error playbook；失败日志只进入
+error-playbook 检索槽位，不会改变生成阶段已经确定的其他语义槽位。
+
+几何任务在路由前生成 `geometry-facts.json`。STL/OBJ 单位只能来自 TaskSpec；hash、路径、
+surface name 或 patch role 无法确定时会在零模型调用处快速失败。显式 mesh strategy 优先于
+prompt 关键词；Gmsh 只有被环境发现后才能进入 typed plan。
+
+### 5.6 完整 case 生成
 
 ModelGateway 发起一次逻辑生成请求，要求模型同时返回所有 case 文件、
 CaseManifest 和全部 typed commands。底层传输在阶段 deadline 和次数预算内可以
@@ -159,7 +192,7 @@ Model backend 只负责一次交换；Gateway 负责错误分类、重试、dead
 传输追踪和熔断。qualification 的多个 worker 可以共享 Gateway 和熔断状态，但各
 算例的任务、时间预算、case、日志和评测状态相互独立。
 
-### 5.6 计划规范化与检查
+### 5.7 计划规范化与检查
 
 生成后的计划依次经过：
 
@@ -178,7 +211,7 @@ Model backend 只负责一次交换；Gateway 负责错误分类、重试、dead
 由网格、初始化程序或求解器创建的场不要求在执行前已经存在；Agent 或公开资产
 声明创建的文件必须存在。
 
-### 5.7 OpenFOAM 执行
+### 5.8 OpenFOAM 执行
 
 Runner 按计划顺序逐条执行命令：
 
@@ -192,7 +225,7 @@ Runner 按计划顺序逐条执行命令：
 因此 Agent 可以安排网格生成、`checkMesh`、场初始化、求解和原生后处理，但实际
 执行始终由 Runner 控制。某一步失败后，后续命令不再继续。
 
-### 5.8 公开验证
+### 5.9 公开验证
 
 执行完成或静态检查失败后，Evaluator 根据 TaskSpec 中的公开检查生成
 `public-validation.json`。检查对象包括：
@@ -207,7 +240,11 @@ Runner 按计划顺序逐条执行命令：
 返回码为零只表示程序正常退出，不自动等价于收敛、物理正确或 qualification
 通过。只有所有公开检查通过，普通求解状态才是 `PUBLIC_VALIDATION_PASS`。
 
-### 5.9 定向修复
+执行过原生网格步骤的 attempt 还会写出 `mesh-quality-report.json`，其中的 cell 数、
+non-orthogonality、skewness 等观测与 TaskSpec 阈值分开保存。网格命令失败使用
+`MESH_FAILED`，网格已生成但不满足公开阈值使用 `MESH_QUALITY_FAILED`。
+
+### 5.10 定向修复
 
 如果检查失败且 TaskSpec 尚有尝试预算，repair 模型只接收：
 
@@ -221,10 +258,13 @@ repair 可以替换 case 文件或已有 typed command，但仍要再次通过�
 物化、静态检查、OpenFOAM 执行和公开验证。重复失败、没有实质改动、环境错误或
 尝试预算耗尽时停止修复。
 
+mesh failure 使用更窄的 repair scope：默认只能修改网格文件和 mesh/check command；只有
+patch 变化有直接证据时才允许同步初始场 `boundaryField`，物性、求解器和初始内场保持不变。
+
 仓库随附任务的 `max_attempts` 当前均为 2，因此这些规范任务最多执行一次初始生成
 和一次修复尝试。
 
-### 5.10 终态归档
+### 5.11 终态归档
 
 运行结束时写入 `summary.json`，随后生成 `artifact-manifest.json`。manifest 记录
 运行目录内每个文件的大小和 SHA256。`foampilot report RUN_DIR --json` 会重新计算
@@ -351,6 +391,8 @@ artifact-manifest.json
 
 FoamPilot 当前可以：
 
+- 把信息完整的中文或英文自然语言请求和声明附件编译为规范 TaskSpec；
+- 在高影响事实缺失时停止在求解前，并给出稳定代码、中文解释和恢复建议；
 - 针对 Foundation OpenFOAM v10，从空目录生成完整单区域或多区域 case；
 - 根据 TaskSpec 和公开知识选择已安装的求解器族；
 - 生成网格、边界条件、物性、数值格式、初始化和控制字典；
@@ -372,14 +414,15 @@ FoamPilot 当前不保证：
 - 覆盖所有 OpenFOAM 求解器、模型、网格工具和耦合场景；
 - 支持 ESI OpenFOAM、其他 Foundation 版本或任意第三方 solver；
 - 自动编写、编译新的 OpenFOAM C++ 求解器；
-- 直接从无结构聊天输入自动生成 TaskSpec；
+- 维护多轮聊天会话，或在 CLI 内交互式收集并确认缺失事实；
 - 对求解中断执行通用 checkpoint/restart；
 - 自动生成工程级网格质量方案、网格无关性研究或不确定性分析；
 - 自动将失败经验写入正式知识库或 Skill；
 - 生产服务级的可用性、调度、权限管理和多人协作。
 
-`docs/verified-plan-reuse-design.md` 中的已验证 ExecutionPlan 复用仍是设计，
-尚未进入当前运行路径；当前 `solve` 仍需通过模型生成新的 ExecutionPlan。
+[Performance v1](design/performance-v1-design.md) 中的统一性能方案，以及其引用的已验证
+ExecutionPlan 复用、几何/网格缓存和 repair 阶段复用，仍然只是已冻结设计，尚未进入当前运行
+路径；当前 `solve` 仍需通过模型生成新的 ExecutionPlan，也不会自动复用历史网格。
 
 ## 11. 最小使用入口
 
