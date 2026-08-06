@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from hashlib import sha256
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,7 @@ from foampilot.plans import (
     normalize_execution_plan,
     validate_execution_plan,
 )
+from foampilot.performance import build_taskbuilder_performance
 from foampilot.qualification import (
     QualificationReport,
     load_qualification_suite,
@@ -135,6 +137,8 @@ def _parser() -> argparse.ArgumentParser:
     native_solve.add_argument("path", type=Path)
     native_solve.add_argument("--run-root", required=True, type=Path)
     native_solve.add_argument("--public-asset-root", type=Path)
+    native_solve.add_argument("--reuse-verified-plan", type=Path)
+    native_solve.add_argument("--derived-cache", type=Path)
     _add_backend_options(native_solve)
     native_solve.add_argument("--max-mpi-ranks", type=int, default=1)
     native_solve.add_argument("--json", action="store_true")
@@ -493,6 +497,8 @@ def _task_builder(arguments: argparse.Namespace) -> int:
                 ]
             )
         )
+        trace = InMemoryModelTraceSink()
+        extraction_started = time.monotonic()
         draft = extract_task_draft(
             request,
             assets,
@@ -506,13 +512,30 @@ def _task_builder(arguments: argparse.Namespace) -> int:
                 stage_deadline_seconds=90,
                 max_transport_attempts=2,
             ),
-            trace=InMemoryModelTraceSink(),
+            trace=trace,
             protected_paths=protected,
         )
         _write_yaml_exclusive(
             arguments.output,
             draft.model_dump(mode="json"),
         )
+        performance = build_taskbuilder_performance(
+            trace.attempts,
+            draft_id=draft.draft_id,
+            total_seconds=time.monotonic() - extraction_started,
+        )
+        performance_path = arguments.output.with_suffix(
+            arguments.output.suffix + ".performance.json"
+        )
+        with performance_path.open("x", encoding="utf-8") as stream:
+            json.dump(
+                performance.model_dump(mode="json"),
+                stream,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            stream.write("\n")
         passed = draft.status == "confirmed"
         payload = {
             "status": "PASS" if passed else "TASK_REQUEST_INCOMPLETE",
@@ -689,10 +712,19 @@ def _native_solve(arguments: argparse.Namespace) -> int:
         update={"max_mpi_ranks": arguments.max_mpi_ranks}
     )
     outcome = NativeAgent(
-        gateway=_native_gateway(arguments),
+        gateway=(
+            None
+            if arguments.reuse_verified_plan is not None
+            else _native_gateway(arguments)
+        ),
         runtime_config=config,
         artifact_store=ArtifactStore(arguments.run_root),
-    ).solve(task, public_asset_root=arguments.public_asset_root)
+    ).solve(
+        task,
+        public_asset_root=arguments.public_asset_root,
+        reuse_verified_plan=arguments.reuse_verified_plan,
+        derived_cache=arguments.derived_cache,
+    )
     payload = outcome.model_dump(mode="json")
     _emit(
         payload,

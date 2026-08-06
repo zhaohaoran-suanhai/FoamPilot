@@ -1,8 +1,9 @@
 # 阶段 1：Knowledge 与 Skills 优化规格
 
-状态：核心实现已完成，当前证据和未完成的多物理族/30 题 gate 见
-[第一阶段实施记录](../reports/2026-08-04-stage-1-knowledge-skills.md)。本文保留完整规格，coverage
-中的条目存在不等于求解能力通过验证。
+状态：核心实现已完成；基于 2026-08-05 同后端 30 题证据的阶段 1.1 轻量修正设计已批准，
+尚未实施。当前证据见[第一阶段实施记录](../reports/2026-08-04-stage-1-knowledge-skills.md)与
+[Performance v1 报告](../reports/2026-08-05-performance-v1.md)。本文保留完整规格，coverage 中的
+条目存在不等于求解能力通过验证。
 
 ## 1. 背景与目标
 
@@ -258,6 +259,9 @@ Evaluator，不应成为全局硬拦截。
 
 ## 10. 阶段验收
 
+本节保留阶段 1 初始实施时的历史基线和 gate；完成结构化输出轻量修正后的当前基线与阶段 1.1
+验收口径以第 12 节为准，不能直接混用两组数字。
+
 在与当前 30 题基线可比的协议下，阶段 1 的初始验收目标为：
 
 | 指标 | 当前基线 | 阶段 gate |
@@ -291,3 +295,86 @@ Evaluator，不应成为全局硬拦截。
 
 完成本阶段后，FoamPilot 仍然以结构化 `TaskSpec` 和简单/已有网格路线为主；复杂几何支持在
 阶段 2 实施。
+
+## 12. 阶段 1.1：基于 30 题证据的轻量修正
+
+### 12.1 设计动机
+
+2026-08-05 的同后端 30 题复测在消除大部分结构化输出失败后得到：
+
+- case generation：29/30；
+- target solver started：27/30；
+- solver normal completion：21/30；
+- public validation pass：20/30；
+- qualification：16 `PASS`、13 `FAIL_AGENT`、1 `DEFERRED_BACKEND`。
+
+剩余问题不能统一归结为“知识条目不足”。冻结产物显示至少存在四种不同情况：
+
+1. **知识激活过宽**：专用 `volumeFractionSource` 条目只因 executable 匹配便进入不需要该
+   模型的上下文；
+2. **Foundation v10 原生契约缺口**：例如 phase dictionary 必需关键词、矩阵对称性与线性
+   求解器组合；
+3. **有契约但行为顺序不够明确**：例如先保证热力学可行状态和保守启动，再追求高阶格式或
+   大时间步；
+4. **不应由 Knowledge/Skill 修复的失败**：backend timeout、单题 evaluator 偏差、复杂网格
+   几何错误和需要确定性程序修复的流程问题。
+
+因此阶段 1.1 不增加知识库规模目标，而是提高检索精度和现有 family 指导的有效密度。
+
+### 12.2 实施范围
+
+本轮只处理可由公开 Foundation v10 事实支撑、且能够迁移到同 solver family 的内容：
+
+| 领域 | Knowledge 修正 | Skill 行为修正 |
+| --- | --- | --- |
+| 专用 physics model | 为 `volumeFractionSource` 等 opt-in 条目补充明确 `activation_terms`，无任务证据时保持槽位为空 | 只有任务明确声明模型时才创建相应字段、字典和初始化命令 |
+| `interFoam` | 明确 alpha solver dictionary、`p_rgh`、相物性和初始化的 Foundation v10 契约 | 按 mesh → `checkMesh` → `setFields` → solver 顺序，并先验证初始相分数 |
+| `twoLiquidMixingFoam` | 补齐 phase dictionary 的必需输运/扩散关键词及字段关系 | solver 启动前按模型读取顺序核对 phase properties 和 alpha 字段 |
+| `rhoCentralFoam` / `rhoPimpleFoam` | 明确对称/非对称矩阵的 solver/preconditioner 兼容性、thermo 字段一致性和正状态启动 | 先采用可运行的保守启动组合，并根据 Courant、温度和压力证据逐步调整 |
+| `buoyantFoam` | 强化 Boussinesq/ideal-gas 适用边界、`p/p_rgh`、能量变量和参考状态关系 | 在修改松弛或离散格式前先验证 thermo package、参考状态和初始温度可反演 |
+| Maxwell/PIMPLE | 保留专用 Maxwell 契约，补充 Courant、应力对流和 outer coupling 的稳定启动顺序 | repair 每次只改变一个有证据的稳定性因素，并检查应力 residual 是否恶化 |
+
+阶段 1.1 不新增 per-case Knowledge、Skill、TaskSpec 字段、状态机、renderer 或 blocking
+inspector。复杂 SRF 拓扑只归档为 mesh-family 后续工作，除非能够从公开源码提炼出与目标几何
+无关的通用规则。
+
+### 12.3 内容形式
+
+Knowledge 继续保存事实和适用条件；Skill 只保存判断与动作顺序。新增文字优先使用正向契约：
+
+```text
+任务事实
+→ 激活一个适用条目
+→ 声明必需文件/字段关系
+→ 采用保守可运行的启动配置
+→ 原生日志验证
+→ 只对观测到的失败做最小 repair
+```
+
+不得把某道题的最终字典、几何尺寸、patch 名、golden value、evaluator tolerance 或官方路径写入
+Knowledge/Skill。官方 example 如被 teacher 侧读取，只能在 attempt 冻结后用于核对通用
+Foundation v10 语义。
+
+### 12.4 测试与验收
+
+修改顺序遵循：
+
+1. 用现有 Skill 时运行隔离的基线场景，记录模型是否遗漏或违反目标契约；
+2. 先增加会失败的 retrieval/activation 或内容契约测试；
+3. 最小修改一条 Knowledge 或一个 family Skill；
+4. 运行相同场景验证行为变化；
+5. 运行未参与提炼的同族 holdout 和 frozen artifact replay；
+6. 最后再决定是否需要完整 30 题复测。
+
+第一优先级是稳定、较快地进入目标求解器。阶段 1.1 的最小验收条件为：
+
+- 专用知识在缺少显式任务证据时不再被选中；
+- 新增或修改的 family 契约均有 Foundation v10 来源与独立测试；
+- 目标失败样本的 target solver entry 或正常完成得到可解释改善；
+- 同族 holdout 的 target solver entry 不回退；
+- 不放宽 public checks 或 qualification evaluator；
+- prompt 上下文大小不因本轮修正显著增加；
+- backend/environment failure 继续与 case failure 分开统计。
+
+严格物理 qualification 是第二层指标。它必须完整报告，但不以针对单题调参的方式作为本轮
+Knowledge/Skill promotion 条件。

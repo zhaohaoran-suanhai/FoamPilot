@@ -1,0 +1,31 @@
+schema_version: 2
+task_id: buoyant-hot-room-steady
+title: Steady Boussinesq natural convection in a heated room
+prompt: >-
+  Starting from an empty case directory, build the steady Foundation OpenFOAM
+  v10 hotRoomBoussinesqSteady problem. Use a two-dimensional 5 m by 3 m room
+  with one empty spanwise cell, a 100 by 60 structured mesh, a 320 K heated
+  floor section, a 300 K cold ceiling and adiabatic remaining walls. Model air
+  with the Boussinesq approximation, reference temperature 300 K, thermal
+  expansion coefficient 3.3e-3 1/K, gravity (0 -9.81 0), and laminar momentum
+  transport. Use buoyantFoam in steady mode with consistent p, p_rgh, pRef, U,
+  T and alphat fields. Run blockMesh/checkMesh and solve through iteration 500,
+  writing every 100. Generate all files yourself and do not inspect the target
+  tutorial.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1500, max_mpi_ranks: 1, memory_mib: 3072}
+required_outputs:
+  - mesh and completed steady buoyant solver logs
+  - final pressure, velocity and temperature fields
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - buoyantFoam reaches iteration 500 and ends normally
+  - fields remain finite and temperature remains positive
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: buoyantFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-iteration, kind: final_time, parameters: {minimum: 500}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

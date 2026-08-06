@@ -1,0 +1,30 @@
+schema_version: 2
+task_id: piso-rans-cavity
+title: Transient turbulent lid-driven cavity
+prompt: >-
+  Starting from an empty case directory, construct a two-dimensional square
+  lid-driven cavity for Foundation OpenFOAM v10 pisoFoam. Use a 0.1 m by
+  0.1 m enclosure, one empty spanwise cell, a uniform 50 by 50 mesh, a 1 m/s
+  moving top wall and stationary remaining walls. Use air with nu=1.5e-5 m2/s
+  and k-epsilon RANS with coherent inlet-free wall functions for k, epsilon and
+  nut. Initialize U and p consistently, integrate to 2 s with deltaT=0.005 s,
+  and write every 0.2 s. Generate all native dictionaries, run blockMesh and
+  checkMesh, then pisoFoam, preserving U, p and turbulence fields. Run
+  serially and do not inspect or copy a pre-existing tutorial.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 900, max_mpi_ranks: 1, memory_mib: 2048}
+required_outputs:
+  - mesh quality and completed pisoFoam logs
+  - final flow and turbulence fields
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - pisoFoam reaches 2 s and ends normally
+  - fields remain finite
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: pisoFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 2.0}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

@@ -94,6 +94,16 @@ def test_task_draft_writes_model_output_without_calling_solver(
     ) == 0
 
     assert output.is_file()
+    performance_path = output.with_suffix(
+        output.suffix + ".performance.json"
+    )
+    assert performance_path.is_file()
+    performance = json.loads(performance_path.read_text(encoding="utf-8"))
+    assert performance["schema_version"] == 1
+    assert performance["draft_id"] == expected.draft_id
+    assert performance["total_seconds"] >= 0
+    assert performance["logical_requests"] == 0
+    assert performance["transport_attempts"] == 0
     assert calls and calls[0][0] == "Solve a complete channel."
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "PASS"

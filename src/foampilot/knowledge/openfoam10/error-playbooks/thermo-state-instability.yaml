@@ -29,6 +29,7 @@ content:
     - 保存首个非物理状态之前的日志、时间步、Courant 数和字段 extrema。
     - 检查 thermoType、equationOfState、energy 字段、Cp/Cv、分子量和输运参数是否内部一致。
     - 用公开状态关系核对 p、T、rho 与能量初值和边界值，禁止只对结果字段做裁剪。
+    - 若日志来自 energy-to-temperature inversion，先保存首个失败前的 temperature extrema、energy、p/rho 与 thermo package，并验证初始、参考和边界状态可以反演。不得只修改 fvSolution；linear solver 或 relaxation 变化不能修复不一致的 thermo state。
     - 初态正确后，再按顺序检查时间步、边界波动、能量离散和松弛；一次 repair 只改变一个原因族。
   failure_signals:
     - Negative initial temperature T0

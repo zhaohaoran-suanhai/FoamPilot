@@ -1,0 +1,11 @@
+schema_version: 1
+protocol_id: official-corpus-extra-7-routing-recovery-v1
+max_workers: 1
+cases:
+  - {case_id: cht-heated-duct, role: holdout, evaluation_level: public_validation, exclusive: true}
+  - {case_id: compressible-interfoam-climbing-rod, role: holdout, evaluation_level: public_validation}
+  - {case_id: driftflux-dahl, role: holdout, evaluation_level: public_validation}
+  - {case_id: multiphase-euler-bubble-column, role: holdout, evaluation_level: public_validation}
+  - {case_id: dsmc-free-space-periodic, role: holdout, evaluation_level: public_validation}
+  - {case_id: dense-particle-column, role: holdout, evaluation_level: public_validation}
+  - {case_id: reacting-counterflow-flame, role: holdout, evaluation_level: public_validation}

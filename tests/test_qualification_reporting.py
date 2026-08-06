@@ -20,6 +20,7 @@ from foampilot.qualification.reporting import (
     native_case_dir,
     run_metadata,
 )
+from foampilot.performance import PerformanceReuse, PerformanceSummary
 from foampilot.workflow import (
     FailureDomain,
     FailureRecord,
@@ -253,6 +254,129 @@ def test_report_preserves_protocol_order_and_mpi_rendering(
         ]
     ]
     assert report.counts["FAIL_AGENT"] == 1
+
+
+def test_report_aggregates_cold_and_warm_performance_evidence(
+    tmp_path: Path,
+) -> None:
+    cold = _outcome(tmp_path / "cold", status="PLAN_INVALID")
+    warm = _outcome(tmp_path / "warm", status="PLAN_INVALID")
+    for outcome, kind, pre_solve, workflow, build in (
+        (cold, "cold", 12.0, 20.0, 0.5),
+        (warm, "warm_plan", 2.0, 8.0, 0.25),
+    ):
+        outcome.run_dir.mkdir(parents=True)
+        (outcome.run_dir / "performance-summary.json").write_text(
+            PerformanceSummary(
+                path_kind=kind,
+                workflow_seconds_before_manifest=workflow,
+                time_to_first_openfoam_command_seconds=pre_solve,
+                reuse=PerformanceReuse(
+                    plan="hit" if kind == "warm_plan" else "disabled"
+                ),
+            ).model_dump_json(),
+            encoding="utf-8",
+        )
+        (outcome.run_dir / "artifact-manifest.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "build_seconds": build,
+                    "files": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    report = build_qualification_report(
+        [
+            {
+                "case_id": "laminar-cavity",
+                "outcome": cold,
+                "manifest_issues": [],
+                "metrics": [],
+                "duration_seconds": 20.5,
+                "message": "cold",
+            },
+            {
+                "case_id": "buoyant-cavity",
+                "outcome": warm,
+                "manifest_issues": [],
+                "metrics": [],
+                "duration_seconds": 8.25,
+                "message": "warm",
+            },
+        ],
+        backend_id="test",
+        model_name="test",
+    )
+
+    assert report.results[0].path_kind == "cold"
+    assert report.results[1].path_kind == "warm_plan"
+    assert report.results[1].end_to_end_latency_seconds == 8.25
+    assert report.aggregates.cold_path_pre_solve.count == 1
+    assert report.aggregates.cold_path_pre_solve.p50_seconds == 12
+    assert report.aggregates.warm_path_pre_solve.p95_seconds == 2
+    assert report.aggregates.end_to_end_latency.count == 2
+    assert report.aggregates.plan_reuse_hit_count == 1
+
+
+def test_report_marks_missing_performance_evidence_without_guessing(
+    tmp_path: Path,
+) -> None:
+    outcome = _outcome(tmp_path, status="PLAN_INVALID")
+
+    report = build_qualification_report(
+        [
+            {
+                "case_id": "laminar-cavity",
+                "outcome": outcome,
+                "manifest_issues": [],
+                "metrics": [],
+                "duration_seconds": 1.0,
+                "message": "missing performance",
+            }
+        ],
+        backend_id="test",
+        model_name="test",
+    )
+
+    result = report.results[0]
+    assert result.path_kind is None
+    assert result.pre_solve_latency_seconds is None
+    assert result.end_to_end_latency_seconds is None
+    assert result.performance_evidence_complete is False
+    assert report.aggregates.cold_path_pre_solve.count == 0
+
+
+def test_run_metadata_does_not_mark_diagnostic_performance_complete(
+    tmp_path: Path,
+) -> None:
+    outcome = _outcome(tmp_path, status="PLAN_INVALID")
+    outcome.run_dir.mkdir(parents=True)
+    (outcome.run_dir / "performance-summary.json").write_text(
+        PerformanceSummary(
+            path_kind="cold",
+            workflow_seconds_before_manifest=2,
+            diagnostics=["workflow event line 2 is invalid"],
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    (outcome.run_dir / "artifact-manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "build_seconds": 0.1,
+                "files": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    metadata = run_metadata(outcome)
+
+    assert metadata["end_to_end_latency_seconds"] == 2.1
+    assert metadata["performance_evidence_complete"] is False
 
 
 def test_run_metadata_recognizes_target_solver_inside_mpi_launcher(

@@ -1,0 +1,32 @@
+schema_version: 2
+task_id: simple-t3a-boundary-layer
+title: Transitional flat-plate boundary layer
+prompt: >-
+  Starting from an empty case directory, build a two-dimensional version of
+  the Foundation OpenFOAM v10 T3A flat-plate benchmark. Use a 3.04 m long
+  domain, an inlet upstream of the plate leading edge, a graded wall-normal
+  mesh with at least 300 streamwise and 80 wall-normal cells, and one empty
+  spanwise cell. Prescribe a 5.4 m/s inlet, slip on the upper and upstream
+  free-stream boundaries, no slip on the plate, and zero kinematic pressure at
+  the outlet. Use simpleFoam with air at nu=1.5e-5 m2/s and a Foundation v10
+  transition-capable RANS model with the required k, omega, nut, gammaInt and
+  ReThetat fields. Solve through iteration 500 and write the final state.
+  Generate all dictionaries yourself, run blockMesh and checkMesh, and do not
+  read or copy the target tutorial.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1200, max_mpi_ranks: 1, memory_mib: 3072}
+required_outputs:
+  - valid graded mesh and completed simpleFoam log
+  - velocity, pressure and transition-model fields
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - simpleFoam reaches iteration 500 and ends normally
+  - all fields remain finite
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: simpleFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-iteration, kind: final_time, parameters: {minimum: 500}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

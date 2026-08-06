@@ -9,6 +9,7 @@ from .logs import (
 from .models import (
     PlanRunResult,
     PlanStepResult,
+    ReusedStepResult,
     RuntimeCheck,
     RuntimeConfig,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "PlanRunResult",
     "PlanRunner",
     "PlanStepResult",
+    "ReusedStepResult",
     "RuntimeCheck",
     "RuntimeConfig",
     "parse_openfoam_log",

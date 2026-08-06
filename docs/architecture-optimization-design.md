@@ -1,6 +1,6 @@
 # FoamPilot 架构优化设计规格
 
-状态：阶段 A 已实施并通过 gate；阶段 B–D 尚未实施
+状态：阶段 A、B 已实施并通过 gate；阶段 C、D 尚未完整实施
 日期：2026-07-30
 适用基线：FoamPilot `8d30409`
 设计主题：运行韧性、薄语义层、定向修复与受控学习路由
@@ -12,17 +12,22 @@
 - [单算例工作流与求解前健康度分析](runtime-workflow-and-pre-solve-health-analysis.md)
 - [新增 10 个官方场景复测与受控学习报告](reports/2026-07-30-extended-10-learning.md)
 - [阶段 A 验收记录](reports/2026-07-31-stage-a-acceptance.md)
+- [阶段 B 验收记录](reports/2026-07-31-stage-b-acceptance.md)
+- [历史架构分析剪藏](archive/2026-07-30-agent-architecture-analysis.md)（已归档，非现行规范）
 
 实施边界：
 
-- 已完成：A0 冻结 replay、A1 单次 Provider Client、A2
+- 已完成阶段 A：A0 冻结 replay、A1 单次 Provider Client、A2
   ModelGateway、A3 qualification 共享 breaker 与分层指标、A4
   WorkflowStore、A5 RunSummary v2、A6 strict continuation、A7
   确定性/真实最小 gate；
-- 尚未开始：CapabilityRouter、slot-based context、region-aware
-  CaseManifest、semantic inspector、scoped RepairPatch 和学习目标路由。
+- 已完成阶段 B：CapabilityRouter、slot-based context、region-aware
+  CaseManifest、semantic inspector、计划 normalizer 与 frozen-v2 replay；
+- 尚未完整实现：阶段 C 的 FailureClassifier、RepairScope、RepairPatch 与
+  command 插入，以及阶段 D 的扩展 RootCause、ImprovementTarget 和情景经验路由。
 
-因此本文仍是完整的 v1 设计依据，但只有阶段 A 的条款代表当前代码能力。
+因此本文仍是完整的 v1 设计依据；阶段 A、B 的能力以对应验收报告和当前源码为准，
+阶段 C、D 仍属于设计目标，不能视为当前能力。
 
 ## 1. 背景与结论
 

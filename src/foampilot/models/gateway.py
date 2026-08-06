@@ -23,7 +23,11 @@ from .circuit_breaker import (
 from .errors import BackendError, BackendFailureKind
 from .registry import BackendMode, BackendRegistry
 from .schema import strict_response_schema
-from .traces import ModelAttemptTrace, ModelTraceSink
+from .traces import (
+    ModelAttemptTrace,
+    ModelTraceSink,
+    StructuredOutputNormalization,
+)
 
 
 T = TypeVar("T", bound=BaseModel)
@@ -239,6 +243,11 @@ class ModelGateway:
         *,
         budget: ModelBudgetWindow,
         trace: ModelTraceSink,
+        output_normalizer: Callable[
+            [str],
+            tuple[T, tuple[StructuredOutputNormalization, ...]],
+        ]
+        | None = None,
     ) -> ModelResult[T]:
         logical_request_id = uuid4().hex
         started = self.monotonic()
@@ -326,6 +335,9 @@ class ModelGateway:
                 response: BackendResponse | None = None
                 failure: BackendError | None = None
                 value: T | None = None
+                normalizations: tuple[
+                    StructuredOutputNormalization, ...
+                ] = ()
                 try:
                     response = backend.exchange(
                         active_request,
@@ -344,7 +356,14 @@ class ModelGateway:
                             retryable=False,
                         )
                     try:
-                        value = schema.model_validate_json(response.output_text)
+                        if output_normalizer is None:
+                            value = schema.model_validate_json(
+                                response.output_text
+                            )
+                        else:
+                            value, normalizations = output_normalizer(
+                                response.output_text
+                            )
                     except Exception as error:
                         raise BackendError(
                             kind=BackendFailureKind.SCHEMA_INVALID,
@@ -406,6 +425,7 @@ class ModelGateway:
                             and failure.request_timed_out
                             else None
                         ),
+                        normalizations=normalizations,
                     )
                 )
 

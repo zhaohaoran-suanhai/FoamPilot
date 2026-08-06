@@ -59,7 +59,7 @@ def _context_for_task(task):
 
 def test_reviewed_corpus_is_complete_frozen_and_has_no_target_solution() -> None:
     entries = load_knowledge_corpus(CORPUS)
-    assert len(entries) == 43
+    assert len(entries) == 49
     assert verify_knowledge_manifest(CORPUS, MANIFEST) == []
     boundedness = next(
         entry
@@ -178,6 +178,10 @@ def test_solver_contracts_cover_failures_observed_in_native_baseline() -> None:
     assert "fieldInf must be a scalar literal" in rho_central
     assert "gamma scalar" in rho_central
     assert "(U|e)" in rho_central
+    assert "守恒显式场" in rho_central
+    assert "派生隐式场" in rho_central
+    assert "smoothSolver" in rho_central
+    assert "diagonal 只用于" in rho_central
 
     buoyant = by_id["of10.solver.buoyantfoam-contract"]
     assert "rhoFinal" in buoyant
@@ -324,6 +328,27 @@ def test_blocked_channel_retrieves_volume_fraction_source_contract() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "case_id",
+    ["laminar-planar-couette", "rhopimple-shock-tube"],
+)
+def test_volume_fraction_source_requires_explicit_task_activation(
+    case_id: str,
+) -> None:
+    task = load_task_spec(
+        PROJECT
+        / "src/foampilot/qualification/data/tasks"
+        / f"{case_id}.yaml"
+    )
+
+    context = _context_for_task(task)
+
+    assert (
+        "of10.physics.volume-fraction-source"
+        not in context.selected_knowledge_ids
+    )
+
+
 def test_srf_and_mhd_tasks_retrieve_exact_solver_contracts() -> None:
     for case_id, entry_id in (
         ("srf-rotor", "of10.solver.srfpimplefoam-contract"),
@@ -437,6 +462,9 @@ def test_solver_contracts_capture_complete_observed_v10_dictionary_sets() -> Non
             "Gauss interfaceCompression vanLeer 1",
             "nAlphaCorr 1",
             "nAlphaSubCycles 2",
+            "alpha.<phase>",
+            "solver、smoother、tolerance、relTol",
+            "UFinal",
         ),
         "of10.solver.simplefoam-rans-contract": (
             "consistent yes",
@@ -499,6 +527,33 @@ def test_buoyant_pressure_contract_covers_operating_pressure_gauge_start() -> No
     assert "constant/pRef" in serialized
 
 
+def test_thermo_playbook_requires_state_first_repair() -> None:
+    entries = {
+        entry.id: entry
+        for entry in load_knowledge_corpus(CORPUS)
+    }
+    playbook = entries[
+        "of10.error.thermo-state-instability"
+    ].model_dump_json()
+
+    assert "不得只修改 fvSolution" in playbook
+    assert "temperature extrema" in playbook
+
+
+def test_maxwell_contract_requires_evidence_driven_repair() -> None:
+    entries = {
+        entry.id: entry
+        for entry in load_knowledge_corpus(CORPUS)
+    }
+    maxwell = entries[
+        "of10.solver.pimplefoam-maxwell-contract"
+    ].model_dump_json()
+
+    assert "actual Courant" in maxwell
+    assert "stress residual" in maxwell
+    assert "一次 repair 只改变一个原因族" in maxwell
+
+
 def test_extended_solver_contracts_cover_observed_startup_failures() -> None:
     entries = {
         entry.id: entry
@@ -548,6 +603,11 @@ def test_extended_solver_contracts_cover_observed_startup_failures() -> None:
             "laminar",
             "Fourier",
         ),
+        "of10.solver.rhopimplefoam-compressible-laminar-contract": (
+            "symmetric matrix",
+            "DIC",
+            "DILU",
+        ),
         "of10.solver.solidequilibriumdisplacementfoam-contract": (
             "solidEquilibriumDisplacementFoam",
             "div((sigmaExp+sigmaD))",
@@ -560,6 +620,8 @@ def test_extended_solver_contracts_cover_observed_startup_failures() -> None:
         ),
         "of10.solver.twoliquidmixingfoam-contract": (
             "twoLiquidMixingFoam",
+            "Dab",
+            "alphatab",
             "maxAlphaCo",
             "必须成对包含 maxCo 与 maxAlphaCo",
             "nAlphaSubCycles",
@@ -569,6 +631,36 @@ def test_extended_solver_contracts_cover_observed_startup_failures() -> None:
             "electrostaticFoam",
             "epsilon0 epsilon0",
             "k k",
+        ),
+        "of10.solver.compressibleinterfoam-contract": (
+            "compressibleInterFoam",
+            "pMin",
+            "alpha Courant",
+        ),
+        "of10.solver.driftfluxfoam-contract": (
+            "driftFluxFoam",
+            "mixtureViscosityModel",
+            "Vc",
+        ),
+        "of10.solver.multiphaseeulerfoam-contract": (
+            "multiphaseEulerFoam",
+            "T.<phase>",
+            "thermophysicalTransport.<phase>",
+        ),
+        "of10.solver.dsmcfoam-contract": (
+            "dsmcInitialise",
+            "InflowBoundaryModel",
+            "none",
+        ),
+        "of10.solver.denseparticlefoam-contract": (
+            "denseParticleFoam",
+            "continuousPhaseName",
+            "cloud:alpha",
+        ),
+        "of10.solver.reactingfoam-contract": (
+            "reactingFoam",
+            "reactingMixture",
+            "defaultSpecie",
         ),
     }
 
@@ -612,6 +704,30 @@ def test_extended_tasks_retrieve_exact_public_contracts() -> None:
         (
             "electrostaticFoam charged wire dielectric epsilon0",
             "of10.solver.electrostaticfoam-contract",
+        ),
+        (
+            "compressibleInterFoam compressible VOF pMin phase thermo",
+            "of10.solver.compressibleinterfoam-contract",
+        ),
+        (
+            "driftFluxFoam sludge settling relative velocity Vc",
+            "of10.solver.driftfluxfoam-contract",
+        ),
+        (
+            "multiphaseEulerFoam bubble column T.air T.water",
+            "of10.solver.multiphaseeulerfoam-contract",
+        ),
+        (
+            "dsmcFoam dsmcInitialise periodic argon collision",
+            "of10.solver.dsmcfoam-contract",
+        ),
+        (
+            "denseParticleFoam MPPIC cloud packing continuousPhaseName",
+            "of10.solver.denseparticlefoam-contract",
+        ),
+        (
+            "reactingFoam counterflow chemistry species defaultSpecie",
+            "of10.solver.reactingfoam-contract",
         ),
     )
 

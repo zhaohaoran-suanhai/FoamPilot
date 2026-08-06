@@ -4,7 +4,7 @@
 > qualification 边界和性能验收以
 > [Performance v1](design/performance-v1-design.md) 为准。
 
-**Status:** approved design, not yet implemented
+**Status:** implemented as part of Performance v1 on 2026-08-05
 **Date:** 2026-07-31
 **Repository baseline:** local `main` working tree after Stage B
 
@@ -113,9 +113,9 @@ replace or bypass downstream safety and execution.
 One focused module owns reuse validation:
 
 ```text
-src/foampilot/plans/reuse.py
-    VerifiedPlanLoader
-    PlanReuseRecord
+src/foampilot/performance/plan_reuse.py
+    VerifiedPlanSource
+    load_verified_plan_source
     PlanReuseError
 ```
 

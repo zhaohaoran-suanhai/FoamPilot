@@ -26,6 +26,7 @@ from foampilot.environment import (
 from foampilot.inspection import InspectionReport, inspect_native_case
 from foampilot.knowledge import load_knowledge_corpus
 from foampilot.models import (
+    BackendFailureKind,
     GatewayRequestError,
     JsonlModelTraceSink,
     LineageBudgetExhausted,
@@ -40,6 +41,16 @@ from foampilot.plans import (
     NativeCommand,
     normalize_execution_plan,
     validate_execution_plan,
+)
+from foampilot.performance import (
+    DerivedCache,
+    PlanReuseError,
+    PerformanceReuse,
+    build_performance_summary,
+    geometry_cache_key,
+    load_verified_plan_source,
+    mesh_cache_key,
+    prepare_repair_reuse,
 )
 from foampilot.preprocessing import (
     GeometryFacts,
@@ -56,6 +67,7 @@ from foampilot.routing import (
 from foampilot.runtime import (
     PlanRunResult,
     PlanRunner,
+    ReusedStepResult,
     RuntimeConfig,
 )
 from foampilot.tasks import TaskSpec, stage_public_assets
@@ -95,6 +107,13 @@ from .repair import (
 )
 
 
+# Complex native cases can legitimately require more than five minutes of
+# local Codex CLI authoring. Keep a finite bound, but leave enough headroom for
+# one complete response instead of discarding it at the former 300 s limit.
+GENERATION_REQUEST_TIMEOUT_SECONDS = 420
+GENERATION_STAGE_DEADLINE_SECONDS = 480
+
+
 def _json_payload(value: object) -> object:
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json")
@@ -129,6 +148,68 @@ def _read_json(path: Path) -> dict[str, object]:
     return payload
 
 
+def _performance_context(
+    run_dir: Path,
+) -> tuple[str, PerformanceReuse, list[str]]:
+    path = run_dir / "performance-context.json"
+    if not path.is_file():
+        return "cold", PerformanceReuse(), []
+    try:
+        payload = _read_json(path)
+        path_kind = str(payload.get("path_kind", "cold"))
+        reuse_payload = payload.get("reuse", {})
+        diagnostics_payload = payload.get("diagnostics", [])
+        reuse = PerformanceReuse.model_validate(
+            reuse_payload if isinstance(reuse_payload, dict) else {}
+        )
+        diagnostics = (
+            [str(item) for item in diagnostics_payload]
+            if isinstance(diagnostics_payload, list)
+            else []
+        )
+        return path_kind, reuse, diagnostics
+    except (OSError, ValueError):
+        return (
+            "cold",
+            PerformanceReuse(),
+            ["PERFORMANCE_EVIDENCE_INCOMPLETE: invalid performance context"],
+        )
+
+
+def _update_performance_context(
+    run_dir: Path,
+    *,
+    path_kind: str | None = None,
+    plan: str | None = None,
+    geometry: str | None = None,
+    mesh: str | None = None,
+    repair_start_stage: str | None = None,
+    diagnostic: str | None = None,
+) -> None:
+    current_kind, current_reuse, diagnostics = _performance_context(run_dir)
+    updates: dict[str, object] = {}
+    if plan is not None:
+        updates["plan"] = plan
+    if geometry is not None:
+        updates["geometry"] = geometry
+    if mesh is not None:
+        updates["mesh"] = mesh
+    if repair_start_stage is not None:
+        updates["repair_start_stage"] = repair_start_stage
+    reuse = current_reuse.model_copy(update=updates)
+    if diagnostic is not None:
+        diagnostics = list(dict.fromkeys([*diagnostics, diagnostic]))
+    _write_json(
+        run_dir / "performance-context.json",
+        {
+            "schema_version": 1,
+            "path_kind": path_kind or current_kind,
+            "reuse": reuse,
+            "diagnostics": diagnostics,
+        },
+    )
+
+
 _NATIVE_STATUSES: set[str] = {
     "STATIC_INSPECTION_FAILED",
     "MESH_FAILED",
@@ -154,6 +235,8 @@ def _failure_record(
         "ROUTING_UNRESOLVED": FailureDomain.TASK,
         "BLOCKED_ENVIRONMENT": FailureDomain.ENVIRONMENT,
         "PLAN_INVALID": FailureDomain.PLAN,
+        "GENERATION_INVALID": FailureDomain.PLAN,
+        "PLAN_REUSE_REJECTED": FailureDomain.PLAN,
         "CASE_GENERATION_FAILED": FailureDomain.CASE,
         "STATIC_INSPECTION_FAILED": FailureDomain.INSPECTION,
         "MESH_FAILED": FailureDomain.MESH,
@@ -379,7 +462,7 @@ class NativeAgent:
     def __init__(
         self,
         *,
-        gateway: ModelGateway,
+        gateway: ModelGateway | None,
         runtime_config: RuntimeConfig,
         artifact_store: ArtifactStore,
         environment_snapshot: EnvironmentSnapshot | None = None,
@@ -470,11 +553,15 @@ class NativeAgent:
             run_dir / "model-configuration.json",
             {
                 "schema_version": 3,
-                "client_type": type(self.gateway).__name__,
+                "client_type": (
+                    type(self.gateway).__name__
+                    if self.gateway is not None
+                    else None
+                ),
                 "backend_id": getattr(
                     self.gateway,
                     "primary_backend_id",
-                    type(self.gateway).__name__,
+                    None,
                 ),
                 "model": getattr(self.gateway, "primary_model", None),
                 "backend_policy_sha256": getattr(
@@ -527,6 +614,31 @@ class NativeAgent:
             message=message,
         )
         workflow.finish(summary)
+        path_kind, performance_reuse, performance_diagnostics = (
+            _performance_context(run_dir)
+        )
+        performance = build_performance_summary(
+            run_dir,
+            path_kind=path_kind,
+            reuse=performance_reuse,
+        )
+        if performance_diagnostics:
+            performance = performance.model_copy(
+                update={
+                    "diagnostics": list(
+                        dict.fromkeys(
+                            [
+                                *performance.diagnostics,
+                                *performance_diagnostics,
+                            ]
+                        )
+                    )
+                }
+            )
+        _write_json(
+            run_dir / "performance-summary.json",
+            performance,
+        )
         self.artifact_store.finalize(run_dir)
         return NativeAgentOutcome(
             run_dir=run_dir,
@@ -591,6 +703,9 @@ class NativeAgent:
     ) -> NativeAgentOutcome:
         """Create an immutable child run from a retryable model stage."""
 
+        if self.gateway is None:
+            raise ValueError("strict resume requires a model gateway")
+
         parent = Path(parent_run).resolve()
         task = load_parent_task(parent)
         environment = self._environment(self.artifact_store.root)
@@ -636,9 +751,50 @@ class NativeAgent:
         task: TaskSpec,
         *,
         public_asset_root: str | Path | None = None,
+        reuse_verified_plan: str | Path | None = None,
+        derived_cache: str | Path | None = None,
         _continuation: ContinuationInput | None = None,
     ) -> NativeAgentOutcome:
+        if reuse_verified_plan is not None and _continuation is not None:
+            raise ValueError(
+                "verified plan reuse and strict continuation are mutually exclusive"
+            )
         run_dir = self.artifact_store.create_run()
+        derived_cache_store = (
+            DerivedCache(derived_cache)
+            if derived_cache is not None
+            else None
+        )
+        _write_json(
+            run_dir / "performance-context.json",
+            {
+                "schema_version": 1,
+                "path_kind": (
+                    "warm_plan"
+                    if reuse_verified_plan is not None
+                    else "cold"
+                ),
+                "reuse": PerformanceReuse(
+                    plan=(
+                        "miss"
+                        if reuse_verified_plan is not None
+                        else "disabled"
+                    ),
+                    geometry=(
+                        "miss"
+                        if derived_cache_store is not None
+                        and task.geometry is not None
+                        else "disabled"
+                    ),
+                    mesh=(
+                        "miss"
+                        if derived_cache_store is not None
+                        else "disabled"
+                    ),
+                ),
+                "diagnostics": [],
+            },
+        )
         workflow = WorkflowStore(
             run_dir=run_dir,
             event_listener=self.workflow_event_listener,
@@ -765,10 +921,50 @@ class NativeAgent:
         geometry_facts: GeometryFacts | None = None
         if task.geometry is not None:
             try:
-                geometry_facts = probe_geometry(
-                    task,
-                    Path(effective_public_asset_root or run_dir),
-                )
+                geometry_key: str | None = None
+                if derived_cache_store is not None:
+                    geometry_key = geometry_cache_key(
+                        task,
+                        Path(effective_public_asset_root or run_dir),
+                    )
+                    geometry_lookup = derived_cache_store.load_geometry(
+                        geometry_key
+                    )
+                    _write_json(
+                        run_dir / "geometry-cache.json",
+                        {
+                            "schema_version": 1,
+                            "status": geometry_lookup.status,
+                            "cache_key": geometry_lookup.key,
+                            "reason_code": geometry_lookup.reason_code,
+                        },
+                    )
+                    if geometry_lookup.status == "hit":
+                        geometry_facts = geometry_lookup.value
+                        _update_performance_context(
+                            run_dir,
+                            geometry="hit",
+                        )
+                    elif geometry_lookup.reason_code == "DERIVED_CACHE_INVALID":
+                        _update_performance_context(
+                            run_dir,
+                            geometry="miss",
+                            diagnostic="DERIVED_CACHE_INVALID: geometry",
+                        )
+                if geometry_facts is None:
+                    geometry_facts = probe_geometry(
+                        task,
+                        Path(effective_public_asset_root or run_dir),
+                    )
+                    if (
+                        derived_cache_store is not None
+                        and geometry_key is not None
+                        and geometry_facts is not None
+                    ):
+                        derived_cache_store.store_geometry(
+                            geometry_key,
+                            geometry_facts,
+                        )
             except GeometryProbeError as error:
                 return self._finish(
                     run_dir=run_dir,
@@ -793,12 +989,68 @@ class NativeAgent:
                 evidence_paths=["geometry-facts.json"],
             )
 
+        verified_source = None
+        if reuse_verified_plan is not None:
+            try:
+                verified_source = load_verified_plan_source(
+                    reuse_verified_plan,
+                    task=task,
+                    environment=environment,
+                    public_asset_root=effective_public_asset_root,
+                )
+            except PlanReuseError as error:
+                _write_json(
+                    run_dir / "plan-reuse.json",
+                    {
+                        "schema_version": 1,
+                        "status": "rejected",
+                        "source_run": str(Path(reuse_verified_plan).resolve()),
+                        "reason_code": error.reason_code,
+                        "detail": error.detail,
+                    },
+                )
+                _update_performance_context(
+                    run_dir,
+                    path_kind="warm_plan",
+                    plan="miss",
+                    diagnostic=(
+                        f"PLAN_REUSE_REJECTED: {error.reason_code}"
+                    ),
+                )
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status="PLAN_REUSE_REJECTED",
+                    attempts=attempts,
+                    message=str(error),
+                    model_calls=model_calls,
+                    primary_failure=FailureRecord(
+                        domain=FailureDomain.PLAN,
+                        code="PLAN_REUSE_REJECTED",
+                        detail=str(error),
+                        message="显式复用的 ExecutionPlan 不满足严格兼容条件。",
+                        recovery="请选择匹配的已验证 run，或不带复用参数重新生成。",
+                    ),
+                )
+            _write_json(run_dir / "plan-reuse.json", verified_source.record())
+            _update_performance_context(
+                run_dir,
+                path_kind="warm_plan",
+                plan="hit",
+            )
+
         try:
-            if _continuation is not None:
+            if verified_source is not None:
+                capability = verified_source.capability
+            elif _continuation is not None:
                 capability = self._parent_capability(
                     _continuation.parent_run
                 )
             else:
+                if self.gateway is None:
+                    raise ValueError(
+                        "live authoring requires a model gateway"
+                    )
                 knowledge_root = (
                     Path(__file__).resolve().parents[1]
                     / "knowledge/openfoam10"
@@ -916,30 +1168,35 @@ class NativeAgent:
             evidence_paths=["agent-context.json"],
         )
 
-        fingerprint = build_resume_fingerprint(
-            task=task,
-            environment=environment,
-            model=self.gateway.primary_model,
-            backend_id=self.gateway.primary_backend_id,
-            backend_policy_sha256=self.gateway.policy_sha256,
-            knowledge_ids=context.selected_knowledge_ids,
-            knowledge_text=context.knowledge_text,
-            skill_ids=context.skill_names,
-            skills_text=context.skills_text,
-            public_asset_root=effective_public_asset_root,
-        )
-        _write_json(
-            run_dir / "resume-compatibility.json",
-            fingerprint,
-        )
+        if self.gateway is not None:
+            fingerprint = build_resume_fingerprint(
+                task=task,
+                environment=environment,
+                model=self.gateway.primary_model,
+                backend_id=self.gateway.primary_backend_id,
+                backend_policy_sha256=self.gateway.policy_sha256,
+                knowledge_ids=context.selected_knowledge_ids,
+                knowledge_text=context.knowledge_text,
+                skill_ids=context.skill_names,
+                skills_text=context.skills_text,
+                public_asset_root=effective_public_asset_root,
+            )
+            _write_json(
+                run_dir / "resume-compatibility.json",
+                fingerprint,
+            )
 
         continuation_index = (
             _continuation.continuation_index_for_stage
             if _continuation is not None
             else 0
         )
+        pending_repair_decision: RepairDecision | None = None
+        pending_repair_source_attempt: Path | None = None
 
-        if (
+        if verified_source is not None:
+            plan = verified_source.plan
+        elif (
             _continuation is not None
             and _continuation.from_stage
             == WorkflowStage.MODEL_REPAIR_STARTED
@@ -1173,6 +1430,10 @@ class NativeAgent:
                 repair_normalization.records,
             )
             plan = repair_normalization.plan
+            pending_repair_decision = decision
+            pending_repair_source_attempt = (
+                _continuation.active_plan_path.parent
+            )
             _record_event(
                 workflow,
                 stage=WorkflowStage.REPAIR_APPLIED,
@@ -1182,6 +1443,10 @@ class NativeAgent:
             )
         else:
             try:
+                if self.gateway is None:
+                    raise ValueError(
+                        "live authoring requires a model gateway"
+                    )
                 model_calls += 1
                 _record_event(
                     workflow,
@@ -1198,13 +1463,47 @@ class NativeAgent:
                     geometry_facts=geometry_facts,
                     budget=model_ledger.open_stage(
                         ModelStage.GENERATION,
-                        request_timeout_seconds=300,
-                        stage_deadline_seconds=360,
+                        request_timeout_seconds=(
+                            GENERATION_REQUEST_TIMEOUT_SECONDS
+                        ),
+                        stage_deadline_seconds=(
+                            GENERATION_STAGE_DEADLINE_SECONDS
+                        ),
                         max_transport_attempts=3,
                     ),
                     trace=model_trace,
                 )
             except GatewayRequestError as error:
+                if error.failure.kind == BackendFailureKind.SCHEMA_INVALID:
+                    return self._finish(
+                        run_dir=run_dir,
+                        task=task,
+                        status="GENERATION_INVALID",
+                        attempts=attempts,
+                        message=(
+                            "模型输出未能形成有效的 ExecutionPlan："
+                            f"{error.failure.detail}"
+                        ),
+                        model_calls=model_calls,
+                        workflow_state=WorkflowState.FAILED,
+                        primary_failure=FailureRecord(
+                            domain=FailureDomain.PLAN,
+                            code="GENERATION_INVALID",
+                            detail=error.failure.detail,
+                            message="模型输出的执行计划结构无效。",
+                            recovery=(
+                                "调整生成上下文或模型后重新生成；"
+                                "该错误不是模型服务不可用。"
+                            ),
+                        ),
+                        resume=ResumeMetadata(
+                            allowed=False,
+                            reason=(
+                                "invalid generated plan is not a "
+                                "transport continuation"
+                            ),
+                        ),
+                    )
                 can_resume = (
                     error.failure.retryable
                     and continuation_index < 2
@@ -1256,7 +1555,8 @@ class NativeAgent:
                     message=f"Case-bundle authoring failed: {error}",
                     model_calls=model_calls,
                 )
-        _write_json(run_dir / "authored-execution-plan.json", plan)
+        if verified_source is None:
+            _write_json(run_dir / "authored-execution-plan.json", plan)
         normalization = normalize_execution_plan(
             plan,
             task,
@@ -1313,6 +1613,7 @@ class NativeAgent:
             case_root = attempt_root / "case"
             case_root.mkdir(parents=True)
             _write_json(attempt_root / "execution-plan.json", active_plan)
+            repair_preparation = None
 
             try:
                 if task.public_assets:
@@ -1323,6 +1624,41 @@ class NativeAgent:
                         case_root,
                     )
                 materialize_case(active_plan, task, case_root)
+                if (
+                    pending_repair_decision is not None
+                    and pending_repair_source_attempt is not None
+                ):
+                    repair_preparation = prepare_repair_reuse(
+                        parent_attempt=pending_repair_source_attempt,
+                        next_case_root=case_root,
+                        plan=active_plan,
+                        decision=pending_repair_decision,
+                    )
+                    _write_json(
+                        attempt_root / "execution-reuse.json",
+                        repair_preparation.record,
+                    )
+                    if repair_preparation.record.get("applied") is True:
+                        _update_performance_context(
+                            run_dir,
+                            path_kind="repair_reuse",
+                            repair_start_stage=(
+                                repair_preparation.decision.earliest_rerun_stage
+                            ),
+                        )
+                    else:
+                        _update_performance_context(
+                            run_dir,
+                            repair_start_stage="mesh",
+                            diagnostic=(
+                                "REPAIR_REUSE_UNSAFE: "
+                                + ",".join(
+                                    repair_preparation.decision.reason_codes
+                                )
+                            ),
+                        )
+                    pending_repair_decision = None
+                    pending_repair_source_attempt = None
             except Exception as error:
                 return self._finish(
                     run_dir=run_dir,
@@ -1376,6 +1712,152 @@ class NativeAgent:
             )
             mesh_quality: MeshQualityReport | None = None
             if inspection.passed:
+                commands_to_execute = (
+                    list(repair_preparation.commands_to_execute)
+                    if repair_preparation is not None
+                    else list(active_plan.commands)
+                )
+                reused_steps: list[ReusedStepResult] = (
+                    list(repair_preparation.reused_steps)
+                    if repair_preparation is not None
+                    else []
+                )
+                mesh_key_result = None
+                mesh_lookup = None
+                if (
+                    derived_cache_store is not None
+                    and attempt_number == next_attempt
+                    and repair_preparation is None
+                ):
+                    mesh_key_result = mesh_cache_key(
+                        task,
+                        geometry_facts=geometry_facts,
+                        plan=active_plan,
+                        environment=environment,
+                        public_asset_root=Path(
+                            effective_public_asset_root or run_dir
+                        ),
+                    )
+                    check_mesh_present = any(
+                        command.stage == "check"
+                        and command.executable == "checkMesh"
+                        for command in active_plan.commands
+                    )
+                    if not mesh_key_result.cacheable:
+                        _write_json(
+                            attempt_root / "mesh-cache.json",
+                            {
+                                "schema_version": 1,
+                                "status": "miss",
+                                "cache_key": None,
+                                "reason_code": mesh_key_result.reason_code,
+                            },
+                        )
+                        _update_performance_context(
+                            run_dir,
+                            mesh="miss",
+                            diagnostic=(
+                                f"DERIVED_CACHE_MISS: "
+                                f"{mesh_key_result.reason_code}"
+                            ),
+                        )
+                    elif not check_mesh_present:
+                        _write_json(
+                            attempt_root / "mesh-cache.json",
+                            {
+                                "schema_version": 1,
+                                "status": "miss",
+                                "cache_key": mesh_key_result.key,
+                                "reason_code": (
+                                    "MESH_REUSE_REQUIRES_CHECKMESH"
+                                ),
+                            },
+                        )
+                        _update_performance_context(
+                            run_dir,
+                            mesh="miss",
+                            diagnostic=(
+                                "DERIVED_CACHE_MISS: "
+                                "MESH_REUSE_REQUIRES_CHECKMESH"
+                            ),
+                        )
+                    else:
+                        assert mesh_key_result.key is not None
+                        mesh_lookup = derived_cache_store.restore_mesh(
+                            mesh_key_result.key,
+                            case_root=case_root,
+                        )
+                        _write_json(
+                            attempt_root / "mesh-cache.json",
+                            {
+                                "schema_version": 1,
+                                "status": mesh_lookup.status,
+                                "cache_key": mesh_lookup.key,
+                                "reason_code": mesh_lookup.reason_code,
+                                "source": mesh_lookup.value,
+                            },
+                        )
+                        if mesh_lookup.status == "hit":
+                            mesh_commands = [
+                                command
+                                for command in active_plan.commands
+                                if command.stage == "mesh"
+                            ]
+                            commands_to_execute = [
+                                command
+                                for command in active_plan.commands
+                                if command.stage != "mesh"
+                            ]
+                            source = mesh_lookup.value or {}
+                            source_id = (
+                                f"{source.get('source_run_id', 'cache')}:"
+                                f"attempt-{int(source.get('source_attempt', 0)):02d}"
+                            )
+                            reused_steps = [
+                                ReusedStepResult(
+                                    step_id=command.step_id,
+                                    stage=command.stage.value,
+                                    executable=command.executable,
+                                    source_kind="derived_cache",
+                                    source_id=source_id,
+                                    reason_codes=[
+                                        "EXACT_MESH_CACHE_KEY_MATCH"
+                                    ],
+                                )
+                                for command in mesh_commands
+                            ]
+                            _write_json(
+                                attempt_root / "execution-reuse.json",
+                                {
+                                    "schema_version": 1,
+                                    "source_kind": "derived_cache",
+                                    "source_hash": mesh_lookup.key,
+                                    "reused_step_ids": [
+                                        item.step_id for item in reused_steps
+                                    ],
+                                    "commands_to_execute": [
+                                        item.step_id
+                                        for item in commands_to_execute
+                                    ],
+                                    "reason_codes": [
+                                        "EXACT_MESH_CACHE_KEY_MATCH"
+                                    ],
+                                },
+                            )
+                            _update_performance_context(
+                                run_dir,
+                                path_kind="warm_mesh",
+                                mesh="hit",
+                            )
+                        elif (
+                            mesh_lookup.reason_code
+                            == "DERIVED_CACHE_INVALID"
+                        ):
+                            _update_performance_context(
+                                run_dir,
+                                mesh="miss",
+                                diagnostic="DERIVED_CACHE_INVALID: mesh",
+                            )
                 runner = self.runner
                 if runner is None:
                     runner = PlanRunner.from_runtime_config(
@@ -1385,9 +1867,13 @@ class NativeAgent:
                     )
                 run_result = runner.run(
                     case_dir=case_root,
-                    commands=active_plan.commands,
+                    commands=commands_to_execute,
                     budget=task.resource_budget,
                 )
+                if reused_steps:
+                    run_result = run_result.model_copy(
+                        update={"reused_steps": reused_steps}
+                    )
                 _write_json(attempt_root / "run-result.json", run_result)
                 for step in run_result.steps:
                     _record_event(
@@ -1427,6 +1913,33 @@ class NativeAgent:
                     attempt_root / "mesh-quality-report.json",
                     mesh_quality,
                 )
+                if (
+                    derived_cache_store is not None
+                    and mesh_key_result is not None
+                    and mesh_key_result.cacheable
+                    and mesh_key_result.key is not None
+                    and (
+                        mesh_lookup is None
+                        or mesh_lookup.status != "hit"
+                    )
+                ):
+                    stored = derived_cache_store.store_mesh(
+                        mesh_key_result.key,
+                        case_root=case_root,
+                        mesh_quality=mesh_quality,
+                        plan=active_plan,
+                        source_run_id=run_dir.name,
+                        source_attempt=attempt_number,
+                    )
+                    if stored:
+                        cache_record_path = attempt_root / "mesh-cache.json"
+                        cache_record = (
+                            _read_json(cache_record_path)
+                            if cache_record_path.is_file()
+                            else {"schema_version": 1}
+                        )
+                        cache_record["stored"] = True
+                        _write_json(cache_record_path, cache_record)
                 _record_event(
                     workflow,
                     stage=WorkflowStage.MESH_QUALITY_COMPLETE,
@@ -1523,8 +2036,23 @@ class NativeAgent:
                     model_calls=model_calls,
                 )
 
+            if verified_source is not None:
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status=status,
+                    attempts=attempts,
+                    message=(
+                        "Verified-plan execution failed; warm plan reuse "
+                        "does not invoke a repair model."
+                    ),
+                    model_calls=model_calls,
+                )
+
             current_files = _read_declared_files(case_root, active_plan)
             try:
+                if self.gateway is None:
+                    raise ValueError("repair requires a model gateway")
                 repair_context = self._context(
                     task,
                     capability,
@@ -1728,6 +2256,8 @@ class NativeAgent:
                 repair_normalization.records,
             )
             active_plan = repair_normalization.plan
+            pending_repair_decision = decision
+            pending_repair_source_attempt = attempt_root
             workflow.checkpoint(
                 f"active-plan-attempt-{attempt_number + 1:02d}",
                 active_plan,

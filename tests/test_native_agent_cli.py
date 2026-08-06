@@ -82,6 +82,44 @@ def test_solve_uses_auto_backend_without_auth_argument() -> None:
     assert not hasattr(arguments, "auth")
 
 
+def test_solve_parses_explicit_verified_plan_reuse_without_qualification_flag() -> None:
+    arguments = build_parser().parse_args(
+        [
+            "solve",
+            "/tmp/task.yaml",
+            "--run-root",
+            "/tmp/runs",
+            "--reuse-verified-plan",
+            "/tmp/source-run",
+        ]
+    )
+
+    assert arguments.reuse_verified_plan == Path("/tmp/source-run")
+    qualification_help = build_parser()._subparsers._group_actions[0].choices[
+        "qualify"
+    ].format_help()
+    assert "--reuse-verified-plan" not in qualification_help
+
+
+def test_solve_parses_explicit_derived_cache_without_qualification_flag() -> None:
+    arguments = build_parser().parse_args(
+        [
+            "solve",
+            "/tmp/task.yaml",
+            "--run-root",
+            "/tmp/runs",
+            "--derived-cache",
+            "/tmp/cache",
+        ]
+    )
+
+    assert arguments.derived_cache == Path("/tmp/cache")
+    qualification_help = build_parser()._subparsers._group_actions[0].choices[
+        "qualify"
+    ].format_help()
+    assert "--derived-cache" not in qualification_help
+
+
 def test_model_doctor_is_chinese_first_json(
     monkeypatch,
     capsys,

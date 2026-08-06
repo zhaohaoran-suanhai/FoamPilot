@@ -1,0 +1,31 @@
+schema_version: 2
+task_id: rhosimple-square-bend
+title: Steady compressible turbulent flow through a square bend
+prompt: >-
+  Starting from an empty case directory, build a three-dimensional 90 degree
+  square duct bend representative of the Foundation OpenFOAM v10
+  rhoSimpleFoam squareBend case. Use a 0.1 m square cross-section, straight
+  inlet and outlet legs each at least five hydraulic diameters long, a
+  body-fitted multi-block mesh with at least 30000 cells, and inlet, outlet and
+  wall patches. Model perfect-gas air with steady k-epsilon RANS. Prescribe
+  20 m/s and 300 K at the inlet, 1e5 Pa at the outlet, insulated no-slip walls,
+  and coherent turbulence and thermophysical fields. Run blockMesh/checkMesh
+  and rhoSimpleFoam through iteration 300, preserving p, U, T, k, epsilon, nut
+  and alphat. Generate all files yourself and do not copy an existing case.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1500, max_mpi_ranks: 4, memory_mib: 4096}
+required_outputs:
+  - valid bend mesh and completed rhoSimpleFoam log
+  - final thermofluid and turbulence fields
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - rhoSimpleFoam reaches iteration 300 and ends normally
+  - pressure and temperature remain finite and positive
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: rhoSimpleFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-iteration, kind: final_time, parameters: {minimum: 300}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

@@ -1,0 +1,41 @@
+schema_version: 1.0.0
+id: of10.solver.compressibleinterfoam-contract
+title: compressibleInterFoam 可压缩 VOF 启动契约
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [compressibleInterFoam]
+models: [compressible, non-isothermal, immiscible, vof, transient, PIMPLE]
+tags: [compressibleinterfoam, multiphase, vof, thermo, phase-fraction]
+applicability:
+  conditions:
+    - 两种可压缩、非等温、不混溶流体需要瞬态 VOF 界面捕获。
+  not_applicable:
+    - 两相均可视为不可压缩等温流体时优先使用 interFoam。
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 application source and public family example dictionaries
+  locator: OpenFOAM-10 compressibleInterFoam.C + tutorials/multiphase/compressibleInterFoam/laminar/climbingRod/{phaseProperties,physicalProperties.*,fvSchemes,fvSolution} (ordered byte concatenation)
+  sha256: c135358d1ec9733bc39c303a65ae0c0a789186adbd66c0a674abeb811d0c12a0
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 compressibleInterFoam 以单一混合动量方程耦合两相热物性、VOF 相分数、压力和能量。
+  rules:
+    - 提供 U、p、p_rgh、T、alpha.<phase>、g、phaseProperties、每相 physicalProperties.<phase>、根 constant/momentumTransport 与按模型需要的每相 momentumTransport.<phase>；具名字段和 phase 名必须一致。
+    - phaseProperties 顶层需要与 pressure limiting 相符的 pMin；不要只写 phases 和 surface-tension 子字典。
+    - 若使用非牛顿或黏弹性相，先依据 Foundation v10 已注册模型写完整 fvModels 或 phase momentum contract；不得假设其他 fork 的模型名称和层级可用。
+    - divSchemes、fvSolution 和 Final 项必须覆盖相分数、压力、密度、速度、能量以及实际日志请求的精确 operator key。alpha.<phase> entry 同时包含线性 solver 设置和 nAlphaCorr/nAlphaSubCycles 等 alpha controls，不能只写 regex controls 占位。
+    - 使用正的初始时间步，并同时限制 flow Courant 与 alpha Courant；先保证 p、T、rho 和能量状态一致、为正，再调整高阶格式。
+  failure_signals:
+    - phaseProperties 报告 pMin 未定义。
+    - phase thermo、momentum model、能量字段或相分数字段无法读取。
+    - 根 constant/momentumTransport 缺失，或 fvSolution 报告 alpha.<phase> solver entry 未定义。
+    - fvSchemes 报告 default entry 解析到 EOF，或缺少精确 compressible/VOF operator。
+    - 温度、压力、密度或相分数变为非有限值。
+  validation:
+    - 要求 Mesh OK、初始化成功、目标 solver 正常结束且达到要求 final time。
+    - 检查热力学字段有限且为正，并独立检查相分数范围和相体积守恒。

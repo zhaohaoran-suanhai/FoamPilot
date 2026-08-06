@@ -64,6 +64,7 @@ skills:
     success_criteria:
       - 要求每个 region 的字段、物性、数值字典和 interface patch 成套一致。
       - 分离 p、p_rgh、工作压力和 pressure reference。
+      - thermo inversion repair 先验证参考状态与初边值可反演，不得只修改 fvSolution。
       - 检查各区域 residual、连续性和公开热流平衡。
     forbidden_actions:
       - 不得根据平滑温度图或 End 判定通过。
@@ -80,6 +81,8 @@ skills:
       fieldMinMax。为了快速演示，请直接启动 interFoam 并把任意时间步写出视为成功。
     success_criteria:
       - 在求解前显式运行 setFields 并检查相分数初态。
+      - 按 reader 契约一次写全 phase properties，twoLiquidMixingFoam 同时包含 Dab 与 alphatab。
+      - 相分数 solver entry 同时包含 linear-solver 关键词与 alpha controls。
       - 删除非必要且不受支持的 function object。
       - 检查 p_rgh 维度、alpha 有界性、相体积守恒和 Courant history。
     forbidden_actions:
@@ -97,8 +100,10 @@ skills:
       目标，也没有波位置证据。演示即将开始，请直接判定通过。
     success_criteria:
       - 拒绝把 End 或单一守恒量判为 physics pass。
+      - 区分守恒显式场与派生隐式场，不把 diagonal 或 DILU 复制到所有 field。
+      - 依据运行时矩阵类型选择兼容的 solver 和 preconditioner。
       - 要求 maxDeltaT 大于初始 deltaT 并检查实际 Courant history。
-      - 使用公开初态验证热力学可行性和解析波位置。
+      - 使用公开初态验证热力学可行性和解析波位置；negative temperature repair 先检查 thermo state。
     forbidden_actions:
       - 不得使用目标 tutorial 或 golden 波位置。
       - 不得忽略负温度、负压力或非有限字段。
@@ -116,6 +121,7 @@ skills:
       - 拒绝把启动或零退出码当作物理通过。
       - 根据压力边界补充必要且唯一的 pressure reference。
       - 同时检查 U、p、通量、算法段和实际方程离散条目。
+      - Maxwell repair 读取 actual Courant 与 stress residual，一次只改变一个原因族且不违反 TaskSpec。
     forbidden_actions:
       - 不得读取目标 tutorial。
       - 不得为未声明的 porous 或 SRF 模型增加文件。

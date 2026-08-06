@@ -1,0 +1,32 @@
+schema_version: 2
+task_id: multiphase-euler-bubble-column
+title: Laminar gas-liquid bubble column
+prompt: >-
+  Starting from an empty case directory, build a two-dimensional gas-liquid
+  bubble column representative of the Foundation OpenFOAM v10
+  multiphaseEulerFoam tutorial. Use a 0.15 m wide, 1 m high rectangular column
+  with a 30 by 200 by 1 mesh and empty spanwise faces. Define water and air
+  phases, initialize alpha.air=0.01, inject air uniformly through the bottom at
+  0.02 m/s, keep liquid initially stationary, use an open pressure outlet at
+  the top and no-slip side walls. Apply gravity (0 -9.81 0), constant-diameter
+  air bubbles of 3 mm, Schiller-Naumann drag and otherwise minimal laminar
+  interfacial models supported by Foundation v10. Run blockMesh/checkMesh and
+  multiphaseEulerFoam to 2 s with deltaT=0.001 s and maxCo no greater than 0.5.
+  Preserve phase velocities, phase fractions, p and p_rgh. Do not copy a case.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1800, max_mpi_ranks: 4, memory_mib: 4096}
+required_outputs:
+  - valid column mesh and multiphaseEulerFoam log
+  - phase velocity, fraction and pressure fields
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - multiphaseEulerFoam reaches 2 s and ends normally
+  - phase fields remain finite
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: multiphaseEulerFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 2.0}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

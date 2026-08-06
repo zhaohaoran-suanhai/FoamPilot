@@ -1,0 +1,32 @@
+schema_version: 2
+task_id: srf-mixer
+title: Steady turbulent mixer in a single rotating frame
+prompt: >-
+  Starting from an empty case directory, build a compact three-dimensional
+  cylindrical mixer representative of the Foundation OpenFOAM v10
+  SRFSimpleFoam tutorial. Use a stationary cylindrical vessel with an internal
+  rotating-frame fluid zone and wall patches for the vessel and impeller.
+  Construct a conformal blockMesh mesh of at least 12000 cells, assign the SRF
+  axis to z with angular speed 100 rad/s, and solve the relative velocity field
+  Urel using incompressible air and steady k-epsilon RANS. Apply no slip in the
+  appropriate rotating-frame form and a consistent pressure reference. Run
+  blockMesh, checkMesh and SRFSimpleFoam through iteration 300, writing every
+  100 iterations. Preserve Urel, p, k, epsilon and nut and do not copy a
+  tutorial case.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1200, max_mpi_ranks: 1, memory_mib: 3072}
+required_outputs:
+  - mesh and SRF solver logs
+  - final relative velocity, pressure and turbulence fields
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - SRFSimpleFoam reaches iteration 300 and ends normally
+  - required fields remain finite
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: SRFSimpleFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-iteration, kind: final_time, parameters: {minimum: 300}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

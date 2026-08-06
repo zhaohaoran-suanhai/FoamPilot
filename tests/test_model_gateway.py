@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from pydantic import BaseModel
 import pytest
 
@@ -22,6 +24,9 @@ from tests.support.model_gateway import (
     backend_error,
     valid_response,
 )
+from tests.test_execution_plan import valid_plan
+
+from foampilot.plans import ExecutionPlan, normalize_execution_plan_input
 
 
 class ExampleOutput(BaseModel):
@@ -167,6 +172,34 @@ def test_gateway_does_not_retry_auth_failure() -> None:
     assert len(backend.timeouts) == 1
 
 
+def test_gateway_does_not_retry_or_wait_for_backend_misconfiguration() -> None:
+    clock = FakeClock()
+    backend = ScriptedBackend(
+        [
+            backend_error(
+                BackendFailureKind.BACKEND_MISCONFIGURED,
+                retryable=False,
+            )
+        ]
+    )
+
+    with pytest.raises(GatewayRequestError) as captured:
+        _gateway(backend, clock).generate_structured(
+            REQUEST,
+            ExampleOutput,
+            budget=_window(clock),
+            trace=InMemoryModelTraceSink(),
+        )
+
+    assert (
+        captured.value.failure.kind
+        == BackendFailureKind.BACKEND_MISCONFIGURED
+    )
+    assert captured.value.transport_attempts == 1
+    assert len(backend.timeouts) == 1
+    assert clock.sleeps == []
+
+
 def test_gateway_does_not_hide_policy_rejection() -> None:
     clock = FakeClock()
     backend = ScriptedBackend(
@@ -275,6 +308,38 @@ def test_gateway_corrects_schema_once_then_stops() -> None:
     assert len(backend.timeouts) == 2
     assert "json_invalid" in captured.value.failure.detail
     assert "not-json" not in captured.value.failure.detail
+
+
+def test_gateway_accepts_audited_local_plan_normalization_without_retry():
+    clock = FakeClock()
+    payload = valid_plan().model_dump(mode="json")
+    payload["commands"][0]["step_id"] = "Mesh Step"
+    payload["manifest"]["fields"].append(
+        dict(payload["manifest"]["fields"][0])
+    )
+    backend = ScriptedBackend(
+        [
+            valid_response(json.dumps(payload)),
+            valid_response("must-not-be-used"),
+        ]
+    )
+    trace = InMemoryModelTraceSink()
+
+    result = _gateway(backend, clock).generate_structured(
+        REQUEST,
+        ExecutionPlan,
+        budget=_window(clock),
+        trace=trace,
+        output_normalizer=normalize_execution_plan_input,
+    )
+
+    assert result.value.commands[0].step_id == "mesh-step"
+    assert result.transport_attempts == 1
+    assert len(backend.timeouts) == 1
+    assert [item.code for item in trace.attempts[0].normalizations] == [
+        "STEP_ID_CANONICALIZED",
+        "EXACT_DUPLICATE_MANIFEST_FIELD_REMOVED",
+    ]
 
 
 def test_gateway_does_not_correct_backend_request_schema_error() -> None:

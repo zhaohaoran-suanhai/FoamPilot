@@ -7,7 +7,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from foampilot.artifacts import ArtifactStore, NativeAgentOutcome
+from foampilot.performance import PerformanceSummary
 
 from .models import (
     QualificationAggregates,
@@ -15,6 +18,7 @@ from .models import (
     QualificationReport,
     QualificationResult,
     QualificationStatus,
+    LatencyPercentiles,
 )
 from foampilot.workflow import FailureDomain, WorkflowState
 
@@ -198,6 +202,50 @@ def run_metadata(
     solver_normal_completion = False
     openfoam_time_seconds = 0.0
     time_to_first_openfoam_command: float | None = None
+    path_kind: str | None = None
+    pre_solve_latency_seconds: float | None = None
+    end_to_end_latency_seconds: float | None = None
+    performance_evidence_complete = False
+    plan_reuse = "disabled"
+    geometry_reuse = "disabled"
+    mesh_reuse = "disabled"
+    repair_start_stage: str | None = None
+    performance_diagnostics: list[str] = []
+    performance_path = outcome.run_dir / "performance-summary.json"
+    manifest_path = outcome.run_dir / "artifact-manifest.json"
+    if performance_path.is_file():
+        try:
+            performance = PerformanceSummary.model_validate_json(
+                performance_path.read_text(encoding="utf-8")
+            )
+            path_kind = performance.path_kind
+            pre_solve_latency_seconds = (
+                performance.time_to_first_openfoam_command_seconds
+            )
+            plan_reuse = performance.reuse.plan
+            geometry_reuse = performance.reuse.geometry
+            mesh_reuse = performance.reuse.mesh
+            repair_start_stage = performance.reuse.repair_start_stage
+            performance_diagnostics = list(performance.diagnostics)
+            if manifest_path.is_file():
+                manifest_payload = _json_file(manifest_path)
+                build_seconds = manifest_payload.get("build_seconds")
+                if (
+                    performance.workflow_seconds_before_manifest is not None
+                    and isinstance(build_seconds, (int, float))
+                    and float(build_seconds) >= 0
+                ):
+                    end_to_end_latency_seconds = (
+                        performance.workflow_seconds_before_manifest
+                        + float(build_seconds)
+                    )
+                    performance_evidence_complete = not bool(
+                        performance_diagnostics
+                    )
+        except (OSError, ValueError):
+            performance_diagnostics.append(
+                "PERFORMANCE_EVIDENCE_INCOMPLETE"
+            )
     first_workflow_at: datetime | None = None
     workflow_path = outcome.run_dir / "workflow-events.jsonl"
     if workflow_path.is_file():
@@ -287,6 +335,15 @@ def run_metadata(
             time_to_first_openfoam_command
         ),
         "openfoam_time_seconds": openfoam_time_seconds,
+        "path_kind": path_kind,
+        "pre_solve_latency_seconds": pre_solve_latency_seconds,
+        "end_to_end_latency_seconds": end_to_end_latency_seconds,
+        "performance_evidence_complete": performance_evidence_complete,
+        "plan_reuse": plan_reuse,
+        "geometry_reuse": geometry_reuse,
+        "mesh_reuse": mesh_reuse,
+        "repair_start_stage": repair_start_stage,
+        "performance_diagnostics": performance_diagnostics,
     }
 
 
@@ -359,6 +416,21 @@ def qualification_result(
             "time_to_first_openfoam_command"
         ],
         openfoam_time_seconds=metadata["openfoam_time_seconds"],
+        path_kind=metadata["path_kind"],
+        pre_solve_latency_seconds=metadata[
+            "pre_solve_latency_seconds"
+        ],
+        end_to_end_latency_seconds=metadata[
+            "end_to_end_latency_seconds"
+        ],
+        performance_evidence_complete=metadata[
+            "performance_evidence_complete"
+        ],
+        plan_reuse=metadata["plan_reuse"],
+        geometry_reuse=metadata["geometry_reuse"],
+        mesh_reuse=metadata["mesh_reuse"],
+        repair_start_stage=metadata["repair_start_stage"],
+        performance_diagnostics=metadata["performance_diagnostics"],
         selected_knowledge_ids=metadata["selected_knowledge_ids"],
         openfoam_commands=metadata["openfoam_commands"],
         manifest_issues=manifest_issues,
@@ -390,6 +462,32 @@ def build_qualification_report(
         "BLOCKED_ENVIRONMENT",
         "INVALID_QUALIFICATION",
     )
+    def percentiles(values: list[float]) -> LatencyPercentiles:
+        if not values:
+            return LatencyPercentiles()
+        return LatencyPercentiles(
+            count=len(values),
+            p50_seconds=float(np.percentile(values, 50)),
+            p95_seconds=float(np.percentile(values, 95)),
+        )
+
+    cold_pre_solve = [
+        item.pre_solve_latency_seconds
+        for item in results
+        if item.path_kind == "cold"
+        and item.pre_solve_latency_seconds is not None
+    ]
+    warm_pre_solve = [
+        item.pre_solve_latency_seconds
+        for item in results
+        if item.path_kind in {"warm_plan", "warm_mesh", "repair_reuse"}
+        and item.pre_solve_latency_seconds is not None
+    ]
+    end_to_end = [
+        item.end_to_end_latency_seconds
+        for item in results
+        if item.end_to_end_latency_seconds is not None
+    ]
     return QualificationReport(
         protocol_id=protocol_id,
         created_at=datetime.now(timezone.utc),
@@ -440,6 +538,35 @@ def build_qualification_report(
             ),
             openfoam_time_seconds=sum(
                 item.openfoam_time_seconds for item in results
+            ),
+            environment_blocked_count=sum(
+                item.status == "BLOCKED_ENVIRONMENT" for item in results
+            ),
+            cold_path_pre_solve=percentiles(cold_pre_solve),
+            warm_path_pre_solve=percentiles(warm_pre_solve),
+            end_to_end_latency=percentiles(end_to_end),
+            plan_reuse_hit_count=sum(
+                item.plan_reuse == "hit" for item in results
+            ),
+            derived_cache_hit_count=sum(
+                item.geometry_reuse == "hit" or item.mesh_reuse == "hit"
+                for item in results
+            ),
+            derived_cache_miss_count=sum(
+                item.geometry_reuse == "miss" or item.mesh_reuse == "miss"
+                for item in results
+            ),
+            derived_cache_invalid_count=sum(
+                any(
+                    "DERIVED_CACHE_INVALID" in diagnostic
+                    for diagnostic in item.performance_diagnostics
+                )
+                for item in results
+            ),
+            repair_run_count=sum(item.attempts > 1 for item in results),
+            repaired_success_count=sum(
+                item.attempts > 1 and item.public_validation_pass
+                for item in results
             ),
         ),
         results=results,

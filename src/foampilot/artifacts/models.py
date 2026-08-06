@@ -78,7 +78,9 @@ class RunSummary(StrictModel):
             "ROUTING_UNRESOLVED",
             "BLOCKED_ENVIRONMENT",
             "PLAN_INVALID",
+            "GENERATION_INVALID",
             "CASE_GENERATION_FAILED",
+            "PLAN_REUSE_REJECTED",
         }:
             return self.primary_failure.code
         return self.workflow_state.value

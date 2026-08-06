@@ -1,0 +1,31 @@
+schema_version: 2
+task_id: rhocentral-wedge-ma5
+title: Mach 5 inviscid flow over a wedge
+prompt: >-
+  Starting from an empty case directory, build the Foundation OpenFOAM v10
+  wedge15Ma5 rhoCentralFoam benchmark. Use a two-dimensional channel containing
+  a 15 degree compression wedge, a structured blockMesh mesh with at least 200
+  streamwise by 80 transverse cells and one empty spanwise cell. Model perfect
+  air with gamma=1.4. Prescribe a uniform Mach 5 inlet at 300 K and 1e5 Pa,
+  use a slip wedge wall, a non-reflecting or zero-gradient supersonic outlet,
+  and compatible far-field and empty conditions. Integrate rhoCentralFoam to
+  0.02 s using an initially conservative time step and adjustable stepping
+  with maxCo no greater than 0.5. Generate all native dictionaries, run
+  blockMesh/checkMesh and preserve p, U and T without reading the tutorial.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1200, max_mpi_ranks: 4, memory_mib: 3072}
+required_outputs:
+  - mesh and completed compressible solver logs
+  - pressure, velocity and temperature fields through 0.02 s
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - rhoCentralFoam reaches 0.02 s and ends normally
+  - thermodynamic fields remain finite and positive
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: rhoCentralFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 0.02}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

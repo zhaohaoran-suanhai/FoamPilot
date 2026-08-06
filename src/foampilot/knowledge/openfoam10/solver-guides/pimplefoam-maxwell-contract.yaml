@@ -31,6 +31,8 @@ content:
     - 在 divSchemes default none 下，Maxwell family 要求精确项 div(phi,U)、div(phi,sigma)、div(sigma)、div((nu*dev2(T(grad(U))))) 与 div((nuM*grad(U)))。不得以 Newtonian nuEff key 替代，也不得省略 base-viscosity stress key。
     - 使用 nuM 与 lambda 配置 laminar MaxwellCoeffs，并通过与速度约束一致的 boundary condition 保持 sigma 字段有限。
     - 强耦合瞬态 Maxwell 基线中，div(phi,sigma) 使用 Gauss vanAlbada 等有界应力对流 scheme；同时配置 "(U|sigma)" 与 "(U|sigma)Final" solver coverage；设置 momentumPredictor off，并在 pressure corrector 前使用多个 nOuterCorrectors。仅将应力对流改为 upwind 不能替代所需 outer coupling。
+    - 稳定性 repair 先确认全部 Maxwell operators 与 outer coupling 已存在，再读取 actual Courant 和 sigma stress residual history，定位首次持续恶化时间。随后只在时间控制、stress convection、outer coupling 或 relaxation 中选择一个有日志证据的原因族修改；一次 repair 只改变一个原因族。
+    - repair 不得违反 TaskSpec 明确固定的 deltaT、物性或边界。若固定约束本身与稳定推进冲突，报告 TaskSpec constraint conflict，而不是静默改变输入或用更耗散格式掩盖冲突。
     - Foundation v10 semiImplicitSource 使用 selectionMode，例如 selectionMode all，而不是 select。显式设置 volumeMode，并声明包含显式 vector 项和隐式 scalar 项的 U source 子字典；紧凑 U (((vector) scalar)) primitive 形式与该 reader 不兼容。
     - 对周期性或其他无锚点压力字段，使用 PIMPLE dictionary 和有效 pressure reference。
   failure_signals:
@@ -38,6 +40,7 @@ content:
     - fvModels tries to return sources/U as a sub-dictionary because a compact primitive source tuple was used.
     - fvSchemes reports div((nu*dev2(T(grad(U))))) or another Maxwell stress divergence as undefined.
     - The sigma field is missing, has incompatible patches, or becomes non-finite because the transient stress and momentum equations were under-coupled.
+    - actual Courant grows before sigma stress residual diverges or an FPE occurs, but repair changes only an unrelated fvSchemes entry.
   validation:
     - 要求 Mesh OK、正常推进至要求时刻，且 U、p 和 sigma 有限。
     - 检查周期或边界流量平衡，并独立比较要求的瞬态速度或应力观测量。

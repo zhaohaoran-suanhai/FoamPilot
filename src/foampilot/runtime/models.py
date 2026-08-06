@@ -57,11 +57,21 @@ class PlanStepResult(StrictModel):
     backend_fallback_reason: str | None = None
 
 
+class ReusedStepResult(StrictModel):
+    step_id: str
+    stage: str
+    executable: str
+    source_kind: Literal["derived_cache", "parent_attempt"]
+    source_id: str
+    reason_codes: list[str] = Field(default_factory=list)
+
+
 class PlanRunResult(StrictModel):
     case_dir: Path
     steps: list[PlanStepResult]
     failed_step_id: str | None = None
     timed_out: bool = False
+    reused_steps: list[ReusedStepResult] = Field(default_factory=list)
 
     @property
     def passed(self) -> bool:

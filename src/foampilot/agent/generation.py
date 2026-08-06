@@ -13,7 +13,7 @@ from foampilot.models import (
     ModelRequest,
     ModelTraceSink,
 )
-from foampilot.plans import ExecutionPlan
+from foampilot.plans import ExecutionPlan, normalize_execution_plan_input
 from foampilot.routing import CapabilityProfile
 from foampilot.tasks import TaskSpec
 from foampilot.preprocessing import GeometryFacts
@@ -52,6 +52,7 @@ def author_case_bundle(
         ExecutionPlan,
         budget=budget,
         trace=trace,
+        output_normalizer=normalize_execution_plan_input,
     ).value
 
 

@@ -116,6 +116,22 @@ foampilot resume /tmp/foampilot-runs/PARENT_RUN \
   --json
 ```
 
+对完全相同的 `TaskSpec`，可以显式复用一个已经通过完整性、网格和 solver 正常结束
+检查的 ExecutionPlan；也可以显式启用内容寻址的几何/网格缓存：
+
+```bash
+foampilot solve TASK.yaml \
+  --reuse-verified-plan /tmp/foampilot-runs/SOURCE_RUN \
+  --derived-cache /tmp/foampilot-derived-cache \
+  --run-root /tmp/foampilot-runs \
+  --json
+```
+
+计划复用要求规范 TaskSpec、公开资产字节、OpenFOAM 目标、solver 和资源预算严格兼容；
+拒绝时返回 `PLAN_REUSE_REJECTED`，不会暗中退回模型生成。网格命中只跳过网格生成命令，
+当前 run 仍重新执行 `checkMesh`、目标 solver 和公开验证。未提供这两个参数时保持冷路径，
+qualification 也不启用复用。
+
 默认后端通过公开 `codex exec` 调用已登录的 Codex CLI；FoamPilot 不读取认证文件。
 任务可以允许串行或有界 MPI 执行。模型声明 `mpi_ranks`；MPI launcher 由 Runner 而不是
 模型负责。
@@ -235,6 +251,7 @@ FoamPilot 会报告：
 - `ROUTING_UNRESOLVED`;
 - `BLOCKED_ENVIRONMENT`;
 - `CASE_GENERATION_FAILED`;
+- `GENERATION_INVALID`;
 - `PLAN_INVALID`;
 - `STATIC_INSPECTION_FAILED`;
 - `SOLVER_FAILED`;
@@ -257,6 +274,12 @@ python -m pip wheel . --no-deps --wheel-dir dist
 
 真实 OpenFOAM 测试需要宿主机 runtime，并有意与确定性单元测试分离。
 
+每个终态 run 都包含 `performance-summary.json`。该文件从 workflow、模型 trace 和原生
+step 证据重建冷/热路径、首条 OpenFOAM 命令延迟、阶段耗时、模型请求次数和复用状态；
+`artifact-manifest.json` 单独记录 manifest 构建耗时。自然语言提取发生在 solve run 之前，
+因此 `foampilot task draft` 会在 draft 旁写独立的 `.performance.json`，不把提取时间伪装成
+OpenFOAM 求解时间。
+
 ## 文档
 
 - [架构、运行流程与功能边界](docs/system-overview.md)
@@ -267,6 +290,7 @@ python -m pip wheel . --no-deps --wheel-dir dist
 - [受控评测](docs/qualification.md)
 - [15 题受控学习报告](docs/reports/2026-07-30-controlled-learning-15.md)
 - [30 题官方题库衍生基线与受控学习报告](docs/reports/2026-08-04-official-corpus-30-baseline.md)
+- [Performance v1 实施与验证报告](docs/reports/2026-08-05-performance-v1.md)
 - [阶段 A 模型边界/workflow 验收](docs/reports/2026-07-31-stage-a-acceptance.md)
 - [阶段 B routing/semantic 验收](docs/reports/2026-07-31-stage-b-acceptance.md)
 - [交付就绪报告](docs/reports/2026-07-30-delivery-readiness.md)

@@ -1,0 +1,41 @@
+schema_version: 1.0.0
+id: of10.solver.reactingfoam-contract
+title: reactingFoam 可压缩反应流契约
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [reactingFoam]
+models: [compressible, reacting, combustion, chemistry, transient, PIMPLE]
+tags: [reactingfoam, chemistry, combustion, species, thermo]
+applicability:
+  conditions:
+    - 可压缩反应流需要耦合 species、energy、chemistry 与 PIMPLE 压力速度方程。
+  not_applicable:
+    - 非反应可压缩流或只需求解预混标量输运时不适用。
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 application source and public family example dictionaries
+  locator: OpenFOAM-10 reactingFoam.C + tutorials/combustion/reactingFoam/laminar/counterFlowFlame2D/{physicalProperties,chemistryProperties,combustionProperties,fvSchemes,fvSolution} (ordered byte concatenation)
+  sha256: 54dc3844a2c2951bd28a82f0fa401db49bfd5af36aa1f9c53ed93dac2ba9a280
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 reactingFoam 用 fluidReactionThermo、combustionModel 和 chemistry 推进可压缩多组分反应流。
+  rules:
+    - physicalProperties 的 thermoType 使用 Foundation v10 注册且大小写精确的 multiComponentMixture、coefficientWilkeMultiComponentMixture 或 valueMultiComponentMixture；reactingMixture 和 multicomponentMixture 都不是有效 type。
+    - 提供 species 列表、defaultSpecie、每个组分热物性/输运数据、reactions、chemistryProperties 与 combustionProperties，并为每个主动 species 提供 0/<species> 或一致的 Ydefault。
+    - 各组分质量分数初值非负且和接近一；同时提供 U、p、T、alphat、momentumTransport 与所选能量字段需要的离散和 solver entry。
+    - 层流 thermophysical transport 使用 Foundation v10 注册名称，例如 unityLewisFourier、FickianFourier、Fourier 或 MaxwellStefanFourier；unityLewis 不是有效模型名。
+    - 先建立无反应/低反应速率的热物性一致状态，再启用完整 chemistry；时间步同时受 flow Courant、温度和 species source stiffness 限制。
+  failure_signals:
+    - Unknown mixture type reactingMixture。
+    - Unknown mixture type multicomponentMixture，或 Unknown laminar thermophysical transport model unityLewis。
+    - thermophysicalProperties/physicalProperties 报告 species、defaultSpecie 或组分数据缺失。
+    - chemistry、reaction、combustion 或 species field 无法构造。
+    - 温度、密度、能量或质量分数变为非有限值。
+  validation:
+    - 要求正常达到 final time，p、T、rho 与全部 species field 有限且物理可接受。
+    - 检查质量分数和、元素守恒、热释放方向以及入口出口质量与能量平衡。

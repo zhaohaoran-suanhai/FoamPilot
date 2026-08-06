@@ -1,0 +1,31 @@
+schema_version: 2
+task_id: pimple-tjunction
+title: Transient turbulent mixing in a T-junction
+prompt: >-
+  Starting from an empty case directory, build a three-dimensional T-junction
+  mixing case representative of the Foundation OpenFOAM v10 pimpleFoam
+  tutorial. Join two rectangular inlet ducts orthogonally into one outlet
+  duct using a conformal multi-block mesh of at least 20000 cells. Preserve
+  inlet1, inlet2, outlet and wall patches. Use incompressible air with
+  nu=1.5e-5 m2/s and k-epsilon RANS. Apply 1 m/s at the main inlet, 0.5 m/s at
+  the branch inlet, no slip at walls and p=0 at the outlet. Integrate with
+  pimpleFoam to 1.5 s, adjustable time stepping and maxCo no greater than 1,
+  writing every 0.1 s. Generate all files, run blockMesh and checkMesh, and
+  preserve U, p, k, epsilon and nut without reading an existing case.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1200, max_mpi_ranks: 4, memory_mib: 3072}
+required_outputs:
+  - mesh quality and completed transient solver logs
+  - final velocity, pressure and turbulence fields
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - pimpleFoam reaches 1.5 s and ends normally
+  - required fields remain finite
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: pimpleFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 1.5}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

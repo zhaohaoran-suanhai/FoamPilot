@@ -100,12 +100,32 @@ class QualificationResult(StrictModel):
         ge=0,
     )
     openfoam_time_seconds: float = Field(default=0, ge=0)
+    path_kind: Literal[
+        "cold",
+        "warm_plan",
+        "warm_mesh",
+        "repair_reuse",
+    ] | None = None
+    pre_solve_latency_seconds: float | None = Field(default=None, ge=0)
+    end_to_end_latency_seconds: float | None = Field(default=None, ge=0)
+    performance_evidence_complete: bool = False
+    plan_reuse: Literal["miss", "hit", "disabled"] = "disabled"
+    geometry_reuse: Literal["miss", "hit", "disabled"] = "disabled"
+    mesh_reuse: Literal["miss", "hit", "disabled"] = "disabled"
+    repair_start_stage: str | None = None
+    performance_diagnostics: list[str] = Field(default_factory=list)
     selected_knowledge_ids: list[str] = Field(default_factory=list)
     openfoam_commands: list[list[str]] = Field(default_factory=list)
     manifest_issues: list[str] = Field(default_factory=list)
     metrics: list[QualificationMetric] = Field(default_factory=list)
     duration_seconds: float = Field(ge=0)
     message: str
+
+
+class LatencyPercentiles(StrictModel):
+    count: int = Field(default=0, ge=0)
+    p50_seconds: float | None = Field(default=None, ge=0)
+    p95_seconds: float | None = Field(default=None, ge=0)
 
 
 class QualificationAggregates(StrictModel):
@@ -123,6 +143,22 @@ class QualificationAggregates(StrictModel):
     physics_qualification_pass_count: int = Field(default=0, ge=0)
     model_time_seconds: float = Field(default=0, ge=0)
     openfoam_time_seconds: float = Field(default=0, ge=0)
+    environment_blocked_count: int = Field(default=0, ge=0)
+    cold_path_pre_solve: LatencyPercentiles = Field(
+        default_factory=LatencyPercentiles
+    )
+    warm_path_pre_solve: LatencyPercentiles = Field(
+        default_factory=LatencyPercentiles
+    )
+    end_to_end_latency: LatencyPercentiles = Field(
+        default_factory=LatencyPercentiles
+    )
+    plan_reuse_hit_count: int = Field(default=0, ge=0)
+    derived_cache_hit_count: int = Field(default=0, ge=0)
+    derived_cache_miss_count: int = Field(default=0, ge=0)
+    derived_cache_invalid_count: int = Field(default=0, ge=0)
+    repair_run_count: int = Field(default=0, ge=0)
+    repaired_success_count: int = Field(default=0, ge=0)
 
 
 class QualificationReport(StrictModel):

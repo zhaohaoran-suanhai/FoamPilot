@@ -7,6 +7,11 @@ knowledge_type: physics_model
 solvers: [rhoPimpleFoam, pimpleFoam]
 models: [compressible, volumeFractionSource, solidEquilibriumEnergySource, porous, solid, equilibrium-energy]
 tags: [rhopimplefoam, volume-fraction, alpha-volume, alpha-solid, volumephase, solidphase, fvmodels, postprocess]
+activation_terms:
+  - volume fraction source
+  - volumeFractionSource
+  - solidEquilibriumEnergySource
+  - alpha.volume
 applicability:
   conditions:
     - 固定空间体积分数通过 volumeFractionSource 修正表观流体输运。

@@ -37,6 +37,7 @@ class RecordingModel:
     def __init__(self, replies: list[BaseModel | Exception]) -> None:
         self.replies = replies
         self.requests: list[ModelRequest] = []
+        self.budgets = []
 
     primary_backend_id = "recording"
     primary_model = "recording-model"
@@ -49,9 +50,11 @@ class RecordingModel:
         *,
         budget,
         trace,
+        output_normalizer=None,
     ):
-        del trace
+        del trace, output_normalizer
         self.requests.append(request)
+        self.budgets.append(budget)
         assert budget.stage in {ModelStage.GENERATION, ModelStage.REPAIR}
         reply = self.replies.pop(0)
         if isinstance(reply, Exception):

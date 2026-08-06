@@ -12,6 +12,7 @@ from .normalizer import (
     NormalizationResult,
     normalize_execution_plan,
 )
+from .input_normalizer import normalize_execution_plan_input
 from .validation import validate_execution_plan
 
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     "NormalizationResult",
     "PlanIssue",
     "normalize_execution_plan",
+    "normalize_execution_plan_input",
     "validate_execution_plan",
 ]

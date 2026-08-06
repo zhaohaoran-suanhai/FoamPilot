@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import time
 
 from foampilot.agent import NativeAgent
 from foampilot.agent.repair import RepairDecision
@@ -192,6 +193,11 @@ def test_native_agent_reaches_public_validation_pass(
     assert ArtifactStore(tmp_path / "runs").verify(run_dir) == []
     assert runner.calls == 1
     assert len(model.requests) == 1
+    assert model.budgets[0].request_timeout_seconds == 420
+    generation_deadline_remaining = (
+        model.budgets[0].stage_deadline_monotonic - time.monotonic()
+    )
+    assert 479 <= generation_deadline_remaining <= 480
     assert not (run_dir / "draft-plan.json").exists()
     assert not (run_dir / "plan-review.json").exists()
     assert not (run_dir / "reviewed-plan.json").exists()
@@ -586,6 +592,23 @@ def _transport_failure() -> GatewayRequestError:
     )
 
 
+def _schema_failure() -> GatewayRequestError:
+    return GatewayRequestError(
+        failure=BackendError(
+            kind=BackendFailureKind.SCHEMA_INVALID,
+            backend_id="recording",
+            model="invalid-plan",
+            purpose="generation",
+            detail="backend output failed ExecutionPlan validation",
+            retryable=False,
+        ),
+        logical_request_id="invalid",
+        transport_attempts=2,
+        backend_switches=0,
+        deadline_reason=None,
+    )
+
+
 def test_native_agent_classifies_exhausted_model_transport_as_environment(
     tmp_path: Path,
 ) -> None:
@@ -609,6 +632,31 @@ def test_native_agent_classifies_exhausted_model_transport_as_environment(
     assert outcome.summary.terminal_blocker.recovery.endswith("。")
     assert outcome.summary.attempts == []
     assert runner.calls == 0
+
+
+def test_native_agent_classifies_unresolved_schema_as_generation_invalid(
+    tmp_path: Path,
+) -> None:
+    runner = SequencePlanRunner([])
+
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=RecordingModel([_schema_failure()]),
+        runner=runner,
+    ).solve(_task())
+
+    assert outcome.status == "GENERATION_INVALID"
+    assert outcome.summary.workflow_state == "FAILED"
+    assert outcome.summary.native_status is None
+    assert outcome.summary.primary_failure.domain == "plan"
+    assert outcome.summary.primary_failure.code == "GENERATION_INVALID"
+    assert outcome.summary.terminal_blocker is None
+    assert not outcome.summary.resume.allowed
+    assert runner.calls == 0
+
+    from foampilot.qualification.reporting import classify_qualification
+
+    assert classify_qualification(outcome, [], []) == "FAIL_AGENT"
 
 
 def test_solver_failure_survives_repair_backend_blocker(

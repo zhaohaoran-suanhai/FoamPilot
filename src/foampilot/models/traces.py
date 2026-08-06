@@ -13,6 +13,15 @@ from pydantic import Field
 from .base import StrictModel
 
 
+class StructuredOutputNormalization(StrictModel):
+    """不包含文件正文的确定性结构化输出修正记录。"""
+
+    code: str
+    location: str
+    original: str | None = None
+    normalized: str | None = None
+
+
 class ModelAttemptTrace(StrictModel):
     schema_version: Literal[2] = 2
     purpose: str
@@ -39,6 +48,7 @@ class ModelAttemptTrace(StrictModel):
         "STAGE_DEADLINE",
         "TOTAL_MODEL_DEADLINE",
     ] | None = None
+    normalizations: tuple[StructuredOutputNormalization, ...] = ()
 
 
 class ModelTraceSink(Protocol):

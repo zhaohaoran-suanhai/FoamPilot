@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 import pytest
 
@@ -17,6 +18,8 @@ def test_finalize_is_exclusive_and_verify_detects_mutation(
     manifest_hash = store.manifest_sha256(run_dir)
 
     assert manifest.is_file()
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    assert payload["build_seconds"] >= 0
     assert len(manifest_hash) == 64
     assert store.verify(run_dir) == []
     with pytest.raises(FileExistsError):

@@ -1,6 +1,6 @@
 # FoamPilot Performance v1 规格
 
-状态：**已确认并冻结，尚未实施**  
+状态：**已实施，验收证据见 `docs/reports/2026-08-05-performance-v1.md`**
 日期：2026-08-05  
 适用基线：当前 FoamPilot `main` 工作区中的 TaskSpec v2、ExecutionPlan v3、ModelGateway、
 GeometryProbe、MeshQualityReport、有限 repair 和不可变 artifact 主链。

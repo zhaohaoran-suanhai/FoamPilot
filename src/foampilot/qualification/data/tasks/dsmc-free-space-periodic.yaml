@@ -1,0 +1,31 @@
+schema_version: 2
+task_id: dsmc-free-space-periodic
+title: Periodic rarefied-gas DSMC relaxation
+prompt: >-
+  Starting from an empty case directory, build the Foundation OpenFOAM v10
+  freeSpacePeriodic dsmcFoam problem. Use a 1 mm cubic domain divided into
+  10 by 10 by 10 cells with all three opposing patch pairs periodic. Populate
+  it with argon at 300 K and number density 1e20 1/m3 using dsmcInitialise,
+  zero mean velocity, the variable-hard-sphere collision model, and periodic
+  boundaries. Use deltaT=1e-7 s, integrate dsmcFoam to 1e-4 s and write every
+  2e-5 s. Generate blockMeshDict, dsmcProperties, initialization dictionaries
+  and all required diagnostic fields. Run blockMesh, checkMesh,
+  dsmcInitialise and dsmcFoam serially. Preserve macroscopic density, momentum
+  and energy fields and do not read or copy a tutorial.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1500, max_mpi_ranks: 1, memory_mib: 3072}
+required_outputs:
+  - mesh, DSMC initialization and solver logs
+  - macroscopic DSMC fields at the final time
+acceptance_requirements:
+  - checkMesh and dsmcInitialise succeed
+  - dsmcFoam reaches 1e-4 s and ends normally
+  - sampled macroscopic fields remain finite
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: dsmcFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 0.0001}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

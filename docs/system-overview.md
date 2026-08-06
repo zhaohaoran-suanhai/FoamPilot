@@ -86,6 +86,7 @@ SHA256 manifest 覆盖，之后的修改能够被 `foampilot report` 检出。
 | `runtime` | 通过 bubblewrap 或 audited host 后端执行 typed OpenFOAM 命令 |
 | `validation` | 根据 TaskSpec 中的公开规则检查日志和写出的场 |
 | `workflow` / `artifacts` | 记录事件、检查点、续跑关系、摘要和内容哈希 |
+| `performance` | 从既有证据聚合耗时，并校验显式计划复用、派生缓存和 repair 阶段复用 |
 | `qualification` | 在普通求解之后执行与 Agent 隔离的外部物理评测 |
 
 ## 5. 规范运行流程
@@ -98,7 +99,7 @@ TaskSpec（也可直接提供）
   -> 公开资产 staging 与 GeometryProbe
   -> 求解器族路由
   -> 动态知识和 Skill 装配
-  -> 模型生成完整 ExecutionPlan v3
+  -> 模型生成完整 ExecutionPlan v3，或显式加载严格匹配的已验证计划
   -> 计划规范化与安全策略
   -> 空目录物化 case
   -> 静态与跨文件语义检查
@@ -192,17 +193,28 @@ Model backend 只负责一次交换；Gateway 负责错误分类、重试、dead
 传输追踪和熔断。qualification 的多个 worker 可以共享 Gateway 和熔断状态，但各
 算例的任务、时间预算、case、日志和评测状态相互独立。
 
+完全相同的 TaskSpec 可以通过 `--reuse-verified-plan SOURCE_RUN` 显式选择一个已经 manifested、
+网格检查通过且目标 solver 正常结束的计划。该路径不创建 Gateway；任何任务、资产、版本、
+solver 或资源不兼容都以 `PLAN_REUSE_REJECTED` 结束，不会静默调用模型。普通 live solve 和
+qualification 默认仍生成新计划。
+
 ### 5.7 计划规范化与检查
 
 生成后的计划依次经过：
 
-1. 狭窄的 MPI wrapper 规范化；
-2. ExecutionPlan schema 和 typed command 策略校验；
-3. case 文件物化；
-4. 原生文件检查和高置信度语义检查。
+1. 对模型原始输出中的无害 `step_id` 格式和完全重复 manifest field 做可审计的局部规范化；
+2. 狭窄的 MPI wrapper 规范化；
+3. ExecutionPlan schema 和 typed command 策略校验；
+4. case 文件物化；
+5. 原生文件检查和高置信度语义检查。
 
 规范化器只会拆解可以无歧义识别的简单本地 MPI 启动形式，不猜测求解器、主机、
 核数或未知参数。
+
+模型输出的局部规范化同样保守：`step_id` 只是内部标签，可以确定性转为小写安全标识并
+解决标签碰撞；manifest 中只有内容完全等价的重复 field 声明会被删除。相同 field identity
+若内容不同，仍由 canonical schema 拒绝。每次修正记录在 `model-attempts.jsonl`，不会保存
+prompt 或 case 文件正文。
 
 检查器阻止路径逃逸、shell 语法、受保护路径引用、缺失文件、明显损坏的 OpenFOAM
 文件、MPI 预算超限和已登记求解器族中的确定性跨文件矛盾。它不替 Agent 选择网格、
@@ -224,6 +236,11 @@ Runner 按计划顺序逐条执行命令：
 
 因此 Agent 可以安排网格生成、`checkMesh`、场初始化、求解和原生后处理，但实际
 执行始终由 Runner 控制。某一步失败后，后续命令不再继续。
+
+`--derived-cache CACHE_ROOT` 显式启用内容寻址的 GeometryFacts/polyMesh 缓存。只有几何、资产、
+mesh intent、网格文件和命令、region 及工具版本组成的依赖键完全相同时才命中。命中会复制
+派生产物并跳过网格生成，但当前 Runner 仍重新执行 `checkMesh`、solver 和验证；动态网格或
+依赖不明确时退回原路径。
 
 ### 5.9 公开验证
 
@@ -257,6 +274,11 @@ non-orthogonality、skewness 等观测与 TaskSpec 阈值分开保存。网格�
 repair 可以替换 case 文件或已有 typed command，但仍要再次通过规范化、安全策略、
 物化、静态检查、OpenFOAM 执行和公开验证。重复失败、没有实质改动、环境错误或
 尝试预算耗尽时停止修复。
+
+新 attempt 会根据 repair 修改集合保守选择最早重跑阶段。求解字典变化可以复用前序网格，
+初始场变化从 initialize 开始；网格、patch、include、动态网格、多区域或并行拓扑依赖变化
+则完整重跑。复用只复制允许的前序产物，并对 parent/child 内容记录哈希；当前 `checkMesh`
+不会被跳过。
 
 mesh failure 使用更窄的 repair scope：默认只能修改网格文件和 mesh/check command；只有
 patch 变化有直接证据时才允许同步初始场 `boundaryField`，物性、求解器和初始内场保持不变。
@@ -309,6 +331,8 @@ restart 功能。
 - `ROUTING_UNRESOLVED`：无法可靠确定求解器族；
 - `BLOCKED_ENVIRONMENT`：本机运行环境不满足要求；
 - `CASE_GENERATION_FAILED`：模型输出或 case 物化失败；
+- `GENERATION_INVALID`：模型返回内容最终不能形成 canonical ExecutionPlan；这是 Agent/plan
+  失败，不是模型后端或环境阻断；
 - `PLAN_INVALID`：执行计划违反 schema 或安全策略；
 - `STATIC_INSPECTION_FAILED`：原生 case 或跨文件语义检查失败；
 - `MESH_FAILED` / `INITIALIZATION_FAILED` / `SOLVER_FAILED` /
@@ -360,6 +384,8 @@ agent-context.json
 resume-compatibility.json
 model-attempts.jsonl
 model-configuration.json
+performance-context.json
+performance-summary.json
 authored-execution-plan.json
 plan-normalization.json
 execution-plan.json
@@ -370,6 +396,8 @@ attempt-01/
   generation-trace.json
   static-inspection.json
   run-result.json
+  mesh-cache.json             # 显式缓存运行中可选
+  execution-reuse.json        # 网格/repair 复用时可选
   public-validation.json
   repair-decision.json        # 仅在发生修复时
   case/
@@ -402,6 +430,10 @@ FoamPilot 当前可以：
 - 解析执行日志并检查写出结果；
 - 根据公开失败证据进行有限修复；
 - 在模型后端可重试中断后通过不可变 child run 严格续跑；
+- 对完全相同 TaskSpec 显式复用已验证 ExecutionPlan，并以零模型调用重新执行；
+- 通过显式内容寻址缓存复用严格匹配的几何事实和网格派生产物；
+- 根据 repair 修改集合复用未受影响的前序 stage，同时保留当前网格检查；
+- 为每个 run 生成可复算的阶段、模型、native 和复用性能摘要；
 - 对官方题库式任务执行盲测 qualification，并保留可审计证据；
 - 将冻结失败转化为人工审查的通用改进候选。
 
@@ -420,9 +452,10 @@ FoamPilot 当前不保证：
 - 自动将失败经验写入正式知识库或 Skill；
 - 生产服务级的可用性、调度、权限管理和多人协作。
 
-[Performance v1](design/performance-v1-design.md) 中的统一性能方案，以及其引用的已验证
-ExecutionPlan 复用、几何/网格缓存和 repair 阶段复用，仍然只是已冻结设计，尚未进入当前运行
-路径；当前 `solve` 仍需通过模型生成新的 ExecutionPlan，也不会自动复用历史网格。
+Performance v1 已进入普通 `solve` 路径，但所有跨 run 复用都必须由用户显式启用；系统不做
+模糊 TaskSpec 匹配、不自动扫描历史 run，也不把 warm path 计入 qualification 泛化结果。
+详见 [Performance v1 规格](design/performance-v1-design.md) 与
+[实施报告](reports/2026-08-05-performance-v1.md)。
 
 ## 11. 最小使用入口
 

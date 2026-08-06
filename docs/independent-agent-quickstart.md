@@ -124,6 +124,40 @@ foampilot report /tmp/foampilot-native-runs/RUN_DIR --json
 `solve` 只有在状态为 `PUBLIC_VALIDATION_PASS` 时返回 0；模型后端暂缓或环境
 阻断返回 3；执行失败或验证失败返回 4。
 
+### 显式性能复用
+
+同一个规范 `TaskSpec` 需要重复演示或工程复算时，可以显式选择一个已验证 source run：
+
+```bash
+foampilot solve task.yaml \
+  --reuse-verified-plan /tmp/foampilot-native-runs/SOURCE_RUN \
+  --run-root /tmp/foampilot-native-runs \
+  --json
+```
+
+该路径不创建 ModelGateway，也不发起 routing、generation 或 repair 模型请求。source 必须
+拥有有效 artifact manifest，并有 manifested `blockMesh`/`checkMesh`/目标 solver 证据；
+TaskSpec、公开资产、OpenFOAM 目标、solver 可用性和 MPI 预算必须严格兼容。拒绝不会静默切回
+冷路径。
+
+如果几何和网格依赖也完全相同，可以增加一个显式缓存根目录：
+
+```bash
+foampilot solve task.yaml \
+  --reuse-verified-plan /tmp/foampilot-native-runs/SOURCE_RUN \
+  --derived-cache /tmp/foampilot-derived-cache \
+  --run-root /tmp/foampilot-native-runs \
+  --json
+```
+
+缓存键包含几何事实、公开资产字节、mesh intent、网格字典和命令、region 以及工具版本。
+命中后通过复制恢复 `polyMesh`，不会用可写 hardlink 连接 source；当前 run 仍执行
+`checkMesh`、目标 solver 和公开验证。动态网格、多区域或依赖不明确时会保守 miss，不会猜测复用。
+
+repair 也会根据实际修改文件选择最早重跑阶段。只改 `fvSchemes`/`fvSolution` 时可以复用
+上一 attempt 的网格并从 solve 前检查继续；改初始场从 initialize 开始；改网格、patch、include、
+动态网格或命令依赖时退回完整网格路径。每个 attempt 仍然独立且 parent 不会被修改。
+
 ## 模型后端暂缓和续跑
 
 生成阶段中断时尚未产生 native 结果：
@@ -198,6 +232,8 @@ execution-plan.json
 workflow-events.jsonl
 model-attempts.jsonl
 model-configuration.json
+performance-context.json
+performance-summary.json
 summary.json
 artifact-manifest.json
 checkpoints/
@@ -210,11 +246,18 @@ attempt-01/
   static-inspection.json
   run-result.json
   mesh-quality-report.json       # 已进入原生执行时存在
+  mesh-cache.json                # 显式启用派生缓存时存在
+  execution-reuse.json           # 命中网格或 repair 前序复用时存在
   public-validation.json
   case/
     ... Agent 生成的 OpenFOAM 文件 ...
     .foampilot/logs/
 ```
+
+显式计划复用的 run 还包含 `plan-reuse.json`。`performance-summary.json` 区分
+`cold`、`warm_plan`、`warm_mesh` 和 `repair_reuse`，并记录模型逻辑请求、传输次数、各 native
+阶段耗时和 cache hit/miss。manifest 自身的 `build_seconds` 与 run 内性能摘要分开保存，避免
+归档文件循环改写。
 
 child run 还包含 `continuation.json`；其 summary 会记录 parent run ID 和 parent
 manifest SHA256。应分别验证 parent 和 child：

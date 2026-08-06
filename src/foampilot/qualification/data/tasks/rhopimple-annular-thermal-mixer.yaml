@@ -1,0 +1,31 @@
+schema_version: 2
+task_id: rhopimple-annular-thermal-mixer
+title: Transient compressible mixing in an annular thermal mixer
+prompt: >-
+  Starting from an empty case directory, build a simplified version of the
+  Foundation OpenFOAM v10 annularThermalMixer rhoPimpleFoam benchmark. Create
+  concentric hot-core and cold-annulus inlets feeding a common cylindrical
+  outlet, with a three-dimensional body-fitted block mesh of at least 30000
+  cells. Model perfect-gas air with k-epsilon RANS. Prescribe 10 m/s at 500 K
+  at the core inlet, 20 m/s at 300 K at the annular inlet, 1e5 Pa at the
+  outlet, and insulated no-slip walls. Integrate to 0.5 s with adjustable time
+  stepping and maxCo=1. Generate all dictionaries, run blockMesh/checkMesh and
+  rhoPimpleFoam, and preserve p, U, T, k, epsilon, nut and alphat without
+  reading or copying an existing case.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1800, max_mpi_ranks: 4, memory_mib: 4096}
+required_outputs:
+  - valid annular mesh and completed solver log
+  - final thermofluid and turbulence fields
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - rhoPimpleFoam reaches 0.5 s and ends normally
+  - required fields remain finite and temperature remains positive
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: rhoPimpleFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 0.5}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

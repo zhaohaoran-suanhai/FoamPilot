@@ -15,9 +15,9 @@ applicability:
     - 要求的问题不可压缩，或为不含可压缩波动力学的稳态问题时不适用。
 source:
   kind: official_source
-  title: OpenFOAM Foundation v10 rhoCentralFoam application
-  locator: OpenFOAM-10/applications/solvers/compressible/rhoCentralFoam/rhoCentralFoam.C
-  sha256: f0c3fa3b1af2d689818ae442dc561723a521543df064403d7d36f252ca7ef8a0
+  title: OpenFOAM Foundation v10 rhoCentralFoam application and lduMatrix solver dispatch
+  locator: OpenFOAM-10/applications/solvers/compressible/rhoCentralFoam/rhoCentralFoam.C + OpenFOAM-10/src/OpenFOAM/matrices/lduMatrix/lduMatrix/lduMatrixSolver.C (ordered byte concatenation)
+  sha256: 1500a62ecc2c34835d7a3d4f53d097ffd40a3a6696401badffc2a8545ebfbd8b
   license_spdx: GPL-3.0-or-later
 leakage:
   visibility: public
@@ -29,15 +29,18 @@ content:
     - 提供包含内部一致 psi 热力学模型与 energy variable 的 physicalProperties，以及 momentumTransport、U、p、T、fvSchemes、fvSolution、controlDict 和有效网格。
     - 只有公开任务明确为无黏时才使用零黏度，并让 laminar momentum model 与该假设一致。
     - 将间断面与 mesh face 对齐；几何一维算例的横向 patch 使用 empty。
-    - 在 fvSolution 中使用 "(rho|rhoU|rhoE)" solver 项匹配 Foundation v10 守恒方程名称，并为派生场提供 "(U|e)" 项；原生显式模式两组均使用 solver diagonal。U/e 不能替代守恒场条目，但某些边界更新会按派生场名查找 solver；两组都提供可避免推进到首步后才报告 U 或 e undefined。
+    - 在 fvSolution 中使用 "(rho|rhoU|rhoE)" solver 项匹配 Foundation v10 守恒显式场，并为边界更新或隐式方程请求的 "(U|e)" 派生隐式场提供独立项。diagonal 只用于实际 diagonal 的守恒显式更新；派生隐式场必须选择 Foundation v10 对当前 symmetric matrix 注册的 solver，例如 smoothSolver，不能把 diagonal 复制给两组。U/e 不能替代守恒场条目；两组都提供可避免推进到首步后才报告 U/e undefined 或 Unknown symmetric matrix solver diagonal。
     - rhoCentralFoam 显式构造 tauMC 并调用 fvc::div(tauMC)；当 divSchemes/default 为 none 时，必须提供 `div(tauMC) Gauss linear;`（或经验证兼容的显式替代），仅写 div(phi,U) 与 div(phi,e) 不完整。
     - 对采用 waveTransmissive 的边界，提供与热力学状态一致的 gamma scalar；对标量字段，`fieldInf must be a scalar literal`：写 `fieldInf 300;`，不能写 `fieldInf uniform 300;`；lInf 同样是裸 scalar。`value` 才使用 `uniform <scalar>` field syntax。
     - 使用 adjustTimeStep 和正 maxCo 控制 Courant；deltaT 是初始步长，需要自适应增长时 maxDeltaT 必须大于 deltaT。
+    - 启动前先由公开状态关系检查初始 p、T、rho 与所选 energy 是否相互一致且保持正值；matrix/字典 compatibility 通过后，才调整 Courant、离散格式或松弛参数。negative initial temperature 不是 linear-solver 错误，不能通过裁剪 thermo 字段掩盖。
     - startTime 为零时使用 timeFormat general，保证名为 0 的初始目录仍可读取；保留足够 timePrecision 以区分较短的自适应输出时刻。
   failure_signals:
     - fvSchemes reports div(tauMC) undefined at the first momentum/energy update.
     - waveTransmissive reports expected Scalar but found the word uniform in fieldInf or lInf.
     - waveTransmissive reports gamma undefined, or the first time step reports U/e undefined in fvSolution after conserved fields solve.
+    - fvSolution reports Unknown symmetric matrix solver diagonal for a derived U/e equation.
+    - Model construction or the first update reports negative initial temperature after dictionary compatibility succeeds.
     - The thermodynamic package, energy field, density, or transport model is inconsistent or unreadable.
     - fvSolution reports rho, rhoU, or rhoE as undefined because only derived-field solver entries were provided.
     - maxDeltaT equals deltaT and prevents requested adaptive growth.

@@ -23,6 +23,9 @@ description: Use when authoring or repairing a Foundation OpenFOAM v10 buoyantFo
 5. mesh commands 先生成总网格，再按需要执行 region 划分和 region-specific `checkMesh`；
    目标 solver 是验证这些步骤后的首个求解 command。
 6. 稳态任务检查 residual 趋势和 continuity，不以迭代次数或 `End` 代替收敛。
+7. 发生 thermo inversion、`Maximum number of iterations exceeded` 或负温度时，先验证参考状态、
+   初始/边界 `p`、`T`、`rho`、energy 和 thermo package 能否一致反演，并保存失败前的
+   temperature extrema。不得只修改 `fvSolution`；状态可反演后才调整松弛、时间步和格式。
 
 ## 结果检查
 
@@ -38,6 +41,7 @@ description: Use when authoring or repairing a Foundation OpenFOAM v10 buoyantFo
 | --- | --- |
 | 将 `pRefValue` 当作工作压力 | 分离 `p`、`p_rgh` 与 reference 职责 |
 | `div(phi,K)` 或能量项缺失 | 只补当前 solver 实际请求的离散条目 |
+| thermo inversion 反复出现 | 先验证参考状态、初边值和 thermo package，不得只调整 linear solver |
 | interface patch 不成对 | 对照各 region boundary 修正映射名称和类型 |
 | 温度平滑但热流不守恒 | 用 active transport model 计算真实壁面热流 |
 

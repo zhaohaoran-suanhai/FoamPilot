@@ -1,0 +1,41 @@
+schema_version: 1.0.0
+id: of10.solver.denseparticlefoam-contract
+title: denseParticleFoam 载体相与颗粒云契约
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [denseParticleFoam]
+models: [Lagrangian, dense-particle, MPPIC, transient, coupled]
+tags: [denseparticlefoam, cloudproperties, mppic, drag, packing, injection]
+applicability:
+  conditions:
+    - 离散颗粒云与不可压缩连续载体相双向耦合，且颗粒体积分数影响载体相。
+  not_applicable:
+    - 稀相单向耦合或 Euler-Euler 多相问题不适用。
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 application source and public family example dictionaries
+  locator: OpenFOAM-10 denseParticleFoam.C + tutorials/lagrangian/denseParticleFoam/column/{physicalProperties,cloudProperties,fvSolution} (ordered byte concatenation)
+  sha256: efbd37245b0dca6721eaf44e4a700cfe55ca5ef953c777662621e3a6255c3148
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 denseParticleFoam 耦合具名不可压缩载体相与 kinematic parcel cloud，并支持 MPPIC packing、drag 与 collision closures。
+  rules:
+    - constant/physicalProperties 声明 continuousPhaseName、rho.<phase>、viscosityModel 与 nu；初始速度文件使用 U.<continuousPhaseName>，压力使用 p。
+    - constant/cloudProperties 至少完整声明 cloud type、solution、constantProperties 与 subModels；不要只写一个粒径和密度占位字典。
+    - MPPIC 路径需要相符的 drag、injection、patch interaction、packing、damping/isotropy/collision 选择；positionsFile 指向实际存在且位于网格内的 parcel 坐标资产。
+    - 位置资产枚举的是 computational parcels，不是每个真实颗粒。对高实体颗粒数使用受控数量的规则 parcel，并通过 nParticle 表示每个 parcel 的物理颗粒权重，避免生成超大文本文件。
+    - fvSolution 包含 p/pFinal、U.<phase>/Final、alpha.<phase> max 以及 cloud:alpha solver；PIMPLE 对封闭压力域设置 pRefCell/pRefValue。
+    - controlDict 的 deltaT 同时受载体 Courant、颗粒跨单元时间和碰撞/packing 稳定性限制。
+  failure_signals:
+    - continuousPhaseName、U.<phase>、rho.<phase> 或 cloudProperties 无法读取。
+    - positionsFile 不存在、parcel 位于网格外或 cloud population 为空。
+    - 将每个真实颗粒都展开为一行位置，导致生成阶段或 case 资产不必要地膨胀。
+    - cloud:alpha solver、alpha.<phase> max、drag 或 packing/collision 子模型缺失。
+  validation:
+    - 要求 Mesh OK、目标 solver 正常达到 final time，载体场和 cloud 数据有限。
+    - 检查颗粒数量/质量、域内占比与最大 packing fraction，并确认不存在非物理流失。

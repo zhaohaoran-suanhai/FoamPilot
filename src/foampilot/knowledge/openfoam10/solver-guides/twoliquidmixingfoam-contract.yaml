@@ -26,7 +26,7 @@ leakage:
 content:
   summary: Foundation v10 twoLiquidMixingFoam 需要两个 phase property dictionary、有界 alpha field、缩减压力、重力、扩散控制，以及 flow/phase 两类 Courant 限制。
   rules:
-    - 在 phaseProperties 中声明两个 phase name 与 diffusion coefficient，并为每相提供一个 physicalProperties.<phase> dictionary。
+    - 在 phaseProperties 中声明两个 phase name，并在顶层同时提供有量纲分子扩散系数 Dab 与无量纲 alphatab；字段创建阶段会直接读取二者，不得等待日志逐项报错后再补齐。为每相提供一个 physicalProperties.<phase> dictionary。
     - 提供 U、p_rgh、被输运 alpha.<phase> field、g、momentumTransport、fvSchemes 与 fvSolution；初始界面具有区域分布时还要提供原生 initialization step。
     - 在 divSchemes/default none 下写入精确 transported-fraction key div(phi,alpha)；即使磁盘 field 名为 alpha.<phase>，Foundation v10 twoLiquidMixingFoam 也查找这一通用 operator name。不得替换为 div(phi,alpha.<phase>)。
     - 使用自适应时间步时，controlDict 必须成对包含 maxCo 与 maxAlphaCo，并提供正 maxDeltaT。solver 直接读取 maxAlphaCo，只有 maxCo 不足。
@@ -34,6 +34,7 @@ content:
     - 保持 p_rgh 量纲 [1 -1 -2 0 0 0 0]；封闭运动流体壁面使用 fixedFluxPressure；alpha boundary condition 与 phase 进入/流出保持一致。
     - 在 divSchemes/default none 下，使用精确 field group name 提供所有被请求 momentum、alpha、diffusion 与 viscous-stress operator。
   failure_signals:
+    - Startup reports that Dab or alphatab is undefined in phaseProperties.
     - Startup reports maxAlphaCo is undefined in controlDict.
     - A phase-specific physicalProperties dictionary or alpha field cannot be found.
     - fvSolution/solvers/alpha.<phase> reports nAlphaSubCycles or nAlphaCorr as undefined.

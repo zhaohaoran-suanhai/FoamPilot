@@ -1,0 +1,31 @@
+schema_version: 2
+task_id: simple-pipe-cyclic
+title: Steady turbulent swirling flow in a cyclic pipe sector
+prompt: >-
+  Starting from an empty case directory, reproduce the Foundation OpenFOAM v10
+  pipeCyclic problem without reading an existing tutorial. Build a 10 m long,
+  0.5 m radius, 90 degree circular pipe sector with a 50 by 5 by 5 structured
+  mesh. Pair the two radial faces as cyclic patches, keep the curved and axis
+  faces as walls, prescribe a 1 m/s axial inlet velocity with a moderate rigid
+  swirl component, and set zero kinematic pressure at the outlet. Use
+  simpleFoam with Newtonian air, steady k-epsilon RANS and wall functions.
+  Solve through iteration 300, writing every 100 iterations. Generate all
+  native files, run blockMesh and checkMesh, and preserve U, p, k, epsilon and
+  nut. Run serially and do not copy a pre-existing case.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 900, max_mpi_ranks: 1, memory_mib: 2048}
+required_outputs:
+  - mesh quality log and completed simpleFoam log
+  - final velocity, pressure and turbulence fields
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - simpleFoam reaches iteration 300 and ends normally
+  - required fields remain finite
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: simpleFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-iteration, kind: final_time, parameters: {minimum: 300}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

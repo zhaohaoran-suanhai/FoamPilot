@@ -38,6 +38,7 @@ from .traces import (
     JsonlModelTraceSink,
     ModelAttemptTrace,
     ModelTraceSink,
+    StructuredOutputNormalization,
 )
 __all__ = [
     "BackendHealth",
@@ -64,6 +65,7 @@ __all__ = [
     "ModelResult",
     "ModelStage",
     "ModelTraceSink",
+    "StructuredOutputNormalization",
     "OpenAICompatibleBackend",
     "OpenAICompatibleConfig",
     "SharedCircuitBreaker",

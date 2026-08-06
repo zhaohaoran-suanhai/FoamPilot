@@ -25,6 +25,8 @@ foampilot task compile DRAFT.yaml --output TASK.yaml --json
 foampilot validate TASK.yaml --json
 foampilot plan TASK.yaml --output PLAN.json --backend auto --json
 foampilot solve TASK.yaml --run-root RUNS --backend auto --json
+foampilot solve TASK.yaml --run-root RUNS \
+  --reuse-verified-plan RUNS/SOURCE_RUN --derived-cache CACHE_ROOT --json
 foampilot resume RUNS/PARENT_RUN --run-root RUNS --backend auto --json
 foampilot report RUN_DIR --json
 
@@ -87,6 +89,10 @@ foampilot qualify suite \
   `rerun_with_changes`，不能伪装成 strict resume。
 - OpenFOAM 返回 0 只说明进程正常结束，不证明收敛、守恒、网格无关或工程可用。
 - 报告结论前验证 artifact manifest。
+- 计划复用只接受完全相同的规范 TaskSpec 和严格兼容 source；拒绝不得静默回退模型生成。
+- 派生缓存必须使用内容寻址依赖键，命中仍重新运行当前 `checkMesh`，不得把缓存结果当作物理验证。
+- repair 阶段复用只能跳过由修改集合证明不受影响的前序命令；依赖不明确时完整重跑。
+- qualification 默认禁用计划和派生缓存；warm-path 性能不能计入盲编写准确率。
 
 ## Qualification 与离线改进
 

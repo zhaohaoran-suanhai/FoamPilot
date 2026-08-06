@@ -1,0 +1,32 @@
+schema_version: 2
+task_id: interfoam-container-discharge
+title: Gravity-driven discharge of liquid from a two-dimensional container
+prompt: >-
+  Starting from an empty case directory, build the Foundation OpenFOAM v10
+  containerDischarge2D interFoam problem. Use a 0.5 m wide, 1 m high container
+  with a short 0.05 m high side outlet near the bottom, one empty spanwise cell
+  and a graded structured mesh of at least 20000 cells. Fill the lower 0.7 m
+  with water using setFields and air above it. Use rho_water=1000 kg/m3,
+  nu_water=1e-6 m2/s, rho_air=1 kg/m3, nu_air=1.5e-5 m2/s, sigma=0.072 N/m and
+  gravity (0 -9.81 0). Apply no slip on container walls and open conditions at
+  the outlet and top atmosphere. Integrate interFoam to 1.5 s with adjustable
+  stepping, maxCo and maxAlphaCo no greater than 0.5. Run blockMesh, checkMesh,
+  setFields and interFoam, preserving U, p_rgh and alpha.water. Do not copy a
+  tutorial case.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1800, max_mpi_ranks: 4, memory_mib: 4096}
+required_outputs:
+  - mesh, initialization and completed VOF solver logs
+  - final velocity, hydrostatic pressure and phase-fraction fields
+acceptance_requirements:
+  - checkMesh reports Mesh OK and setFields succeeds
+  - interFoam reaches 1.5 s and ends normally
+  - phase fraction remains finite
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: interFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 1.5}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

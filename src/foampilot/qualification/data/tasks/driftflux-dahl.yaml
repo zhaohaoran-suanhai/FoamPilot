@@ -1,0 +1,32 @@
+schema_version: 2
+task_id: driftflux-dahl
+title: Settling sludge in a Dahl clarifier
+prompt: >-
+  Starting from an empty case directory, build a reduced two-dimensional Dahl
+  settling-column problem for Foundation OpenFOAM v10 driftFluxFoam. Use a
+  1 m wide, 4 m high rectangular column with a 40 by 160 by 1 mesh and empty
+  spanwise faces. Model water as the continuous phase and denser sludge as the
+  dispersed phase with an initial sludge volume fraction of 0.1 in the upper
+  half and zero below, initialized by setFields. Use gravity (0 -9.81 0), a
+  Foundation v10-supported relative-velocity/mixture-viscosity model, no-slip
+  walls, and closed top and bottom. Configure laminar or low-Re transport
+  consistently. Run blockMesh, checkMesh, setFields and driftFluxFoam to 20 s
+  with adjustable time stepping and maxCo no greater than 0.5. Preserve U,
+  p_rgh and alpha.sludge and do not copy an existing case.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1800, max_mpi_ranks: 4, memory_mib: 4096}
+required_outputs:
+  - mesh, initialization and drift-flux solver logs
+  - final mixture velocity, pressure and sludge fraction
+acceptance_requirements:
+  - checkMesh and setFields succeed
+  - driftFluxFoam reaches 20 s and ends normally
+  - phase fraction remains finite
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: driftFluxFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 20.0}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

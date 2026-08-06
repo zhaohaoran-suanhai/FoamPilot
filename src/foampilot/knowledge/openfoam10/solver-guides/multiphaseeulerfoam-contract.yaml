@@ -1,0 +1,40 @@
+schema_version: 1.0.0
+id: of10.solver.multiphaseeulerfoam-contract
+title: multiphaseEulerFoam 多流体启动契约
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [multiphaseEulerFoam]
+models: [compressible, multiphase, Euler-Euler, transient, heat-transfer]
+tags: [multiphaseeulerfoam, euler-euler, phase-system, interfacial-models]
+applicability:
+  conditions:
+    - 多个可压缩流体相共享压力，但具有独立速度、热物性和相间传递模型。
+  not_applicable:
+    - 单一混合动量方程足以描述问题时不适用。
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 application source and public family example dictionaries
+  locator: OpenFOAM-10 multiphaseEulerFoam.C + tutorials/multiphase/multiphaseEulerFoam/laminar/bubbleColumn/{phaseProperties,physicalProperties.*,fvSolution} (ordered byte concatenation)
+  sha256: a969ca49eb21347d0eff221023a2c80efab31b7ceb7efaea0b872df989aa2030
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 multiphaseEulerFoam 由 phaseSystem 读取多相模型，并耦合各相动量、能量、相分数与共享压力。
+  rules:
+    - phaseProperties 声明 system type、phases、referencePhase、每相 phase/diameter model，以及所需 drag、virtualMass、heatTransfer 等相间闭合。
+    - phaseProperties 同时提供 blending、surfaceTension、interfaceCompression、drag、virtualMass、heatTransfer、phaseTransfer、lift、wallLubrication 和 turbulentDispersion 表；没有启用的机制也写为空字典，不得整项省略。
+    - 为每个 phase 提供 U.<phase>、T.<phase>、alpha.<phase> 与 physicalProperties.<phase>；同时提供 p、p_rgh、g 和与 phase 名一致的 momentumTransport.<phase>。
+    - 不要凭空添加 thermophysicalTransport.<phase>；若所选 Foundation v10 模型需要它，必须提供正确 simulationType 子字典，例如 laminar，而不是空壳文件。
+    - fvSolution 必须覆盖每相 U、T/energy、alpha 以及共享 p_rgh；fvSchemes 必须覆盖实际 phase-grouped operator。
+  failure_signals:
+    - 缺少 T.<phase>、U.<phase>、alpha.<phase> 或 physicalProperties.<phase>。
+    - thermophysicalTransport.<phase> 存在但缺少所选 simulationType 子字典。
+    - phaseProperties 的 phase-pair 或 transfer model 名称与声明 phases 不一致。
+    - phaseProperties 报告 blending、phaseTransfer 或其他必需 interfacial-model table 未定义。
+  validation:
+    - 要求每相字段有限、相分数和接近一、共享压力有限且 solver 正常结束。
+    - 对有热传递的问题检查每相温度为正且能量响应方向正确。

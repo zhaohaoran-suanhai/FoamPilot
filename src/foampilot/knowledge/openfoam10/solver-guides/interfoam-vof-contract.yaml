@@ -29,7 +29,7 @@ content:
     - Foundation v10 中，提供包含 phase name 与 sigma 的 constant/phaseProperties，并为每个声明 phase 提供一个 constant/physicalProperties.<phase> dictionary；每个 phase dictionary 提供 viscosityModel、nu 与 rho。不得用一个聚合 constant/physicalProperties dictionary 替代这些分组文件。
     - 提供 momentumTransport、g、U、p_rgh 和具名 phase-fraction field。
     - Foundation v10 interFoam 的 p_rgh 使用压力量纲 [1 -1 -2 0 0 0 0]；atmosphere patch 使用 prghTotalPressure，而不是 totalPressure。
-    - 在 system/fvSolution 中提供 phase-fraction 控制，以及 pcorr、pcorrFinal、p_rgh、p_rghFinal 与 U 的 linear solver 设置。final 项可以继承 base 项，例如 pcorrFinal 继承 $pcorr。
+    - 在 system/fvSolution 中让 pcorr/pcorrFinal、p_rgh/p_rghFinal 与 U/UFinal base/Final 成对，并提供对应 linear solver 设置。alpha.<phase> solver entry 必须同时包含 solver、smoother、tolerance、relTol 以及 nAlphaCorr 和 nAlphaSubCycles；只有 alpha controls 的 regex dictionary 不是完整的 linear-solver entry。Final 项可以继承 base 项，例如 UFinal 继承 $U。
     - divSchemes 使用 default none 时，显式提供 div(rhoPhi,U)、div(phi,alpha)、div(phirb,alpha) 和 Foundation v10 层流黏性应力 key div(((rho*nuEff)*dev2(T(grad(U)))))。缺少精确 key 是启动字典错误，不是稳定性失败。
     - 使用正的瞬态时间控制，并同时限制 flow 与 phase Courant number。
     - 压力参考以及每个 phase、velocity 与 pressure boundary condition 都必须与 mesh patch 一致。
@@ -40,7 +40,7 @@ content:
     - 初始界面具有区域分布时，在 solver 前使用已声明的 initialization utility。
   failure_signals:
     - The phase-fraction field, a physicalProperties.<phase> dictionary, or either phase model cannot be read.
-    - fvSolution reports pcorr, pcorrFinal, p_rgh, p_rghFinal, U, or the phase-fraction solver as undefined.
+    - fvSolution reports pcorr, pcorrFinal, p_rgh, p_rghFinal, U, UFinal, or the phase-fraction solver as undefined, including an alpha.<phase> dictionary with no solver keyword.
     - fvSchemes reports div(((rho*nuEff)*dev2(T(grad(U))))) as undefined.
     - The initial region is absent, empty, or outside the mesh.
     - A capillary or reservoir boundary uses alphaContactAngle or fixes phase fraction where bidirectional flow is required.

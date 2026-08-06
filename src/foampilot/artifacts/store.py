@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
@@ -83,9 +84,12 @@ class ArtifactStore:
     def finalize(self, run_dir: str | Path) -> Path:
         directory = self._run_path(run_dir)
         manifest = directory / self.manifest_name
+        started = time.monotonic()
+        entries = self._entries(directory)
         payload = {
             "schema_version": 1,
-            "files": self._entries(directory),
+            "build_seconds": max(time.monotonic() - started, 0.0),
+            "files": entries,
         }
         with manifest.open("x", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2, sort_keys=True)

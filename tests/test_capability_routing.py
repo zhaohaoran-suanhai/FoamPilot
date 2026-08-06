@@ -213,6 +213,35 @@ def test_explicit_installed_solver_routes_with_system_computed_high_confidence()
 
 
 @pytest.mark.parametrize(
+    ("solver", "expected_family", "expected_phase_family"),
+    (
+        ("compressibleInterFoam", "compressible-vof", "vof"),
+        ("driftFluxFoam", "drift-flux", "multiphase"),
+        ("multiphaseEulerFoam", "multiphase-euler", "multiphase"),
+        ("dsmcFoam", "rarefied-gas", "single_phase"),
+        ("denseParticleFoam", "dense-particle", "multiphase"),
+        ("reactingFoam", "compressible-reacting", "single_phase"),
+    ),
+)
+def test_explicit_specialized_foundation_solver_routes_without_model_guessing(
+    solver: str,
+    expected_family: str,
+    expected_phase_family: str,
+) -> None:
+    profile = route_capability(
+        _task(f"Use {solver} for this official Foundation v10 problem."),
+        _environment(solver, "blockMesh", "checkMesh"),
+        (),
+    )
+
+    assert profile.solver_executable == solver
+    assert profile.solver_family == expected_family
+    assert profile.phase_family == expected_phase_family
+    assert profile.confidence == CapabilityConfidence.HIGH
+    assert profile.unresolved_questions == []
+
+
+@pytest.mark.parametrize(
     ("mode", "strategy", "expected"),
     (
         ("surface", "snappyHexMesh", "snappyHexMesh"),

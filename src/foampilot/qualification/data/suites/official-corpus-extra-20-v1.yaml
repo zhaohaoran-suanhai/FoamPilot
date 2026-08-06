@@ -1,0 +1,24 @@
+schema_version: 1
+protocol_id: official-corpus-extra-20-v1
+max_workers: 1
+cases:
+  - {case_id: simple-pipe-cyclic, role: holdout, evaluation_level: public_validation}
+  - {case_id: simple-t3a-boundary-layer, role: holdout, evaluation_level: public_validation}
+  - {case_id: pimple-tjunction, role: holdout, evaluation_level: public_validation}
+  - {case_id: pimple-offset-cylinder, role: holdout, evaluation_level: public_validation}
+  - {case_id: piso-rans-cavity, role: holdout, evaluation_level: public_validation}
+  - {case_id: srf-mixer, role: holdout, evaluation_level: public_validation}
+  - {case_id: rhocentral-wedge-ma5, role: holdout, evaluation_level: public_validation}
+  - {case_id: rhosimple-square-bend, role: holdout, evaluation_level: public_validation}
+  - {case_id: rhopimple-compressible-cavity, role: holdout, evaluation_level: public_validation}
+  - {case_id: rhopimple-annular-thermal-mixer, role: holdout, evaluation_level: public_validation}
+  - {case_id: buoyant-circuit-board-cooling, role: holdout, evaluation_level: public_validation, exclusive: true}
+  - {case_id: buoyant-hot-room-steady, role: holdout, evaluation_level: public_validation, exclusive: true}
+  - {case_id: cht-heated-duct, role: holdout, evaluation_level: public_validation, exclusive: true}
+  - {case_id: interfoam-container-discharge, role: holdout, evaluation_level: public_validation}
+  - {case_id: compressible-interfoam-climbing-rod, role: holdout, evaluation_level: public_validation}
+  - {case_id: driftflux-dahl, role: holdout, evaluation_level: public_validation}
+  - {case_id: multiphase-euler-bubble-column, role: holdout, evaluation_level: public_validation}
+  - {case_id: dsmc-free-space-periodic, role: holdout, evaluation_level: public_validation}
+  - {case_id: dense-particle-column, role: holdout, evaluation_level: public_validation}
+  - {case_id: reacting-counterflow-flame, role: holdout, evaluation_level: public_validation}

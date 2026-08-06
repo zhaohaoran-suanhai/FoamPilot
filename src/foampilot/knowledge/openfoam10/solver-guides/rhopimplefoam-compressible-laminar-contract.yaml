@@ -15,9 +15,9 @@ applicability:
     - 任务需要不可压缩求解器、湍流或非 Stokes 层流本构模型时不适用。
 source:
   kind: official_source
-  title: OpenFOAM Foundation v10 rhoPimpleFoam and Stokes momentum model sources
-  locator: OpenFOAM-10 applications/solvers/compressible/rhoPimpleFoam plus src/MomentumTransportModels momentumTransportModels/laminar/Stokes
-  sha256: 80a67d4a9190e9e4561305b8a06464bced7380fc870768c3ed6e23ac0c43e5fc
+  title: OpenFOAM Foundation v10 rhoPimpleFoam application and lduMatrix preconditioner dispatch
+  locator: OpenFOAM-10/applications/solvers/compressible/rhoPimpleFoam/rhoPimpleFoam.C + OpenFOAM-10/src/OpenFOAM/matrices/lduMatrix/lduMatrix/lduMatrixPreconditioner.C (ordered byte concatenation)
+  sha256: eb4c9e49466eabfbcab8e676e1e46a416297930f831828387246dcbfbb74592e
   license_spdx: GPL-3.0-or-later
 leakage:
   visibility: public
@@ -30,10 +30,13 @@ content:
     - 提供内部一致的 U、p、T 或所选 energy variable、热物性 physicalProperties、momentumTransport、fvSchemes、fvSolution 与 controlDict。
     - 在 divSchemes default none 下覆盖 div(phi,U)、所选能量对流项（如 div(phi,e) 或 div(phi,h)）、div(phi,K)、pressure-density regex key div(phi,(p|rho))，以及精确黏性应力 key div(((rho*nuEff)*dev2(T(grad(U)))))。
     - 为 rho/rhoFinal、p/pFinal、U/UFinal 以及所选 energy field/其 Final 项配置显式 solver entry；即使 rho 使用 diagonal solver，Foundation v10 rhoPimpleFoam 仍会在最后 outer corrector 中查找 rhoFinal。
+    - linear solver 与 preconditioner 必须匹配运行时判定的矩阵类型。symmetric matrix 的 pressure 路径使用其注册的 DIC、FDIC、GAMG、diagonal 或 none 等兼容选择；DILU 只用于已注册的 asymmetric matrix 路径，不能复制到 symmetric pressure entry。若日志输出 valid-list，只定向修复该 field entry，不同时改 thermo 或物理边界。
     - pressure dimension 与 thermophysical energy form 必须与所选 fluid thermo package 一致，并选择适合可压缩传播与输运的 deltaT 或自适应 Courant 控制。
+    - 启动前用公开状态关系核对 p、T、rho 与所选 energy 的一致性和正值；matrix compatibility 通过后再调整 Courant、格式或松弛。
   failure_signals:
     - Startup reports Unknown laminarModel type Newtonian and lists Stokes among the valid types.
     - fvSolution reports that rhoFinal is undefined in solvers after model and field construction succeeds.
+    - fvSolution reports Unknown symmetric matrix preconditioner DILU and lists DIC/FDIC or other symmetric alternatives.
     - fvSchemes reports a missing compressible viscous-stress or energy-convection operator.
     - fvSchemes reports that div(phi,(p|rho)) is undefined after all thermophysical models were constructed.
     - physicalProperties, momentumTransport, rho, p, U, or the selected energy field is unreadable or dimensionally inconsistent.

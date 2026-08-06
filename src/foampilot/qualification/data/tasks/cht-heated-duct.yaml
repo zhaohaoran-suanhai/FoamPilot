@@ -1,0 +1,31 @@
+schema_version: 2
+task_id: cht-heated-duct
+title: Conjugate heat transfer through a heated duct wall
+prompt: >-
+  Starting from an empty case directory, build a two-region conjugate heat
+  transfer duct representative of the Foundation OpenFOAM v10 heatedDuct case.
+  Create a 1 m long rectangular fluid channel surrounded on one side by a
+  0.01 m thick solid wall, with conformal mapped interfaces and at least
+  20000 total cells. Define regions fluid and solid. Use low-Mach compressible
+  turbulent air in the fluid with 2 m/s and 300 K at the inlet, 0 pressure at
+  the outlet and no slip at the wall. Use aluminium for the solid, impose
+  350 K on its external heated face and adiabatic remaining external faces.
+  Run blockMesh and the required region-splitting/setup commands, check every
+  region mesh, and run chtMultiRegionFoam to 1 s with adjustable time stepping.
+  Preserve regional U, p and T fields. Author all files without copying a case.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1800, max_mpi_ranks: 4, memory_mib: 4096}
+required_outputs:
+  - mesh checks for fluid and solid regions
+  - completed chtMultiRegionFoam log and regional temperature fields
+acceptance_requirements:
+  - all regional meshes pass checkMesh
+  - chtMultiRegionFoam reaches 1 s and ends normally
+  - regional fields remain finite and temperature remains positive
+public_checks:
+  - {name: target-solver, kind: command_executed, parameters: {executable: chtMultiRegionFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 1.0}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

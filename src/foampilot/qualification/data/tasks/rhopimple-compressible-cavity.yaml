@@ -1,0 +1,31 @@
+schema_version: 2
+task_id: rhopimple-compressible-cavity
+title: Transient turbulent compressible lid-driven cavity
+prompt: >-
+  Starting from an empty case directory, construct the Foundation OpenFOAM v10
+  rhoPimpleFoam compressible cavity problem. Use a 0.1 m square two-dimensional
+  enclosure with a 50 by 50 by 1 mesh and empty spanwise faces. Move the top
+  wall at 20 m/s, keep the remaining walls fixed, initialize perfect-gas air
+  at 300 K and 1e5 Pa, and use k-epsilon RANS with adiabatic walls. Apply a
+  consistent pressure reference and compatible alphat/nut wall functions.
+  Integrate to 1 s using deltaT no greater than 0.001 s and maxCo=0.3, writing
+  every 0.1 s. Generate all Foundation v10 files, run blockMesh/checkMesh and
+  rhoPimpleFoam, preserve p, U, T and turbulence fields, and do not copy a
+  tutorial.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1200, max_mpi_ranks: 1, memory_mib: 3072}
+required_outputs:
+  - mesh and completed rhoPimpleFoam logs
+  - final pressure, velocity, temperature and turbulence fields
+acceptance_requirements:
+  - checkMesh reports Mesh OK
+  - rhoPimpleFoam reaches 1 s and ends normally
+  - thermodynamic fields remain finite and positive
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: rhoPimpleFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 1.0}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]

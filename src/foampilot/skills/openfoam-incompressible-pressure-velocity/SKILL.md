@@ -22,6 +22,10 @@ description: Use when authoring or repairing a Foundation OpenFOAM v10 incompres
 5. `fvSolution.solvers` 必须包含实际求解字段及其 `Final` 变体；稳态算例再配置合理的
    equation/field relaxation。
 6. 对旋转参考系或多孔介质，只在任务确实声明相应物理模型时增加模型字典。
+7. 对 Maxwell/PIMPLE，先确认模型专用 operators、`sigma` solver coverage 与 outer coupling，
+   再读取 actual Courant 和 sigma stress residual history 并定位首次恶化时刻。一次 repair 只修改
+   时间控制、stress convection、outer coupling 或 relaxation 中一个有证据的原因族；不得违反 TaskSpec
+   明确固定的 `deltaT`、物性或边界，约束不可行时报告 conflict。
 
 ## 结果检查
 
@@ -38,6 +42,7 @@ description: Use when authoring or repairing a Foundation OpenFOAM v10 incompres
 | `Unable to set reference cell` | 根据压力边界判断是否补充 pressure reference |
 | `keyword ... is undefined in dictionary fvSchemes` | 只补实际缺失的算子条目 |
 | continuity 快速增大 | 检查边界通量、时间步、离散格式和松弛设置 |
+| Maxwell stress residual 随 actual Courant 恶化 | 定位首次恶化，单独修复一个原因族；不要同时改固定输入 |
 | SRF/porous 文件缺失 | 仅为已声明模型补充对应字典和 command |
 
 不得读取目标 tutorial 或 golden 数值来选择参数。

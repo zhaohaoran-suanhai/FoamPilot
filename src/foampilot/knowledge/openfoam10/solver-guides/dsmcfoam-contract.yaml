@@ -1,0 +1,38 @@
+schema_version: 1.0.0
+id: of10.solver.dsmcfoam-contract
+title: dsmcFoam 稀薄气体初始化契约
+fork: foundation
+version: "10"
+knowledge_type: solver_guide
+solvers: [dsmcFoam]
+models: [DSMC, rarefied-gas, transient, particles, multi-species]
+tags: [dsmcfoam, dsmcinitialise, rarefied, collision, inflow]
+applicability:
+  conditions:
+    - 稀薄气体需要 Direct Simulation Monte Carlo 瞬态粒子演化。
+  not_applicable:
+    - 连续介质 Navier-Stokes 假设可靠时不适用。
+source:
+  kind: official_source
+  title: OpenFOAM Foundation v10 application source and public family example dictionaries
+  locator: OpenFOAM-10 dsmcFoam.C + tutorials/discreteMethods/dsmcFoam/freeSpacePeriodic/{dsmcProperties,dsmcInitialiseDict,fvSolution} (ordered byte concatenation)
+  sha256: 8a0f289386bf47fa1a0ac2066ae781f56021bd85455a8b50175b3f1aa2548dd6
+  license_spdx: GPL-3.0-or-later
+leakage:
+  visibility: public
+  families: []
+  contains_target_case_solution: false
+content:
+  summary: Foundation v10 dsmcFoam 读取 DSMC cloud 与碰撞、边界和粒子属性，并由 dsmcInitialise 建立初始 parcel population。
+  rules:
+    - 在 solver 前运行 dsmcInitialise，并提供 dsmcProperties、dsmcInitialiseDict 以及初始化工具和 solver 需要的宏观场文件。
+    - 周期网格的三对 patch 必须采用一致的 cyclic 配对，并确保初始化区域位于网格内部。
+    - Foundation v10 无入流模型的注册名称是 none，不是 NoInflow；其他 boundary/collision model 也必须使用运行时选择表中的精确名称。
+    - 时间步应小于碰撞和单元穿越特征时间，并验证 parcel 数量足以支持统计量。
+  failure_signals:
+    - dsmcInitialise 找不到 species、number density、temperature 或 cell-zone 初始化定义。
+    - Unknown InflowBoundaryModel type NoInflow，且 valid list 包含 none。
+    - parcel population 为空，或宏观场出现非有限值。
+  validation:
+    - 要求初始化成功、dsmcFoam 正常达到 final time，parcel 数和宏观场有限。
+    - 周期封闭域检查总质量、动量和能量的统计漂移。

@@ -1,0 +1,32 @@
+schema_version: 2
+task_id: compressible-interfoam-climbing-rod
+title: Compressible two-phase viscoelastic climbing-rod flow
+prompt: >-
+  Starting from an empty case directory, build a compact axisymmetric wedge
+  version of the Foundation OpenFOAM v10 climbingRod problem for
+  compressibleInterFoam. Use a vertical cylindrical vessel of radius 0.05 m
+  and height 0.15 m around a central rotating rod of radius 0.01 m, with a
+  structured wedge mesh of at least 12000 cells. Initialize the lower half with
+  a dense viscoelastic liquid and air above it. Use gravity, surface tension,
+  no slip at the vessel, a rod angular speed of 10 rad/s, an open top, and
+  coherent p, p_rgh, T, U, alpha.liquid and liquid stress fields. Configure a
+  Foundation v10-supported viscoelastic liquid momentum model. Run blockMesh,
+  checkMesh, setFields and compressibleInterFoam to 0.5 s with conservative
+  adjustable time stepping. Generate every file and do not copy the tutorial.
+openfoam_target: {distribution: foundation, version: "10"}
+resource_budget: {max_attempts: 2, max_wall_seconds: 1800, max_mpi_ranks: 4, memory_mib: 4096}
+required_outputs:
+  - mesh, initialization and compressibleInterFoam logs
+  - thermodynamic, velocity, phase-fraction and stress fields
+acceptance_requirements:
+  - checkMesh and setFields succeed
+  - compressibleInterFoam reaches 0.5 s and ends normally
+  - thermodynamic and phase fields remain finite
+public_checks:
+  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
+  - {name: target-solver, kind: command_executed, parameters: {executable: compressibleInterFoam}}
+  - {name: normal-completion, kind: completion, parameters: {}}
+  - {name: final-time, kind: final_time, parameters: {minimum: 0.5}}
+  - {name: finite-fields, kind: finite_fields, parameters: {}}
+public_assets: []
+protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]
