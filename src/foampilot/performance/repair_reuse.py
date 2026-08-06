@@ -15,7 +15,7 @@ from foampilot.plans import ExecutionPlan, NativeCommand
 from foampilot.runtime import ReusedStepResult
 
 if TYPE_CHECKING:
-    from foampilot.agent.repair import RepairDecision
+    from foampilot.agent.repair_patch import RepairChangeSet
 
 
 RerunStage = Literal["mesh", "initialize", "solve", "postprocess"]
@@ -111,7 +111,7 @@ def _included_stage(plan: ExecutionPlan, changed_path: str) -> RerunStage | None
 
 def classify_repair_rerun(
     plan: ExecutionPlan,
-    decision: "RepairDecision",
+    changes: "RepairChangeSet",
 ) -> RepairReuseDecision:
     """Select the earliest stage from actual changed paths and commands."""
 
@@ -142,22 +142,12 @@ def classify_repair_rerun(
 
     stages: list[RerunStage] = []
     reasons: list[str] = []
-    for changed in decision.changed_files:
+    for changed in changes.changed_files:
         stage = _included_stage(plan, changed.path) or _path_stage(changed.path)
         stages.append(stage)
         reasons.append(f"CHANGED_FILE_{stage.upper()}:{changed.path}")
-    known_steps = {item.step_id: item for item in plan.commands}
-    for changed in decision.changed_commands:
-        if changed.step_id not in known_steps:
-            return RepairReuseDecision(
-                earliest_rerun_stage="mesh",
-                reusable=False,
-                reason_codes=["COMMAND_DEPENDENCY_UNRESOLVED"],
-            )
-        stage = min(
-            (_command_stage(known_steps[changed.step_id]), _command_stage(changed)),
-            key=lambda item: _STAGE_ORDER[item],
-        )
+    for changed in changes.changed_commands:
+        stage = _command_stage(changed)
         stages.append(stage)
         reasons.append(f"CHANGED_COMMAND_{stage.upper()}:{changed.step_id}")
     if not stages:
@@ -259,14 +249,14 @@ def prepare_repair_reuse(
     parent_attempt: str | Path,
     next_case_root: str | Path,
     plan: ExecutionPlan,
-    decision: "RepairDecision",
+    changes: "RepairChangeSet",
 ) -> RepairReusePreparation:
     """Copy proven prior-stage products and produce an ordered command slice."""
 
     parent = Path(parent_attempt).resolve()
     parent_case = parent / "case"
     destination = Path(next_case_root).resolve()
-    classified = classify_repair_rerun(plan, decision)
+    classified = classify_repair_rerun(plan, changes)
     full_commands = list(plan.commands)
     base_record: dict[str, object] = {
         "schema_version": 1,

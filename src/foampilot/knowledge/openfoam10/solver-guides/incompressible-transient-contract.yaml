@@ -27,12 +27,14 @@ content:
   summary: Foundation v10 pisoFoam 与 pimpleFoam 在时间推进前需要完整的不可压缩动量离散，以及匹配的 PISO 或 PIMPLE 控制。
   rules:
     - 提供 U、运动压力 p、physicalProperties、momentumTransport、controlDict、fvSchemes 和 fvSolution，并让两个字段覆盖全部 mesh patch。
+    - 普通 Newtonian 物理在 Foundation v10 中将 constant/physicalProperties 的 viscosityModel 设为 constant，并在 constant/momentumTransport 中写 model Stokes。Newtonian 是物理描述，不是已注册的 laminarModel type；不得写 model Newtonian。
     - 在 divSchemes/default none 下，加入 div(phi,U) 和精确黏性应力项 div((nuEff*dev2(T(grad(U)))))；即使是层流动量输运，solver 也会请求完整 operator name。
     - 使用瞬态 ddt scheme、pressure solver、velocity solver，以及与所选 executable 匹配的 PISO 或 PIMPLE 控制。当 final corrector 要求零 relative tolerance 时提供 pFinal 和 UFinal。
     - 求解前创建所有必需 cell zone，并从 fvModel 或 fvConstraint 引用精确的生成 zone 名。
     - Foundation v10 pisoFoam/pimpleFoam 使用显式 porous resistance 时，在 model 层声明 type explicitPorositySource，并将 selectionMode cellZone、cellZone、type DarcyForchheimer、d、f 与 coordinateSystem 放入 explicitPorositySourceCoeffs 子字典。在 constant/coordinateSystems 中定义具名 cartesian coordinate system 并引用该名称；不得把 coefficient 平铺到 model 层，也不得在该层设置 model DarcyForchheimer。
-    - 仅有辅助输运 scalar 的 field 与 div scheme 并不会使其被求解；必须显式配置受支持的 solver 或 function object。Foundation v10 scalarTransport function object 强制要求 diffusion 项，无扩散时应写 diffusion none。
+    - 仅有辅助输运 scalar 的 field 与 div scheme 并不会使其被求解；必须显式配置受支持的 solver 或 function object。Foundation v10 scalarTransport function object 强制要求 diffusion 项：常数扩散必须写 diffusion constant 并提供 D，无扩散时应写 diffusion none；键名不是 diffusivity。
   failure_signals:
+    - Startup reports Unknown laminarModel type Newtonian and lists Stokes among the valid types.
     - fvSchemes reports div((nuEff*dev2(T(grad(U))))) as undefined on the first momentum assembly.
     - fvSolution reports a missing PISO, PIMPLE, pFinal, or UFinal entry.
     - An fvModel cannot find its selected cellZone.

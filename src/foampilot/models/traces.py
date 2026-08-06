@@ -10,7 +10,7 @@ from typing import Literal, Protocol
 
 from pydantic import Field
 
-from .base import StrictModel
+from .base import ModelContextArtifact, StrictModel
 
 
 class StructuredOutputNormalization(StrictModel):
@@ -49,6 +49,7 @@ class ModelAttemptTrace(StrictModel):
         "TOTAL_MODEL_DEADLINE",
     ] | None = None
     normalizations: tuple[StructuredOutputNormalization, ...] = ()
+    context_artifacts: tuple[ModelContextArtifact, ...] = ()
 
 
 class ModelTraceSink(Protocol):

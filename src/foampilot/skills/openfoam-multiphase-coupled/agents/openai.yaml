@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenFOAM 多相耦合算例"
+  short_description: "编写和修复 Foundation v10 drift-flux 与 Euler-Euler 多相算例"
+  default_prompt: "使用 $openfoam-multiphase-coupled 编写或修复多相耦合算例。"

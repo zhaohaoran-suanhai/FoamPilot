@@ -11,6 +11,7 @@ from foampilot.manifests import (
 )
 from foampilot.manifests.family_contracts import GENERIC_RULES
 from foampilot.plans import CommandStage, ExecutionPlan
+from foampilot.plans.command_stages import KNOWN_UTILITY_STAGES
 from foampilot.tasks import TaskSpec
 
 from .models import InspectionIssue, InspectionReport
@@ -20,24 +21,6 @@ _APPLICATION = re.compile(
     r"(?m)^\s*application\s+([A-Za-z0-9_.+-]+)\s*;"
 )
 _DIMENSIONS = re.compile(r"(?m)^\s*dimensions\s+\[([^]]+)\]\s*;")
-_COMMAND_STAGE: dict[str, CommandStage] = {
-    "blockMesh": CommandStage.MESH,
-    "surfaceCheck": CommandStage.MESH,
-    "surfaceFeatureExtract": CommandStage.MESH,
-    "snappyHexMesh": CommandStage.MESH,
-    "gmsh": CommandStage.MESH,
-    "gmshToFoam": CommandStage.MESH,
-    "checkMesh": CommandStage.CHECK,
-    "setFields": CommandStage.INITIALIZE,
-    "topoSet": CommandStage.INITIALIZE,
-    "splitMeshRegions": CommandStage.INITIALIZE,
-    "decomposePar": CommandStage.DECOMPOSE,
-    "reconstructPar": CommandStage.RECONSTRUCT,
-    "postProcess": CommandStage.POSTPROCESS,
-    "foamPostProcess": CommandStage.POSTPROCESS,
-}
-
-
 def _semantic_issue(
     *,
     code: str,
@@ -244,7 +227,7 @@ def inspect_semantics(
         expected = (
             CommandStage.SOLVE
             if command.executable == manifest.solver_executable
-            else _COMMAND_STAGE.get(command.executable)
+            else KNOWN_UTILITY_STAGES.get(command.executable)
         )
         if expected is None:
             advisories.append(

@@ -7,6 +7,10 @@ knowledge_type: solver_guide
 solvers: [pimpleFoam]
 models: [incompressible, transient, laminar, Maxwell, viscoelastic, PIMPLE, semiImplicitSource]
 tags: [pimplefoam, maxwell, viscoelastic, stress, sigma, fvmodels, semiimplicitsource, body-force]
+activation_terms:
+  - Maxwell
+  - viscoelastic
+  - Maxwell stress
 applicability:
   conditions:
     - Foundation v10 pimpleFoam 使用层流 Maxwell 动量输运模型推进不可压缩瞬态流动。

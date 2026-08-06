@@ -1,4 +1,4 @@
 interface:
   display_name: "OpenFOAM 可压缩流算例"
-  short_description: "编写和修复 Foundation v10 可压缩瞬态及稳态流动算例"
-  default_prompt: "使用 $openfoam-compressible-transient 编写或修复可压缩流算例。"
+  short_description: "编写和修复 Foundation v10 可压缩、激波与反应流算例"
+  default_prompt: "使用 $openfoam-compressible-transient 编写或修复可压缩及反应流算例。"

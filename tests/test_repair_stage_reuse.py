@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from foampilot.agent import NativeAgent
-from foampilot.agent.repair import RepairDecision
+from foampilot.agent.repair_patch import RepairChangeSet, RepairPatch
 from foampilot.artifacts import ArtifactStore
 from foampilot.performance import classify_repair_rerun
 from foampilot.plans import GeneratedFile, NativeCommand
@@ -21,15 +21,14 @@ from tests.test_native_case_generation import (
 )
 
 
-def _decision(*, files=(), commands=()) -> RepairDecision:
-    return RepairDecision(
-        because="The public failure evidence identifies one dependency family.",
-        evidence=["the failed solver step reports a dictionary error"],
-        cause="one declared dictionary is inconsistent",
+def _changes(*, files=(), commands=()) -> RepairChangeSet:
+    return RepairChangeSet(
+        changed_file_paths=[item.path for item in files],
         changed_files=list(files),
+        command_operations=[
+            f"replace:{item.step_id}" for item in commands
+        ],
         changed_commands=list(commands),
-        expected_check="The rerun reaches normal completion.",
-        stable_control="Unrelated geometry and mesh dependencies remain unchanged.",
     )
 
 
@@ -62,7 +61,7 @@ def test_repair_dependency_classifier_selects_earliest_safe_stage() -> None:
     plan = _plan_with_check()
     assert classify_repair_rerun(
         plan,
-        _decision(
+        _changes(
             files=[
                 GeneratedFile(
                     path="system/fvSolution",
@@ -73,7 +72,7 @@ def test_repair_dependency_classifier_selects_earliest_safe_stage() -> None:
     ).earliest_rerun_stage == "solve"
     assert classify_repair_rerun(
         plan,
-        _decision(
+        _changes(
             files=[
                 GeneratedFile(
                     path="0/U",
@@ -84,7 +83,7 @@ def test_repair_dependency_classifier_selects_earliest_safe_stage() -> None:
     ).earliest_rerun_stage == "initialize"
     assert classify_repair_rerun(
         plan,
-        _decision(
+        _changes(
             files=[
                 GeneratedFile(
                     path="system/blockMeshDict",
@@ -95,7 +94,7 @@ def test_repair_dependency_classifier_selects_earliest_safe_stage() -> None:
     ).earliest_rerun_stage == "mesh"
     assert classify_repair_rerun(
         plan,
-        _decision(
+        _changes(
             commands=[
                 NativeCommand(
                     step_id="solve",
@@ -178,13 +177,22 @@ def test_solver_dictionary_repair_reuses_mesh_and_keeps_parent_immutable(
     tmp_path: Path,
 ) -> None:
     plan = _plan_with_check()
-    repair = _decision(
-        files=[
-            GeneratedFile(
-                path="system/fvSolution",
-                content="FoamFile { class dictionary; object fvSolution; }\nsolvers {}\n",
-            )
-        ]
+    repair = RepairPatch(
+        because="The solver log points to fvSolution.",
+        evidence=["solver dictionary error"],
+        file_operations=[
+            {
+                "operation": "replace",
+                "path": "system/fvSolution",
+                "content": (
+                    "FoamFile { class dictionary; object fvSolution; }\n"
+                    "solvers {}\n"
+                ),
+            }
+        ],
+        command_operations=[],
+        expected_check="The solver reaches End.",
+        stable_control="The mesh remains unchanged.",
     )
     runner = RepairReuseRunner()
     outcome = NativeAgent(

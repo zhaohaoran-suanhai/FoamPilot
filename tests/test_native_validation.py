@@ -8,7 +8,8 @@ import numpy as np
 import pyvista as pv
 import pytest
 
-from foampilot.runtime import PlanRunResult, PlanStepResult
+import foampilot.validation.native as native_validation
+from foampilot.runtime import PlanRunResult, PlanStepResult, ReusedStepResult
 from foampilot.tasks import TaskSpec
 from foampilot.validation.native import validate_native_run
 
@@ -184,6 +185,106 @@ def test_task_owned_checks_validate_all_gate_evidence(
         check for check in report.checks if check.name == "phase-volume"
     )
     assert conservation.observed["sample_count"] == 2
+
+
+def test_command_check_accepts_audited_reused_step(
+    tmp_path: Path,
+) -> None:
+    result = _successful_result(tmp_path)
+    result.steps = [result.steps[0], result.steps[2]]
+    result.reused_steps = [
+        ReusedStepResult(
+            step_id="initialize",
+            stage="initialize",
+            executable="setFields",
+            source_kind="parent_attempt",
+            source_id="attempt-01",
+            reason_codes=["REPAIR_DEPENDENCY_UNCHANGED"],
+        )
+    ]
+
+    report = validate_native_run(
+        task=_task(
+            checks=[
+                {
+                    "name": "initialized",
+                    "kind": "command_executed",
+                    "parameters": {"executable": "setFields"},
+                }
+            ]
+        ),
+        run_result=result,
+        case_root=tmp_path,
+    )
+
+    assert report.passed
+    assert report.checks[0].observed["evidence_source"] == "reused_step"
+
+
+def test_each_native_log_is_parsed_once_per_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = native_validation.parse_openfoam_log
+    parsed: list[str] = []
+
+    def counted(text: str):
+        parsed.append(text)
+        return original(text)
+
+    monkeypatch.setattr(native_validation, "parse_openfoam_log", counted)
+
+    report = validate_native_run(
+        task=_task(
+            checks=[
+                {"name": "completion", "kind": "completion", "parameters": {}},
+                {
+                    "name": "final-time",
+                    "kind": "final_time",
+                    "parameters": {"minimum": 1.0},
+                },
+            ]
+        ),
+        run_result=_successful_result(tmp_path),
+        case_root=tmp_path,
+    )
+
+    assert report.passed
+    assert len(parsed) == 3
+
+
+def test_failed_step_classification_does_not_parse_all_logs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failed = _step(
+        tmp_path,
+        step_id="solve",
+        executable="interFoam",
+        return_code=1,
+        stdout="FOAM FATAL ERROR\n",
+    )
+
+    def unexpected_parse(_text: str):
+        raise AssertionError("failed-step classification must not parse logs")
+
+    monkeypatch.setattr(
+        native_validation,
+        "parse_openfoam_log",
+        unexpected_parse,
+    )
+
+    report = validate_native_run(
+        task=_task(),
+        run_result=PlanRunResult(
+            case_dir=tmp_path,
+            steps=[failed],
+            failed_step_id="solve",
+        ),
+        case_root=tmp_path,
+    )
+
+    assert report.failure_layer == "SOLVER_FAILED"
 
 
 def test_failed_mesh_check_exposes_bounded_checkmesh_diagnostics(

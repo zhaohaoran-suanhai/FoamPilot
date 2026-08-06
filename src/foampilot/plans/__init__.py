@@ -8,6 +8,7 @@ from .models import (
     PlanIssue,
 )
 from .normalizer import (
+    CommandStageNormalizationRecord,
     NormalizationRecord,
     NormalizationResult,
     normalize_execution_plan,
@@ -17,6 +18,7 @@ from .validation import validate_execution_plan
 
 __all__ = [
     "CommandStage",
+    "CommandStageNormalizationRecord",
     "ExecutionPlan",
     "GeneratedFile",
     "NativeCommand",

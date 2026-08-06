@@ -29,12 +29,16 @@ content:
     - phaseProperties 同时提供 blending、surfaceTension、interfaceCompression、drag、virtualMass、heatTransfer、phaseTransfer、lift、wallLubrication 和 turbulentDispersion 表；没有启用的机制也写为空字典，不得整项省略。
     - 为每个 phase 提供 U.<phase>、T.<phase>、alpha.<phase> 与 physicalProperties.<phase>；同时提供 p、p_rgh、g 和与 phase 名一致的 momentumTransport.<phase>。
     - 不要凭空添加 thermophysicalTransport.<phase>；若所选 Foundation v10 模型需要它，必须提供正确 simulationType 子字典，例如 laminar，而不是空壳文件。
-    - fvSolution 必须覆盖每相 U、T/energy、alpha 以及共享 p_rgh；fvSchemes 必须覆盖实际 phase-grouped operator。
+    - fvSolution 必须覆盖每相 U、T/energy、alpha 以及共享 p_rgh；fvSchemes 必须覆盖实际 phase-grouped operator。相分数通量由 reader 按实际相名构造成 div(phi,alpha.<phase>)，最稳妥的是逐相给出精确 key；若使用 quoted regex，必须使用 escaped 字面括号，例如 div\(phi,alpha.*\)，不能写未转义的 "div(phi,alpha.*)"。
+    - 对每对移动相同时覆盖两个方向的 div(phir,alpha.<other>,alpha.<phase>)；对 grouped momentum、energy、pressure-density 和 viscous operator 使用实际字段名的精确 entry，或采用括号已转义且已核对可匹配 reader 名称的 regex。
+    - 层流移动相的黏性项使用 thermo density 的 grouped 名称，不是简写 rho.<phase>。逐相精确模板为 div((((alpha.<phase>*thermo:rho.<phase>)*nuEff.<phase>)*dev2(T(grad(U.<phase>)))))；若使用 regex，必须同时保留 thermo:rho、nuEff、U 的 phase suffix 与全部转义括号。default none 可暴露漏项；不要让 default Gauss upwind 代替黏性 tensor operator。
   failure_signals:
     - 缺少 T.<phase>、U.<phase>、alpha.<phase> 或 physicalProperties.<phase>。
     - thermophysicalTransport.<phase> 存在但缺少所选 simulationType 子字典。
     - phaseProperties 的 phase-pair 或 transfer model 名称与声明 phases 不一致。
     - phaseProperties 报告 blending、phaseTransfer 或其他必需 interfacial-model table 未定义。
+    - fvSchemes 报告 div(phi,alpha.<phase>) 未定义，尤其是使用未转义括号的宽泛 regex 时。
+    - 黏性 operator 报告含 thermo:rho.<phase> 与 nuEff.<phase> 的完整 key 未定义，或 default scheme 读取到 EOF。
   validation:
     - 要求每相字段有限、相分数和接近一、共享压力有限且 solver 正常结束。
     - 对有热传递的问题检查每相温度为正且能量响应方向正确。

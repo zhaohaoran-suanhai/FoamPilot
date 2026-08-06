@@ -102,6 +102,7 @@ CFD 推理决定的离散格式和模型组合。
 
 ## 7. 文档索引
 
+- [Agent Harness 演进 v2：状态、定向修复、受控经验和消融](agent-harness-evolution-v2-design.md)
 - [Performance v1：冷路径、计划复用、网格缓存与 repair 阶段复用](performance-v1-design.md)
 - [阶段 1：Knowledge 与 Skills 优化](knowledge-skills-design.md)
 - [阶段 2：前处理能力](preprocessing-design.md)
@@ -110,6 +111,7 @@ CFD 推理决定的离散格式和模型组合。
 - [阶段 1 实施记录](../reports/2026-08-04-stage-1-knowledge-skills.md)
 - [阶段 2 实施记录](../reports/2026-08-04-stage-2-preprocessing.md)
 - [阶段 3 实施记录](../reports/2026-08-04-stage-3-taskbuilder.md)
+- [Agent Harness v2 P0/P1 实施与验证](../reports/2026-08-06-agent-harness-p0-p1.md)
 
 ## 8. 总体验收口径
 

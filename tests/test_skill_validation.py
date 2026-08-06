@@ -179,6 +179,7 @@ def test_repository_native_authoring_skill_validates() -> None:
     [
         "openfoam-incompressible-pressure-velocity",
         "openfoam-compressible-transient",
+        "openfoam-multiphase-coupled",
         "openfoam-multiphase-vof",
         "openfoam-buoyant-cht",
         "openfoam-solid-mechanics",

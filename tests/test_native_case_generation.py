@@ -9,6 +9,7 @@ from foampilot.agent.generation import (
     author_case_bundle,
     materialize_case,
 )
+from foampilot.agent.status import AgentStatusSnapshot
 from foampilot.environment import CommandFact, EnvironmentSnapshot
 from foampilot.models import (
     InMemoryModelTraceSink,
@@ -16,6 +17,7 @@ from foampilot.models import (
     ModelRequest,
     ModelResult,
     ModelStage,
+    ModelContextArtifact,
 )
 from foampilot.manifests import (
     CaseField,
@@ -269,6 +271,44 @@ def _plan(
     )
 
 
+def _author_status() -> AgentStatusSnapshot:
+    return AgentStatusSnapshot.model_validate(
+        {
+            "schema_version": 1,
+            "source_event_sequence": 5,
+            "current_stage": "author",
+            "last_completed_stage": "CONTEXT_READY",
+            "attempt": {"current": 1, "maximum": 2},
+            "capability": {
+                "solver_family": "incompressible-laminar",
+                "solver": "icoFoam",
+                "regions": [],
+            },
+            "latest_failure": None,
+            "budget": {
+                "model_logical_requests_remaining": 2,
+                "transport_attempts_remaining": 7,
+                "model_seconds_remaining": 600,
+                "execution_seconds_remaining": 120,
+            },
+            "context": {
+                "knowledge_ids": ["of10.ico.contract"],
+                "skill_names": ["openfoam-author-native-case"],
+                "knowledge_sources_sha256": "a" * 64,
+                "skills_sha256": "b" * 64,
+            },
+            "allowed_actions": ["author_case_bundle"],
+            "immutable_constraints": {
+                "public_assets": [],
+                "protected_path_count": 1,
+                "protected_paths_sha256": "c" * 64,
+                "openfoam_distribution": "foundation",
+                "openfoam_version": "10",
+            },
+        }
+    )
+
+
 def test_one_model_call_authors_and_materializes_complete_bundle(
     tmp_path: Path,
 ) -> None:
@@ -327,6 +367,32 @@ def test_bundle_prompt_has_no_review_or_evaluator_contract() -> None:
     assert "expected_evidence" not in prompt
     assert "satisfies_outputs" not in prompt
     assert "review-openfoam-plan" not in prompt
+
+
+def test_bundle_prompt_and_request_reference_deterministic_status() -> None:
+    model = RecordingModel([_plan()])
+    status = _author_status()
+    reference = ModelContextArtifact(
+        path="agent-status-author-01.json",
+        sha256="d" * 64,
+    )
+
+    author_case_bundle(
+        _task(),
+        _environment("blockMesh", "icoFoam"),
+        _capability(),
+        model,
+        "public knowledge",
+        "portable skill",
+        status_snapshot=status,
+        status_artifact=reference,
+        budget=_model_window(ModelStage.GENERATION),
+        trace=InMemoryModelTraceSink(),
+    )
+
+    assert "DETERMINISTIC AGENT STATUS" in model.requests[0].user_prompt
+    assert '"current_stage": "author"' in model.requests[0].user_prompt
+    assert model.requests[0].context_artifacts == (reference,)
 
 
 def test_bundle_prompt_contains_bounded_public_geometry_facts() -> None:

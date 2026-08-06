@@ -426,6 +426,7 @@ class ModelGateway:
                             else None
                         ),
                         normalizations=normalizations,
+                        context_artifacts=request.context_artifacts,
                     )
                 )
 

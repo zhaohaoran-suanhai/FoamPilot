@@ -34,6 +34,10 @@ description: Use when an Agent must turn a public Foundation OpenFOAM v10 TaskSp
 
 ## 编写原生文件
 
+- 将上下文中唯一的 selected solver guide 视为版本化 reader contract。先把其中明确写出的
+  必需文件、字段、字典表、operator 和 base/Final 配对整理成原子清单，逐项映射到
+  `files`/`commands` 后再输出 CaseBundle。不得只实现日志当前提到的一项。不得等 reader 逐项报错
+  后再补同一组已知必需项。
 - 为每个 OpenFOAM dictionary 提供有效的 `FoamFile` header。
 - 保证 `system/controlDict` 中的 application 与执行计划一致。
 - 每个字段都必须覆盖网格中的每个 patch。

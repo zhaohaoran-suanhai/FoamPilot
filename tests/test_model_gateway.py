@@ -16,6 +16,7 @@ from foampilot.models import (
     ModelGateway,
     ModelRequest,
     ModelStage,
+    ModelContextArtifact,
 )
 
 from tests.support.model_gateway import (
@@ -495,3 +496,34 @@ def test_trace_records_hash_and_bytes_without_prompt_text() -> None:
     assert trace.attempts[0].request_bytes > 0
     assert "Return one value" not in payload
     assert '{"value":"ok"}' not in payload
+
+
+def test_trace_records_context_artifact_reference_without_content() -> None:
+    clock = FakeClock()
+    backend = ScriptedBackend([valid_response('{"value":"ok"}')])
+    trace = InMemoryModelTraceSink()
+    request = REQUEST.model_copy(
+        update={
+            "context_artifacts": (
+                ModelContextArtifact(
+                    path="agent-status-author-01.json",
+                    sha256="b" * 64,
+                ),
+            )
+        }
+    )
+
+    _gateway(backend, clock).generate_structured(
+        request,
+        ExampleOutput,
+        budget=_window(clock),
+        trace=trace,
+    )
+
+    assert trace.attempts[0].context_artifacts == (
+        ModelContextArtifact(
+            path="agent-status-author-01.json",
+            sha256="b" * 64,
+        ),
+    )
+    assert "protected_paths" not in trace.attempts[0].model_dump_json()

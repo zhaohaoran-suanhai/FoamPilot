@@ -22,7 +22,10 @@ description: Use when authoring or repairing a Foundation OpenFOAM v10 incompres
 5. `fvSolution.solvers` 必须包含实际求解字段及其 `Final` 变体；稳态算例再配置合理的
    equation/field relaxation。
 6. 对旋转参考系或多孔介质，只在任务确实声明相应物理模型时增加模型字典。
-7. 对 Maxwell/PIMPLE，先确认模型专用 operators、`sigma` solver coverage 与 outer coupling，
+7. 使用 `volumeFractionSource` 时，`alpha.<volumePhase>` 表示障碍物占据比例，不是开放流体比例；
+   自由流区域必须为 `0`，并且全域严格满足 `0 <= alpha.<volumePhase> < 1`。精确的 `1`
+   会使剩余流体体积为零，不得用它表示完全固体区。
+8. 对 Maxwell/PIMPLE，先确认模型专用 operators、`sigma` solver coverage 与 outer coupling，
    再读取 actual Courant 和 sigma stress residual history 并定位首次恶化时刻。一次 repair 只修改
    时间控制、stress convection、outer coupling 或 relaxation 中一个有证据的原因族；不得违反 TaskSpec
    明确固定的 `deltaT`、物性或边界，约束不可行时报告 conflict。

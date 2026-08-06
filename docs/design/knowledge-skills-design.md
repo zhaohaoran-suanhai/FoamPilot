@@ -1,9 +1,11 @@
 # 阶段 1：Knowledge 与 Skills 优化规格
 
-状态：核心实现已完成；基于 2026-08-05 同后端 30 题证据的阶段 1.1 轻量修正设计已批准，
-尚未实施。当前证据见[第一阶段实施记录](../reports/2026-08-04-stage-1-knowledge-skills.md)与
-[Performance v1 报告](../reports/2026-08-05-performance-v1.md)。本文保留完整规格，coverage 中的
-条目存在不等于求解能力通过验证。
+状态：核心实现、阶段 1.1 和阶段 1.2 定向实现已完成；30+20 大回归按最新优先级延期到
+Agent Harness v2 P0/P1 之后。当前证据见
+[第一阶段实施记录](../reports/2026-08-04-stage-1-knowledge-skills.md)、
+[阶段 1.1 报告](../reports/2026-08-05-knowledge-skills-stage-1-1.md)与
+[阶段 1.2 报告](../reports/2026-08-06-knowledge-skills-stage-1-2.md)。本文保留完整规格，coverage
+中的条目存在不等于求解能力通过验证。
 
 ## 1. 背景与目标
 
@@ -378,3 +380,19 @@ Foundation v10 语义。
 
 严格物理 qualification 是第二层指标。它必须完整报告，但不以针对单题调参的方式作为本轮
 Knowledge/Skill promotion 条件。
+
+## 13. 阶段 1.2：Knowledge 遵从与 family Skill 路由
+
+阶段 1.1 后的四个复杂 solver gate 已经检索到正确 solver guide，但没有加载 family Skill，
+模型仍逐项遗漏 guide 中明确列出的 reader contract。阶段 1.2 因此不重复扩充相同 Knowledge，
+而是：
+
+- 为 `compressibleInterFoam`、`driftFluxFoam`、`multiphaseEulerFoam` 和 `reactingFoam`
+  登记恰好一个适用 family Skill；
+- 增加一个跨 solver 的 coupled multiphase Skill；
+- 要求通用 author Skill 将 selected solver guide 的成组必需项转为生成前原子清单；
+- 继续用既有 30+20 题验证 solver entry、normal completion 和 public validation。
+
+具体步骤与 gate 见[阶段 1.2 实施计划](../plans/2026-08-06-knowledge-skills-stage-1-2.md)。本阶段
+不修改 Runner、Gateway、ExecutionPlan、repair schema 或 evaluator，也不进入 Agent Harness
+v2 P0/P1 的实现。

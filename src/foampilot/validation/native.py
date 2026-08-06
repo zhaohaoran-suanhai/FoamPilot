@@ -8,6 +8,7 @@ from pathlib import Path, PurePosixPath
 import re
 
 from foampilot.runtime import (
+    OpenFOAMLogSummary,
     PlanRunResult,
     PlanStepResult,
     parse_openfoam_log,
@@ -244,13 +245,14 @@ def _check(
     *,
     case_root: Path,
     steps: list[PlanStepResult],
+    reused_executables: set[str],
     texts: list[str],
+    combined: str,
+    summaries: list[OpenFOAMLogSummary],
     field_cache: dict[str, dict[str, list[float]]],
 ) -> PublicValidationCheck:
     kind = expectation.kind
     parameters = expectation.parameters
-    combined = "\n".join(texts)
-    summaries = [parse_openfoam_log(text) for text in texts]
 
     if kind == "mesh_ok":
         matched = any(
@@ -283,10 +285,12 @@ def _check(
     if kind == "command_executed":
         configured = parameters.get("executable")
         executable = str(configured) if isinstance(configured, str) else ""
-        matched = any(
+        executed = any(
             executable in step.command and _successful(step)
             for step in steps
         )
+        reused = executable in reused_executables
+        matched = executed or reused
         return PublicValidationCheck(
             name=expectation.name,
             passed=bool(executable) and matched,
@@ -295,7 +299,15 @@ def _check(
                 if executable and matched
                 else "The required command did not execute successfully."
             ),
-            observed={"executable": executable, "matched": matched},
+            observed={
+                "executable": executable,
+                "matched": matched,
+                "evidence_source": (
+                    "executed_step"
+                    if executed
+                    else "reused_step" if reused else "missing"
+                ),
+            },
             limits={"return_code": 0},
         )
 
@@ -590,6 +602,9 @@ def validate_native_run(
 
     root = Path(case_root).resolve()
     steps = list(run_result.steps)
+    reused_executables = {
+        step.executable for step in run_result.reused_steps
+    }
     texts = [_step_text(step) for step in steps]
     by_id = {step.step_id: (step, text) for step, text in zip(steps, texts)}
     field_cache: dict[str, dict[str, list[float]]] = {}
@@ -614,12 +629,17 @@ def validate_native_run(
             failed_step_id=failed.step_id,
         )
 
+    combined = "\n".join(texts)
+    summaries = [parse_openfoam_log(text) for text in texts]
     checks = [
         _check(
             expectation,
             case_root=root,
             steps=steps,
+            reused_executables=reused_executables,
             texts=texts,
+            combined=combined,
+            summaries=summaries,
             field_cache=field_cache,
         )
         for expectation in task.public_checks

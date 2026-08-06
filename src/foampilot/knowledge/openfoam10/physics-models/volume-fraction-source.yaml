@@ -30,9 +30,11 @@ leakage:
   families: []
   contains_target_case_solution: false
 content:
-  summary: Foundation v10 volumeFractionSource 读取固定的 constant/alpha.<volumePhase> 字段；solidEquilibriumEnergySource 读取 constant/alpha.<solidPhase> 和分相固体 physical-properties dictionary。这些是模型输入，而不是 time-zero 解字段。
+  summary: Foundation v10 volumeFractionSource 读取固定的 constant/alpha.<volumePhase> 字段；该字段表示障碍物或被占据体积比例，不是开放流体比例。solidEquilibriumEnergySource 读取 constant/alpha.<solidPhase> 和分相固体 physical-properties dictionary。这些是模型输入，而不是 time-zero 解字段。
   rules:
     - 每个 volumeFractionSource 项都要将 volumePhase 设置为 phase suffix，并在 solver 启动前创建 constant/alpha.<volumePhase>。只写入 0/alpha.<volumePhase> 无法满足模型查找规则。
+    - alpha.<volumePhase> 表示障碍物占据比例：自由流区域必须为 0，局部障碍区可以为正值，且所有单元必须严格满足 0 <= alpha.<volumePhase> < 1。不得将自由流区写为 1。
+    - volumeFractionSource 内部使用剩余流体体积 1 - alpha；alpha 等于 1 会使分母为零并可导致 SIGFPE。需要表示完全不透流固体时，应改用网格边界或其他受支持的模型，不要在该字段中写精确的 1。
     - Foundation v10 setFields 不接受 -time 选项。普通 time-zero 字段应运行不带 -time 的 setFields；不得使用 setFields -time constant 创建 constant/alpha.<volumePhase>。应改用受支持的 coded postProcess initializer，或直接生成完整 constant 字段。
     - 使用能写入 constant instance 的可用原生 initializer 生成空间变化 constant alpha field。一种 Foundation v10 模式是在 system/controlDict 下配置 coded function object，通过不带 -func 的 postProcess 执行，并用 -time constant 选择输入；使用 -func <inlineName> 会请求单独安装的 function-object 配置。若使用独立生成的 dictionary，传入相对于 case root 的完整位置，例如 -dict system/initControlDict；裸 filename 会相对于 case root 解析，而不是 system 目录。
     - 在 Foundation v10 coded function object 的 codeExecute block 中，以 `const fvMesh& m = mesh()` 获取 database，并使用 `m.time().constant()` 表示 constant instance。runTime 和裸 mesh object 等 solver-main 变量不会自动出现在生成类的 scope 中。
@@ -45,6 +47,8 @@ content:
     - The solid energy model cannot find constant/physicalProperties.solid or a required phase temperature.
     - Dynamic solid-thermo compilation reports Unknown transport type constIso and lists constIsoSolid.
     - Coded initializer compilation reports runTime undefined or asks whether mesh() was intended.
+    - Solver enters volumeFractionSource::addAlphaSupType and raises SIGFPE after alpha.<volumePhase> contains 1.
   validation:
     - 要求初始化成功，并在 solver command 前确认 constant alpha field 已存在。
-    - 要求正常结束、体积分数有限且有界，并得到任务要求的质量、能量或 profile 观测量。
+    - 在启动 solver 前检查 alpha.<volumePhase> 的最小值和最大值：代表性自由流单元为 0，全域有限且最大值严格小于 1。
+    - 要求正常结束，并得到任务要求的质量、能量或 profile 观测量。

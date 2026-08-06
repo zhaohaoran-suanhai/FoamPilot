@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import posixpath
 from pathlib import Path, PurePosixPath
 import re
 
@@ -30,6 +31,10 @@ _PATCH = re.compile(
     r"(?m)^\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*(?:\n\s*)?\{"
 )
 _TIME_DIRECTORY = re.compile(r"^[0-9]+(?:\.[0-9]+)?(?:\.orig)?$")
+_INCLUDE = re.compile(
+    r'^\s*#include(?:IfPresent)?\s+"([^"]+)"',
+    re.MULTILINE,
+)
 _NON_FOAM_SUFFIXES = {
     ".csv",
     ".dat",
@@ -90,6 +95,20 @@ def _looks_like_openfoam_file(relative: str) -> bool:
         path.parts[0] in {"system", "constant"}
         or bool(_TIME_DIRECTORY.fullmatch(path.parts[0]))
     )
+
+
+def _declared_include_fragments(plan: ExecutionPlan) -> set[str]:
+    declared = {item.path for item in plan.files}
+    included: set[str] = set()
+    for generated in plan.files:
+        parent = PurePosixPath(generated.path).parent.as_posix()
+        for reference in _INCLUDE.findall(generated.content):
+            if reference.startswith("/"):
+                continue
+            resolved = posixpath.normpath(posixpath.join(parent, reference))
+            if not resolved.startswith("../") and resolved in declared:
+                included.add(resolved)
+    return included
 
 
 def _balanced_block(
@@ -196,6 +215,7 @@ def inspect_native_case(
         )
     ]
     texts: dict[str, str] = {}
+    include_fragments = _declared_include_fragments(plan)
     observed_patches: set[str] = set()
     advisories: list[InspectionIssue] = []
 
@@ -243,13 +263,14 @@ def inspect_native_case(
                 )
         if _looks_like_openfoam_file(relative):
             if re.search(r"\bFoamFile\s*\{", _without_comments(text)) is None:
-                issues.append(
-                    _issue(
-                        "MISSING_FOAM_HEADER",
-                        "native OpenFOAM file has no FoamFile header",
-                        relative,
+                if relative not in include_fragments:
+                    issues.append(
+                        _issue(
+                            "MISSING_FOAM_HEADER",
+                            "native OpenFOAM file has no FoamFile header",
+                            relative,
+                        )
                     )
-                )
             if not _balanced(text):
                 issues.append(
                     _issue(

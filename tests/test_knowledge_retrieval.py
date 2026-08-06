@@ -328,6 +328,26 @@ def test_blocked_channel_retrieves_volume_fraction_source_contract() -> None:
     )
 
 
+def test_pimple_blocked_channel_uses_generic_not_maxwell_contract() -> None:
+    task = load_task_spec(
+        PROJECT
+        / "src/foampilot/qualification/data/tasks"
+        / "pimple-blocked-channel.yaml"
+    )
+
+    context = _context_for_task(task)
+
+    assert "of10.solver.incompressible-transient-contract" in (
+        context.selected_knowledge_ids
+    )
+    assert "of10.physics.volume-fraction-source" in (
+        context.selected_knowledge_ids
+    )
+    assert "of10.solver.pimplefoam-maxwell-contract" not in (
+        context.selected_knowledge_ids
+    )
+
+
 @pytest.mark.parametrize(
     "case_id",
     ["laminar-planar-couette", "rhopimple-shock-tube"],
@@ -565,6 +585,9 @@ def test_extended_solver_contracts_cover_observed_startup_failures() -> None:
             "pimpleFoam",
             "div((nuEff*dev2(T(grad(U)))))",
             "diffusion none",
+            "model Stokes",
+            "diffusion constant",
+            "diffusivity",
         ),
         "of10.function.scalartransport-contract": (
             "scalarTransport",
@@ -578,6 +601,9 @@ def test_extended_solver_contracts_cover_observed_startup_failures() -> None:
         "of10.physics.volume-fraction-source": (
             "setFields",
             "不带 -time",
+            "自由流区域必须为 0",
+            "0 <= alpha.<volumePhase> < 1",
+            "1 - alpha",
         ),
         "of10.boundary.rotating-swirl-inlet-contract": (
             "origin",

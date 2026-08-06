@@ -83,6 +83,26 @@ class ModelBudgetLedger:
         with self._lock:
             return self._transport_attempts_used
 
+    @property
+    def transport_attempts_remaining(self) -> int:
+        """Return the lineage transport budget without reserving an attempt."""
+
+        with self._lock:
+            return max(
+                0,
+                self.lineage_transport_attempt_limit
+                - self._transport_attempts_used,
+            )
+
+    def total_seconds_remaining(
+        self,
+        *,
+        now: Callable[[], float] = time.monotonic,
+    ) -> float:
+        """Return a monotonic, non-negative view of the total model budget."""
+
+        return max(0.0, self.total_deadline_monotonic - now())
+
     def open_stage(
         self,
         stage: ModelStage,

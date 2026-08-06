@@ -7,7 +7,7 @@ import re
 import pytest
 
 from foampilot.agent import NativeAgent
-from foampilot.agent.repair import RepairDecision
+from foampilot.agent.repair_patch import RepairPatch
 from foampilot.artifacts import ArtifactStore
 from foampilot.models import (
     BackendFailureKind,
@@ -76,17 +76,17 @@ def test_solver_failure_backend_deferred_resume_repair_real_gate(
     invalid_plan = valid_plan.model_copy(
         update={"files": invalid_files}
     )
-    repair = RepairDecision(
+    repair = RepairPatch(
         because="The icoFoam log reports that div(phi,U) has no scheme.",
         evidence=["div(phi,U) scheme is undefined in fvSchemes"],
-        cause="The generated fvSchemes omitted div(phi,U).",
-        changed_files=[
-            GeneratedFile(
-                path="system/fvSchemes",
-                content=valid_schemes,
-            )
+        file_operations=[
+            {
+                "operation": "replace",
+                "path": "system/fvSchemes",
+                "content": valid_schemes,
+            }
         ],
-        changed_commands=[],
+        command_operations=[],
         expected_check="icoFoam reaches End at time 1.",
         stable_control="Mesh, fields, viscosity, and commands are unchanged.",
     )

@@ -8,6 +8,7 @@ import tempfile
 
 from foampilot.environment import EnvironmentSnapshot
 from foampilot.models import (
+    ModelContextArtifact,
     ModelBudgetWindow,
     ModelGateway,
     ModelRequest,
@@ -19,6 +20,7 @@ from foampilot.tasks import TaskSpec
 from foampilot.preprocessing import GeometryFacts
 
 from .prompts import bundle_request_text
+from .status import AgentStatusSnapshot
 
 
 def author_case_bundle(
@@ -30,6 +32,8 @@ def author_case_bundle(
     skills_text: str,
     *,
     geometry_facts: GeometryFacts | None = None,
+    status_snapshot: AgentStatusSnapshot | None = None,
+    status_artifact: ModelContextArtifact | None = None,
     budget: ModelBudgetWindow,
     trace: ModelTraceSink,
 ) -> ExecutionPlan:
@@ -42,12 +46,18 @@ def author_case_bundle(
         knowledge_text,
         skills_text,
         geometry_facts,
+        status_snapshot,
     )
     return gateway.generate_structured(
         ModelRequest(
             purpose="author-openfoam-case-bundle",
             system_prompt=system,
             user_prompt=user,
+            context_artifacts=(
+                (status_artifact,)
+                if status_artifact is not None
+                else ()
+            ),
         ),
         ExecutionPlan,
         budget=budget,

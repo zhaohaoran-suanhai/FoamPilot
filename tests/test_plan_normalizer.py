@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from foampilot.plans import (
+    CommandStage,
     NativeCommand,
     normalize_execution_plan,
     validate_execution_plan,
@@ -123,3 +124,30 @@ def test_conflicting_predeclared_mpi_ranks_are_not_normalized(task):
 
     assert result.records == ()
     assert result.plan.commands[1].mpi_ranks == 2
+
+
+def test_known_utility_stage_is_normalized_without_mutating_evidence(task):
+    original = valid_plan().model_copy(deep=True)
+    original.commands.append(
+        NativeCommand(
+            step_id="post",
+            stage="solve",
+            executable="postProcess",
+            args=["-func", "CourantNo"],
+            mpi_ranks=1,
+            timeout_seconds=60,
+        )
+    )
+
+    result = normalize_execution_plan(
+        original,
+        task,
+        {"blockMesh", "icoFoam", "postProcess"},
+    )
+
+    assert result.plan.commands[-1].stage == CommandStage.POSTPROCESS
+    assert original.commands[-1].stage == CommandStage.SOLVE
+    assert len(result.stage_records) == 1
+    assert result.stage_records[0].step_id == "post"
+    assert result.stage_records[0].original_stage == CommandStage.SOLVE
+    assert result.stage_records[0].normalized_stage == CommandStage.POSTPROCESS

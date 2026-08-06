@@ -19,6 +19,7 @@ from foampilot.knowledge import (
 
 PROJECT = Path(__file__).parents[1]
 SCHEMA = PROJECT / "schemas" / "knowledge-entry-v1.schema.json"
+SOLVER_GUIDES = PROJECT / "src" / "foampilot" / "knowledge" / "openfoam10" / "solver-guides"
 
 
 def _payload(entry_id: str = "of10.numerics.pressure-reference") -> dict:
@@ -130,3 +131,56 @@ def test_corpus_rejects_duplicate_ids_and_manifest_detects_drift(
     assert verify_knowledge_manifest(root, manifest) == [
         "hash mismatch: first.yaml"
     ]
+
+
+@pytest.mark.parametrize(
+    ("filename", "required_markers"),
+    [
+        (
+            "driftfluxfoam-contract.yaml",
+            (
+                "Vc",
+                "[0 0 1 0 0 0 0]",
+                "nLimiterIter",
+                "physicalProperties.<dispersed>",
+                "viscosityModel slurry",
+            ),
+        ),
+        (
+            "multiphaseeulerfoam-contract.yaml",
+            (
+                "div(phi,alpha.<phase>)",
+                "escaped",
+                "div\\(phi,alpha.*\\)",
+                "thermo:rho.<phase>",
+                "div((((alpha.<phase>*thermo:rho.<phase>)*nuEff.<phase>)*dev2(T(grad(U.<phase>)))))",
+            ),
+        ),
+        (
+            "reactingfoam-contract.yaml",
+            (
+                "#include \"reactions\"",
+                "reactions 子字典",
+                "method 默认",
+                "YiFinal",
+            ),
+        ),
+        (
+            "compressibleinterfoam-contract.yaml",
+            (
+                "alpha.<phase>Final",
+                "nuEff.<phase>",
+                "dev2(T(grad(U)))",
+                "顶层 sigma",
+            ),
+        ),
+    ],
+)
+def test_solver_guides_cover_atomic_reader_contracts(
+    filename: str,
+    required_markers: tuple[str, ...],
+) -> None:
+    text = (SOLVER_GUIDES / filename).read_text(encoding="utf-8")
+
+    for marker in required_markers:
+        assert marker in text

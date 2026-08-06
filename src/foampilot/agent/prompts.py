@@ -8,6 +8,7 @@ from foampilot.environment import EnvironmentSnapshot
 from foampilot.routing import CapabilityProfile
 from foampilot.tasks import TaskSpec
 from foampilot.preprocessing import GeometryFacts
+from .status import AgentStatusSnapshot
 
 
 _BUNDLE_SYSTEM = """你是一个 OpenFOAM 工程 Agent。
@@ -48,6 +49,7 @@ def bundle_request_text(
     knowledge_text: str,
     skills_text: str,
     geometry_facts: GeometryFacts | None = None,
+    status_snapshot: AgentStatusSnapshot | None = None,
 ) -> tuple[str, str]:
     sections = [
             "公开任务（PUBLIC TASK）\n" + _json(task.agent_payload()),
@@ -64,6 +66,11 @@ def bundle_request_text(
             1,
             "公开几何事实（PUBLIC GEOMETRY FACTS）\n"
             + _json(geometry_facts.model_dump(mode="json")),
+        )
+    if status_snapshot is not None:
+        sections.append(
+            "确定性 Agent 状态（DETERMINISTIC AGENT STATUS）\n"
+            + _json(status_snapshot.model_dump(mode="json"))
         )
     user = "\n\n".join(sections)
     for protected in task.protected_paths:

@@ -296,6 +296,7 @@ OpenFOAM 求解时间。
 - [交付就绪报告](docs/reports/2026-07-30-delivery-readiness.md)
 - [独立真实算例 gate](docs/reports/2026-07-29-standalone-real-gate.md)
 - [下一阶段顺序演进规格](docs/design/README.md)
+- [Agent Harness 演进 v2 规格](docs/design/agent-harness-evolution-v2-design.md)
 - [许可证](LICENSE)
 - [来源与声明](NOTICE.md)
 - [内容来源说明](PROVENANCE.md)

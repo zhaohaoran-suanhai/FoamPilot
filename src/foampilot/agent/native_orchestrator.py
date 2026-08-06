@@ -32,13 +32,12 @@ from foampilot.models import (
     LineageBudgetExhausted,
     ModelBudgetLedger,
     ModelGateway,
+    ModelContextArtifact,
     ModelStage,
 )
 from foampilot.models.messages_zh import backend_error_payload_zh
 from foampilot.plans import (
     ExecutionPlan,
-    GeneratedFile,
-    NativeCommand,
     normalize_execution_plan,
     validate_execution_plan,
 )
@@ -99,11 +98,24 @@ from foampilot.workflow.lineage import (
 from .context import AgentContext, load_agent_context
 from .generation import author_case_bundle, materialize_case
 from .repair import (
-    RepairDecision,
     failure_fingerprint,
-    request_repair,
+    request_repair_patch,
     should_stop_repair,
-    validate_repair_decision,
+)
+from .failure import (
+    FailureClassificationError,
+    classify_native_failure,
+)
+from .repair_patch import (
+    RepairChangeSet,
+    RepairPatchError,
+    apply_repair_patch,
+)
+from .repair_scope import RepairScopeError, build_repair_scope
+from .status import (
+    AgentDecisionStage,
+    AgentStatusError,
+    build_agent_status_snapshot,
 )
 
 
@@ -112,6 +124,85 @@ from .repair import (
 # one complete response instead of discarding it at the former 300 s limit.
 GENERATION_REQUEST_TIMEOUT_SECONDS = 420
 GENERATION_STAGE_DEADLINE_SECONDS = 480
+
+
+def _run_result_seconds(run: PlanRunResult) -> float:
+    return sum(
+        max((step.finished_at - step.started_at).total_seconds(), 0.0)
+        for step in run.steps
+    )
+
+
+def _recorded_execution_seconds(run_dir: Path) -> float:
+    total = 0.0
+    for path in sorted(run_dir.glob("attempt-*/run-result.json")):
+        try:
+            total += _run_result_seconds(
+                PlanRunResult.model_validate_json(
+                    path.read_text(encoding="utf-8")
+                )
+            )
+        except (OSError, ValueError):
+            continue
+    return total
+
+
+def _lineage_logical_requests(run_dir: Path, store_root: Path) -> int:
+    total = 0
+    current: Path | None = run_dir
+    seen: set[Path] = set()
+    while current is not None and current not in seen:
+        seen.add(current)
+        model_path = current / "model-configuration.json"
+        if model_path.is_file():
+            try:
+                total += int(
+                    _read_json(model_path).get("logical_model_requests", 0)
+                )
+            except (OSError, ValueError, TypeError):
+                pass
+        continuation_path = current / "continuation.json"
+        if not continuation_path.is_file():
+            break
+        try:
+            payload = _read_json(continuation_path)
+            parent = payload.get("parent_run")
+            parent_id = (
+                str(parent.get("run_id"))
+                if isinstance(parent, dict)
+                else ""
+            )
+        except (OSError, ValueError):
+            break
+        candidate = (store_root / parent_id).resolve()
+        if not parent_id or not candidate.is_relative_to(store_root):
+            break
+        current = candidate
+    return total
+
+
+def _write_status_artifact(
+    *,
+    run_dir: Path,
+    name: str,
+    snapshot: BaseModel,
+) -> ModelContextArtifact:
+    path = run_dir / name
+    _write_json(path, snapshot)
+    return ModelContextArtifact(
+        path=name,
+        sha256=sha256(path.read_bytes()).hexdigest(),
+    )
+
+
+def _agent_status_failure(error: AgentStatusError) -> FailureRecord:
+    return FailureRecord(
+        domain=FailureDomain.WORKFLOW,
+        code=error.code,
+        detail=error.detail,
+        message=error.message,
+        recovery=error.recovery,
+    )
 
 
 def _json_payload(value: object) -> object:
@@ -431,28 +522,6 @@ def _inspection_validation_report(
             for issue in inspection.issues
         ],
         failure_layer="STATIC_INSPECTION_FAILED",
-    )
-
-
-def _apply_repair(
-    plan: ExecutionPlan,
-    decision: RepairDecision,
-) -> ExecutionPlan:
-    files = {item.path: item for item in plan.files}
-    added_paths: list[str] = []
-    for changed in decision.changed_files:
-        if changed.path not in files:
-            added_paths.append(changed.path)
-        files[changed.path] = changed
-    commands = {item.step_id: item for item in plan.commands}
-    for changed in decision.changed_commands:
-        commands[changed.step_id] = changed
-    return plan.model_copy(
-        update={
-            "files": [files[item.path] for item in plan.files]
-            + [files[path] for path in added_paths],
-            "commands": [commands[item.step_id] for item in plan.commands],
-        }
     )
 
 
@@ -816,6 +885,20 @@ class NativeAgent:
                 else 0
             ),
         )
+        lineage_logical_requests_before_run = (
+            _lineage_logical_requests(
+                _continuation.parent_run,
+                self.artifact_store.root.resolve(),
+            )
+            if _continuation is not None
+            else 0
+        )
+        execution_seconds_used = (
+            _recorded_execution_seconds(_continuation.parent_run)
+            if _continuation is not None
+            else 0.0
+        )
+        logical_request_limit = task.resource_budget.max_attempts + 4
         model_trace = JsonlModelTraceSink(
             run_dir / "model-attempts.jsonl"
         )
@@ -1191,7 +1274,7 @@ class NativeAgent:
             if _continuation is not None
             else 0
         )
-        pending_repair_decision: RepairDecision | None = None
+        pending_repair_changes: RepairChangeSet | None = None
         pending_repair_source_attempt: Path | None = None
 
         if verified_source is not None:
@@ -1233,6 +1316,35 @@ class NativeAgent:
                 log_text = report.feedback()
             parent_attempt = attempts[-1].attempt
             try:
+                parent_inspection_path = (
+                    _continuation.active_plan_path.parent
+                    / "static-inspection.json"
+                )
+                parent_inspection = (
+                    InspectionReport.model_validate_json(
+                        parent_inspection_path.read_text(encoding="utf-8")
+                    )
+                    if parent_inspection_path.is_file()
+                    else None
+                )
+                classification = classify_native_failure(
+                    report=report,
+                    plan=parent_plan,
+                    log_tail=log_text,
+                    inspection=(
+                        parent_inspection
+                        if parent_inspection is not None
+                        and not parent_inspection.passed
+                        else None
+                    ),
+                    prior_failure=(
+                        _continuation.parent_summary.primary_failure
+                    ),
+                )
+                classification_name = (
+                    f"failure-classification-attempt-{parent_attempt:02d}.json"
+                )
+                _write_json(run_dir / classification_name, classification)
                 repair_context = self._context(
                     task,
                     capability,
@@ -1258,23 +1370,80 @@ class NativeAgent:
                         "skill_names": repair_context.skill_names,
                     },
                 )
-                model_calls += 1
+                repair_scope = build_repair_scope(
+                    classification=classification,
+                    task=task,
+                    plan=parent_plan,
+                    current_files=current_files,
+                    knowledge_ids=(
+                        repair_context.selected_knowledge_ids
+                    ),
+                )
+                scope_name = (
+                    f"repair-scope-attempt-{parent_attempt:02d}.json"
+                )
+                _write_json(run_dir / scope_name, repair_scope)
+                _record_event(
+                    workflow,
+                    stage=WorkflowStage.REPAIR_SCOPE_READY,
+                    state=WorkflowEventState.COMPLETED,
+                    attempt=parent_attempt,
+                    evidence_paths=[classification_name, scope_name],
+                )
                 _record_event(
                     workflow,
                     stage=WorkflowStage.MODEL_REPAIR_STARTED,
                     state=WorkflowEventState.STARTED,
                     attempt=parent_attempt,
                 )
-                decision = request_repair(
+                continuation_failure = FailureRecord(
+                    domain=classification.domain,
+                    code=classification.code,
+                    step_id=classification.failed_step_id,
+                    detail=report.feedback(),
+                    evidence_paths=[classification_name, scope_name],
+                )
+                repair_status = build_agent_status_snapshot(
+                    decision_stage=AgentDecisionStage.REPAIR,
+                    task=task,
+                    capability=capability,
+                    context=repair_context,
+                    workflow=workflow,
+                    model_budget=model_ledger,
+                    logical_requests_used=(
+                        lineage_logical_requests_before_run + model_calls
+                    ),
+                    logical_request_limit=logical_request_limit,
+                    current_attempt=parent_attempt,
+                    execution_seconds_used=execution_seconds_used,
+                    plan=parent_plan,
+                    latest_failure=continuation_failure,
+                    allowed_actions=list(
+                        dict.fromkeys(
+                            operation.replace("insert_command_before", "insert_command")
+                            .replace("insert_command_after", "insert_command")
+                            for operation in repair_scope.allowed_operations
+                        )
+                    ),
+                )
+                repair_status_artifact = _write_status_artifact(
+                    run_dir=run_dir,
+                    name=f"agent-status-repair-{parent_attempt:02d}.json",
+                    snapshot=repair_status,
+                )
+                model_calls += 1
+                patch = request_repair_patch(
                     task=task,
                     plan=parent_plan,
-                    report=report,
+                    classification=classification,
+                    repair_scope=repair_scope,
                     failed_log=log_text,
-                    current_files=current_files,
                     knowledge_text=repair_context.knowledge_text,
                     skills_text=repair_context.skills_text,
                     geometry_facts=geometry_facts,
                     mesh_quality_report=parent_mesh_quality,
+                    status_snapshot=repair_status,
+                    status_artifact=repair_status_artifact,
                     gateway=self.gateway,
                     budget=model_ledger.open_stage(
                         ModelStage.REPAIR,
@@ -1284,15 +1453,58 @@ class NativeAgent:
                     ),
                     trace=model_trace,
                 )
-                issues = validate_repair_decision(
-                    decision,
+                patch_result = apply_repair_patch(
+                    patch,
+                    scope=repair_scope,
                     task=task,
                     plan=parent_plan,
-                    report=report,
                     available_executables=(
                         environment.available_executable_names
                     ),
                     current_files=current_files,
+                )
+            except (
+                FailureClassificationError,
+                RepairScopeError,
+                RepairPatchError,
+            ) as error:
+                status = (
+                    _continuation.parent_summary.native_status
+                    or attempts[-1].status
+                )
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status=status,
+                    attempts=attempts,
+                    message=error.message,
+                    model_calls=model_calls,
+                    workflow_state=WorkflowState.FAILED,
+                    primary_failure=(
+                        _continuation.parent_summary.primary_failure
+                    ),
+                    terminal_blocker=FailureRecord(
+                        domain=FailureDomain.WORKFLOW,
+                        code=error.code,
+                        detail=error.detail,
+                        message=error.message,
+                        recovery=error.recovery,
+                    ),
+                )
+            except AgentStatusError as error:
+                status = (
+                    _continuation.parent_summary.native_status
+                    or attempts[-1].status
+                )
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status=error.code,
+                    attempts=attempts,
+                    message=error.message,
+                    model_calls=model_calls,
+                    workflow_state=WorkflowState.FAILED,
+                    primary_failure=_agent_status_failure(error),
                 )
             except GatewayRequestError as error:
                 can_resume = (
@@ -1367,70 +1579,15 @@ class NativeAgent:
                         _continuation.parent_summary.primary_failure
                     ),
                 )
+            patch_name = f"repair-patch-attempt-{parent_attempt:02d}.json"
+            _write_json(run_dir / patch_name, patch)
             _write_json(
-                run_dir / "continuation-repair-decision.json",
-                decision,
+                run_dir
+                / f"repair-patch-normalization-attempt-{parent_attempt:02d}.json",
+                patch_result.normalizations,
             )
-            if issues:
-                _write_json(
-                    run_dir / "continuation-repair-issues.json",
-                    issues,
-                )
-                status = (
-                    _continuation.parent_summary.native_status
-                    or attempts[-1].status
-                )
-                return self._finish(
-                    run_dir=run_dir,
-                    task=task,
-                    status=status,
-                    attempts=attempts,
-                    message="Repair proposal violates safety policy.",
-                    model_calls=model_calls,
-                )
-            changed = bool(
-                decision.changed_commands
-                or any(
-                    current_files.get(item.path) != item.content
-                    for item in decision.changed_files
-                )
-            )
-            decision_stop = should_stop_repair(
-                fingerprints=[
-                    item.failure_fingerprint
-                    for item in attempts
-                    if item.failure_fingerprint is not None
-                ],
-                attempts_used=parent_attempt,
-                max_attempts=task.resource_budget.max_attempts,
-                generated_bytes_changed=changed,
-                decision=decision,
-            )
-            if decision_stop.stop:
-                status = (
-                    _continuation.parent_summary.native_status
-                    or attempts[-1].status
-                )
-                return self._finish(
-                    run_dir=run_dir,
-                    task=task,
-                    status=status,
-                    attempts=attempts,
-                    message=f"Repair stopped: {decision_stop.reason}.",
-                    model_calls=model_calls,
-                )
-            repaired = _apply_repair(parent_plan, decision)
-            repair_normalization = normalize_execution_plan(
-                repaired,
-                task,
-                environment.available_executable_names,
-            )
-            _write_json(
-                run_dir / "continuation-repair-normalization.json",
-                repair_normalization.records,
-            )
-            plan = repair_normalization.plan
-            pending_repair_decision = decision
+            plan = patch_result.plan
+            pending_repair_changes = patch_result.changes
             pending_repair_source_attempt = (
                 _continuation.active_plan_path.parent
             )
@@ -1439,7 +1596,7 @@ class NativeAgent:
                 stage=WorkflowStage.REPAIR_APPLIED,
                 state=WorkflowEventState.COMPLETED,
                 attempt=parent_attempt,
-                evidence_paths=["continuation-repair-decision.json"],
+                evidence_paths=[patch_name],
             )
         else:
             try:
@@ -1447,12 +1604,31 @@ class NativeAgent:
                     raise ValueError(
                         "live authoring requires a model gateway"
                     )
-                model_calls += 1
                 _record_event(
                     workflow,
                     stage=WorkflowStage.MODEL_GENERATION_STARTED,
                     state=WorkflowEventState.STARTED,
                 )
+                author_status = build_agent_status_snapshot(
+                    decision_stage=AgentDecisionStage.AUTHOR,
+                    task=task,
+                    capability=capability,
+                    context=context,
+                    workflow=workflow,
+                    model_budget=model_ledger,
+                    logical_requests_used=(
+                        lineage_logical_requests_before_run + model_calls
+                    ),
+                    logical_request_limit=logical_request_limit,
+                    current_attempt=1,
+                    execution_seconds_used=execution_seconds_used,
+                )
+                author_status_artifact = _write_status_artifact(
+                    run_dir=run_dir,
+                    name="agent-status-author-01.json",
+                    snapshot=author_status,
+                )
+                model_calls += 1
                 plan = author_case_bundle(
                     task,
                     environment,
@@ -1461,6 +1637,8 @@ class NativeAgent:
                     context.knowledge_text,
                     context.skills_text,
                     geometry_facts=geometry_facts,
+                    status_snapshot=author_status,
+                    status_artifact=author_status_artifact,
                     budget=model_ledger.open_stage(
                         ModelStage.GENERATION,
                         request_timeout_seconds=(
@@ -1472,6 +1650,17 @@ class NativeAgent:
                         max_transport_attempts=3,
                     ),
                     trace=model_trace,
+                )
+            except AgentStatusError as error:
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status=error.code,
+                    attempts=attempts,
+                    message=error.message,
+                    model_calls=model_calls,
+                    workflow_state=WorkflowState.FAILED,
+                    primary_failure=_agent_status_failure(error),
                 )
             except GatewayRequestError as error:
                 if error.failure.kind == BackendFailureKind.SCHEMA_INVALID:
@@ -1564,7 +1753,10 @@ class NativeAgent:
         )
         _write_json(
             run_dir / "plan-normalization.json",
-            normalization.records,
+            [
+                *normalization.records,
+                *normalization.stage_records,
+            ],
         )
         plan = normalization.plan
         next_attempt = len(attempts) + 1
@@ -1625,14 +1817,14 @@ class NativeAgent:
                     )
                 materialize_case(active_plan, task, case_root)
                 if (
-                    pending_repair_decision is not None
+                    pending_repair_changes is not None
                     and pending_repair_source_attempt is not None
                 ):
                     repair_preparation = prepare_repair_reuse(
                         parent_attempt=pending_repair_source_attempt,
                         next_case_root=case_root,
                         plan=active_plan,
-                        decision=pending_repair_decision,
+                        changes=pending_repair_changes,
                     )
                     _write_json(
                         attempt_root / "execution-reuse.json",
@@ -1657,7 +1849,7 @@ class NativeAgent:
                                 )
                             ),
                         )
-                    pending_repair_decision = None
+                    pending_repair_changes = None
                     pending_repair_source_attempt = None
             except Exception as error:
                 return self._finish(
@@ -1870,6 +2062,7 @@ class NativeAgent:
                     commands=commands_to_execute,
                     budget=task.resource_budget,
                 )
+                execution_seconds_used += _run_result_seconds(run_result)
                 if reused_steps:
                     run_result = run_result.model_copy(
                         update={"reused_steps": reused_steps}
@@ -2019,6 +2212,47 @@ class NativeAgent:
             )
             attempts.append(attempt_summary)
 
+            try:
+                classification = classify_native_failure(
+                    report=report,
+                    plan=active_plan,
+                    log_tail=log_text,
+                    inspection=(inspection if not inspection.passed else None),
+                )
+            except FailureClassificationError as error:
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status=status,
+                    attempts=attempts,
+                    message=error.message,
+                    model_calls=model_calls,
+                    workflow_state=WorkflowState.FAILED,
+                    primary_failure=_failure_record(
+                        status=status,
+                        message=report.feedback(),
+                        attempts=attempts,
+                    ),
+                    terminal_blocker=FailureRecord(
+                        domain=FailureDomain.WORKFLOW,
+                        code=error.code,
+                        detail=error.detail,
+                        message=error.message,
+                        recovery=error.recovery,
+                    ),
+                )
+            classification_name = (
+                f"failure-classification-attempt-{attempt_number:02d}.json"
+            )
+            _write_json(run_dir / classification_name, classification)
+            classified_failure = FailureRecord(
+                domain=classification.domain,
+                code=classification.code,
+                step_id=classification.failed_step_id,
+                detail=report.feedback(),
+                evidence_paths=[classification_name],
+            )
+
             stop = should_stop_repair(
                 fingerprints=fingerprints,
                 attempts_used=attempt_number,
@@ -2078,7 +2312,26 @@ class NativeAgent:
                         "skill_names": repair_context.skill_names,
                     },
                 )
-                model_calls += 1
+                repair_scope = build_repair_scope(
+                    classification=classification,
+                    task=task,
+                    plan=active_plan,
+                    current_files=current_files,
+                    knowledge_ids=(
+                        repair_context.selected_knowledge_ids
+                    ),
+                )
+                scope_name = (
+                    f"repair-scope-attempt-{attempt_number:02d}.json"
+                )
+                _write_json(run_dir / scope_name, repair_scope)
+                _record_event(
+                    workflow,
+                    stage=WorkflowStage.REPAIR_SCOPE_READY,
+                    state=WorkflowEventState.COMPLETED,
+                    attempt=attempt_number,
+                    evidence_paths=[classification_name, scope_name],
+                )
                 workflow.checkpoint(
                     f"repair-evidence-attempt-{attempt_number:02d}",
                     {
@@ -2108,16 +2361,47 @@ class NativeAgent:
                     state=WorkflowEventState.STARTED,
                     attempt=attempt_number,
                 )
-                decision = request_repair(
+                repair_status = build_agent_status_snapshot(
+                    decision_stage=AgentDecisionStage.REPAIR,
+                    task=task,
+                    capability=capability,
+                    context=repair_context,
+                    workflow=workflow,
+                    model_budget=model_ledger,
+                    logical_requests_used=(
+                        lineage_logical_requests_before_run + model_calls
+                    ),
+                    logical_request_limit=logical_request_limit,
+                    current_attempt=attempt_number,
+                    execution_seconds_used=execution_seconds_used,
+                    plan=active_plan,
+                    latest_failure=classified_failure,
+                    allowed_actions=list(
+                        dict.fromkeys(
+                            operation.replace("insert_command_before", "insert_command")
+                            .replace("insert_command_after", "insert_command")
+                            for operation in repair_scope.allowed_operations
+                        )
+                    ),
+                )
+                repair_status_artifact = _write_status_artifact(
+                    run_dir=run_dir,
+                    name=f"agent-status-repair-{attempt_number:02d}.json",
+                    snapshot=repair_status,
+                )
+                model_calls += 1
+                patch = request_repair_patch(
                     task=task,
                     plan=active_plan,
-                    report=report,
+                    classification=classification,
+                    repair_scope=repair_scope,
                     failed_log=log_text,
-                    current_files=current_files,
                     knowledge_text=repair_context.knowledge_text,
                     skills_text=repair_context.skills_text,
                     geometry_facts=geometry_facts,
                     mesh_quality_report=mesh_quality,
+                    status_snapshot=repair_status,
+                    status_artifact=repair_status_artifact,
                     gateway=self.gateway,
                     budget=model_ledger.open_stage(
                         ModelStage.REPAIR,
@@ -2127,15 +2411,44 @@ class NativeAgent:
                     ),
                     trace=model_trace,
                 )
-                issues = validate_repair_decision(
-                    decision,
+                patch_result = apply_repair_patch(
+                    patch,
+                    scope=repair_scope,
                     task=task,
                     plan=active_plan,
-                    report=report,
                     available_executables=(
                         environment.available_executable_names
                     ),
                     current_files=current_files,
+                )
+            except (RepairScopeError, RepairPatchError) as error:
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status=status,
+                    attempts=attempts,
+                    message=error.message,
+                    model_calls=model_calls,
+                    workflow_state=WorkflowState.FAILED,
+                    primary_failure=classified_failure,
+                    terminal_blocker=FailureRecord(
+                        domain=FailureDomain.WORKFLOW,
+                        code=error.code,
+                        detail=error.detail,
+                        message=error.message,
+                        recovery=error.recovery,
+                    ),
+                )
+            except AgentStatusError as error:
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status=error.code,
+                    attempts=attempts,
+                    message=error.message,
+                    model_calls=model_calls,
+                    workflow_state=WorkflowState.FAILED,
+                    primary_failure=_agent_status_failure(error),
                 )
             except GatewayRequestError as error:
                 return self._finish(
@@ -2146,14 +2459,7 @@ class NativeAgent:
                     message=f"Model transport is unavailable: {error}",
                     model_calls=model_calls,
                     workflow_state=WorkflowState.DEFERRED,
-                    primary_failure=_failure_record(
-                        status=status,
-                        message=(
-                            "Native attempt failed before repair "
-                            "could be completed."
-                        ),
-                        attempts=attempts,
-                    ),
+                    primary_failure=classified_failure,
                     terminal_blocker=_backend_blocker(error),
                     resume=ResumeMetadata(
                         allowed=error.failure.retryable,
@@ -2177,14 +2483,7 @@ class NativeAgent:
                     attempts=attempts,
                     message=str(error),
                     model_calls=model_calls,
-                    primary_failure=_failure_record(
-                        status=status,
-                        message=(
-                            "Native attempt failed before repair "
-                            "could be completed."
-                        ),
-                        attempts=attempts,
-                    ),
+                    primary_failure=classified_failure,
                     terminal_blocker=FailureRecord(
                         domain=FailureDomain.BACKEND,
                         code="LINEAGE_TRANSPORT_BUDGET_EXHAUSTED",
@@ -2200,63 +2499,18 @@ class NativeAgent:
                     message=f"Repair proposal failed: {error}",
                     model_calls=model_calls,
                 )
+            patch_name = f"repair-patch-attempt-{attempt_number:02d}.json"
+            _write_json(run_dir / patch_name, patch)
             _write_json(
-                attempt_root / "repair-decision.json",
-                decision,
+                run_dir
+                / f"repair-patch-normalization-attempt-{attempt_number:02d}.json",
+                patch_result.normalizations,
             )
-            if issues:
-                _write_json(
-                    attempt_root / "repair-issues.json",
-                    issues,
-                )
-                return self._finish(
-                    run_dir=run_dir,
-                    task=task,
-                    status=status,
-                    attempts=attempts,
-                    message="Repair proposal violates safety policy.",
-                    model_calls=model_calls,
-                )
-
-            changed = bool(
-                decision.changed_commands
-                or any(
-                    current_files.get(item.path) != item.content
-                    for item in decision.changed_files
-                )
+            attempt_summary.changed_files = (
+                patch_result.changes.changed_file_paths
             )
-            decision_stop = should_stop_repair(
-                fingerprints=fingerprints,
-                attempts_used=attempt_number,
-                max_attempts=task.resource_budget.max_attempts,
-                generated_bytes_changed=changed,
-                decision=decision,
-            )
-            if decision_stop.stop:
-                return self._finish(
-                    run_dir=run_dir,
-                    task=task,
-                    status=status,
-                    attempts=attempts,
-                    message=f"Repair stopped: {decision_stop.reason}.",
-                    model_calls=model_calls,
-                )
-
-            attempt_summary.changed_files = [
-                item.path for item in decision.changed_files
-            ]
-            repaired = _apply_repair(active_plan, decision)
-            repair_normalization = normalize_execution_plan(
-                repaired,
-                task,
-                environment.available_executable_names,
-            )
-            _write_json(
-                attempt_root / "repair-plan-normalization.json",
-                repair_normalization.records,
-            )
-            active_plan = repair_normalization.plan
-            pending_repair_decision = decision
+            active_plan = patch_result.plan
+            pending_repair_changes = patch_result.changes
             pending_repair_source_attempt = attempt_root
             workflow.checkpoint(
                 f"active-plan-attempt-{attempt_number + 1:02d}",
@@ -2268,10 +2522,7 @@ class NativeAgent:
                 state=WorkflowEventState.COMPLETED,
                 attempt=attempt_number,
                 evidence_paths=[
-                    (
-                        f"attempt-{attempt_number:02d}/"
-                        "repair-decision.json"
-                    ),
+                    patch_name,
                     (
                         "checkpoints/active-plan-attempt-"
                         f"{attempt_number + 1:02d}.json"

@@ -316,6 +316,77 @@ def test_inspection_accepts_headerless_include_fragments(
     )
 
 
+def test_inspection_accepts_referenced_headerless_fragment_without_suffix(
+    tmp_path: Path,
+) -> None:
+    _write_declared_case(tmp_path)
+    fragment = "constant/reactions"
+    (tmp_path / fragment).write_text(
+        "reactions\n{\n}\n",
+        encoding="utf-8",
+    )
+    control = tmp_path / "system/controlDict"
+    control.write_text(
+        control.read_text(encoding="utf-8")
+        + '\n#include "../constant/reactions"\n',
+        encoding="utf-8",
+    )
+    plan = _plan()
+    plan.files = [
+        (
+            GeneratedFile(
+                path=item.path,
+                content=control.read_text(encoding="utf-8"),
+            )
+            if item.path == "system/controlDict"
+            else item
+        )
+        for item in plan.files
+    ]
+    plan.files.append(
+        GeneratedFile(
+            path=fragment,
+            content="reactions\n{\n}\n",
+        )
+    )
+
+    report = inspect_native_case(
+        case_root=tmp_path,
+        task=_task(),
+        plan=plan,
+        available_executables={"blockMesh", "icoFoam"},
+    )
+
+    assert not any(
+        issue.code == "MISSING_FOAM_HEADER" and issue.path == fragment
+        for issue in report.issues
+    )
+
+
+def test_inspection_still_rejects_unreferenced_headerless_native_file(
+    tmp_path: Path,
+) -> None:
+    _write_declared_case(tmp_path)
+    fragment = "constant/reactions"
+    (tmp_path / fragment).write_text("reactions {}\n", encoding="utf-8")
+    plan = _plan()
+    plan.files.append(
+        GeneratedFile(path=fragment, content="reactions {}\n")
+    )
+
+    report = inspect_native_case(
+        case_root=tmp_path,
+        task=_task(),
+        plan=plan,
+        available_executables={"blockMesh", "icoFoam"},
+    )
+
+    assert any(
+        issue.code == "MISSING_FOAM_HEADER" and issue.path == fragment
+        for issue in report.issues
+    )
+
+
 def test_inspection_rejects_explicit_missing_field_patch(
     tmp_path: Path,
 ) -> None:

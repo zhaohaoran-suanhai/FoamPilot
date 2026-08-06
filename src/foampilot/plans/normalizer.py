@@ -1,4 +1,4 @@
-"""Safe normalization of one unambiguous local MPI command shape."""
+"""Safe normalization of unambiguous MPI and utility command metadata."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from foampilot.tasks import TaskSpec
 
+from .command_stages import KNOWN_UTILITY_STAGES
 from .models import CommandStage, ExecutionPlan
 
 
@@ -25,9 +26,18 @@ class NormalizationRecord(StrictModel):
     mpi_ranks: int = Field(ge=1)
 
 
+class CommandStageNormalizationRecord(StrictModel):
+    command_index: int = Field(ge=0)
+    step_id: str
+    executable: str
+    original_stage: CommandStage
+    normalized_stage: CommandStage
+
+
 class NormalizationResult(StrictModel):
     plan: ExecutionPlan
     records: tuple[NormalizationRecord, ...] = ()
+    stage_records: tuple[CommandStageNormalizationRecord, ...] = ()
 
 
 def _simple_mpi_shape(
@@ -67,6 +77,7 @@ def normalize_execution_plan(
 
     normalized = plan.model_copy(deep=True)
     records: list[NormalizationRecord] = []
+    stage_records: list[CommandStageNormalizationRecord] = []
     for index, command in enumerate(normalized.commands):
         shape = _simple_mpi_shape(
             executable=command.executable,
@@ -91,7 +102,23 @@ def normalize_execution_plan(
         command.stage = CommandStage.SOLVE
         command.args = []
         command.mpi_ranks = ranks
+
+    for index, command in enumerate(normalized.commands):
+        expected = KNOWN_UTILITY_STAGES.get(command.executable)
+        if expected is None or command.stage == expected:
+            continue
+        stage_records.append(
+            CommandStageNormalizationRecord(
+                command_index=index,
+                step_id=command.step_id,
+                executable=command.executable,
+                original_stage=command.stage,
+                normalized_stage=expected,
+            )
+        )
+        command.stage = expected
     return NormalizationResult(
         plan=normalized,
         records=tuple(records),
+        stage_records=tuple(stage_records),
     )

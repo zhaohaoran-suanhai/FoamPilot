@@ -1,6 +1,6 @@
 ---
 name: openfoam-multiphase-vof
-description: Use when authoring or repairing a Foundation OpenFOAM v10 VOF or miscible two-liquid case with interFoam or twoLiquidMixingFoam, especially for phase initialization, p_rgh, interface boundedness, and conservation.
+description: Use when authoring or repairing a Foundation OpenFOAM v10 VOF or miscible two-liquid case with interFoam, compressibleInterFoam, or twoLiquidMixingFoam, especially for phase initialization, p_rgh, thermo consistency, interface boundedness, and conservation.
 ---
 
 # 多相 VOF 与两液体输运算例
@@ -27,6 +27,26 @@ description: Use when authoring or repairing a Foundation OpenFOAM v10 VOF or mi
 6. 时间步同时满足全局 Courant 和 alpha Courant 要求；监测项不是进入求解的前置依赖。
 7. 只使用 Foundation v10 已安装且本题必需的 function object；未知或非必要诊断应从
    `controlDict` 移除，由验证器在求解后计算。
+
+## compressibleInterFoam 分支
+
+对 `compressibleInterFoam`，除 VOF 共同项外，一次检查 `phaseProperties` 中的 `pMin`、每相
+`physicalProperties.<phase>`、根 `momentumTransport` 与模型实际需要的每相
+`momentumTransport.<phase>`。建立正且内部一致的 `p`、`T`、`rho` 和能量状态，并为实际相名
+提供完整的 `alpha.<phase>` solver entry；用 `alpha.<phase>Final` 显式配对，或用确实同时
+匹配 base/Final 的 entry，不能只有 alpha controls。
+
+Foundation v10 的 constant surface-tension reader 从当前 `phaseProperties` 读取顶层 `sigma`；
+不要只把同名值嵌入自创的 `surfaceTension` 子字典。`pMin` 与顶层 `sigma` 应在首次启动前
+一起核对。
+
+逐相枚举动量模型实际生成的黏性应力 operator。层流相的 key 可能同时包含
+`alpha.<phase>`、`thermo:rho.<phase>`、`nuEff.<phase>` 和 `dev2(T(grad(U)))`；黏弹性相还要
+覆盖 `sigma.<phase>` 输运及模型专属应力项。`default none` 时，简化的单相黏性 key 不能替代
+这些由 reader 请求的完整名称。
+
+初始时间步必须为正，并同时限制 flow Courant 与 alpha Courant。先通过 reader contract 和
+thermo-positive gate，再调整界面格式、Courant 或相模型；不得把缺失字典与数值稳定性混为一类。
 
 ## 结果检查
 

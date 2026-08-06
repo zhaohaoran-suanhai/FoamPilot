@@ -25,15 +25,17 @@ leakage:
 content:
   summary: Foundation v10 driftFluxFoam 推进 mixture velocity、p_rgh 与 dispersed phase fraction，并由相对速度和 mixture viscosity 模型闭合。
   rules:
-    - phaseProperties 声明 phases 和已注册 relativeVelocityModel；simple/general 路径的系数字典包含 Vc、a、a1 与 residualAlpha。
-    - 每相 physicalProperties.<phase> 提供相符的 rho 与 viscosity contract，phase 名与 alpha.<phase> 完全一致。
-    - mixtureViscosityModel 只能使用 Foundation v10 已注册类型；Newtonian 不是该选择表中的模型。基础可从 slurry、plastic、BinghamPlastic 或 Quemada 中按物理需求选择。
+    - phaseProperties 声明 phases 和已注册 relativeVelocityModel；simple/general 路径的系数字典包含 Vc、a、a1 与 residualAlpha。Foundation v10 reader 将 Vc 按时间尺度读取，显式 dimensions 必须为 [0 0 1 0 0 0 0]，也可直接提供由 reader 赋予该维度的标量；a、a1 与 residualAlpha 为无量纲。
+    - 每相 physicalProperties.<phase> 提供相符的 rho 与 viscosity contract，phase 名与 alpha.<phase> 完全一致。mixtureViscosityModel::New 从第一/分散相的 physicalProperties.<dispersed> 读取 viscosityModel，而不是从 phaseProperties 读取独立 mixtureViscosityModel 键；例如沉降浆体应在该文件写 viscosityModel slurry 及其需要的系数，连续相则使用 Foundation v10 的 viscosityModel Newtonian。
+    - 第一/分散相的 mixture viscosity 只能使用 Foundation v10 已注册类型；Newtonian 不是该选择表中的模型。基础可从 slurry、plastic、BinghamPlastic 或 Quemada 中按物理需求选择。
     - 提供 U、p_rgh、alpha.<dispersed>、g、momentumTransport、alpha controls、压力参考和实际方程需要的 divSchemes。
-    - fvSolution 用能够同时匹配 base 与 Final 的 alpha.*Diffusion contract，或显式成对提供 alpha1Diffusion/alpha1DiffusionFinal；只提供 base 名会在最后 corrector 启动失败。
+    - fvSolution 的 alpha.<dispersed> entry 一次包含 nAlphaCorr、nAlphaSubCycles、MULESCorr 和 nLimiterIter；CMULES 对 nLimiterIter 做必填读取。用能够同时匹配 base 与 Final 的 alpha.*Diffusion contract，或显式成对提供 alpha1Diffusion/alpha1DiffusionFinal；只提供 base 名会在最后 corrector 启动失败。
     - 当 divSchemes 的 default 为 none 时，显式提供 div(tauDm)，并覆盖 rhoPhi/U、alpha、湍流和黏性应力的实际 operator。
   failure_signals:
     - Unknown mixtureViscosityModel type Newtonian。
+    - phaseProperties 中写了 mixtureViscosityModel/viscosityModel，但 physicalProperties.<dispersed> 仍是 constant 或其他无效 mixture type。
     - relativeVelocityModel 的系数字典缺少 Vc、a、a1 或 residualAlpha。
+    - Vc dimensions 不是时间维，或 alpha solver entry 缺少 nLimiterIter。
     - 相名、alpha 字段和 physicalProperties 文件分组不一致。
     - fvSolution 报告 alpha1DiffusionFinal 未定义，或 fvSchemes 报告 div(tauDm) 未定义。
   validation:

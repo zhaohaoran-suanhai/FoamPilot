@@ -56,6 +56,7 @@ class FailureDomain(StrEnum):
     SOLVER = "solver"
     POSTPROCESS = "postprocess"
     VALIDATION = "validation"
+    WORKFLOW = "workflow"
     LEGACY = "legacy"
 
 

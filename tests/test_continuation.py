@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from foampilot.agent import NativeAgent
-from foampilot.agent.repair import RepairDecision
+from foampilot.agent.repair_patch import RepairPatch
 from foampilot.artifacts import ArtifactStore
 from foampilot.plans import GeneratedFile
 from foampilot.workflow import ResumeCompatibilityError
@@ -39,18 +39,18 @@ def _agent(
     )
 
 
-def _repair() -> RepairDecision:
-    return RepairDecision(
+def _repair() -> RepairPatch:
+    return RepairPatch(
         because="The solver log identifies a missing stable time step.",
         evidence=["FOAM FATAL ERROR: missing keyword"],
-        cause="The initial time step is too large.",
-        changed_files=[
-            GeneratedFile(
-                path="system/controlDict",
-                content=_control_dict(delta_t=0.001),
-            )
+        file_operations=[
+            {
+                "operation": "replace",
+                "path": "system/controlDict",
+                "content": _control_dict(delta_t=0.001),
+            }
         ],
-        changed_commands=[],
+        command_operations=[],
         expected_check="The solver reaches End.",
         stable_control="Mesh and boundary conditions are unchanged.",
     )

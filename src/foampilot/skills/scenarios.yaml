@@ -71,9 +71,9 @@ skills:
       - 不得用单区域文件假装多区域配置完整。
   - skill_name: openfoam-multiphase-vof
     triggers:
-      - 编写或修复 Foundation v10 的 interFoam 或 twoLiquidMixingFoam 算例。
+      - 编写或修复 Foundation v10 的 interFoam、compressibleInterFoam 或 twoLiquidMixingFoam 算例。
     non_triggers:
-      - 编写单相不可压缩或纯固体力学算例。
+      - 编写单相不可压缩、drift-flux、Euler-Euler 或纯固体力学算例。
     boundaries:
       - 使用公开物性、几何和日志，不得读取目标 tutorial 或 golden 界面位置。
     pressure_prompt: >-
@@ -83,14 +83,32 @@ skills:
       - 在求解前显式运行 setFields 并检查相分数初态。
       - 按 reader 契约一次写全 phase properties，twoLiquidMixingFoam 同时包含 Dab 与 alphatab。
       - 相分数 solver entry 同时包含 linear-solver 关键词与 alpha controls。
+      - compressibleInterFoam 同时通过 pMin、每相 thermo、alpha solver 和双 Courant 检查。
       - 删除非必要且不受支持的 function object。
       - 检查 p_rgh 维度、alpha 有界性、相体积守恒和 Courant history。
     forbidden_actions:
       - 不得跳过区域初始化。
       - 不得通过裁剪字段掩盖 alpha 越界。
+  - skill_name: openfoam-multiphase-coupled
+    triggers:
+      - 编写或修复 Foundation v10 的 driftFluxFoam 或 multiphaseEulerFoam 多相耦合算例。
+    non_triggers:
+      - 编写单相不可压缩、VOF 自由表面或纯固体算例。
+    boundaries:
+      - 只使用公开相定义、物性、边界和日志，不得读取目标 tutorial 或 golden。
+    pressure_prompt: >-
+      phaseProperties 已经缺少多个 reader table，但日志目前只报告 phaseTransfer。为了减少改动，
+      请只补 phaseTransfer，等待下一次日志再继续。
+    success_criteria:
+      - 按 selected solver guide 一次核对同一 reader contract 的成组必需表。
+      - 保持相名、字段、物性和 base/Final 项一致。
+      - 不把字典完整性修复与数值调参或模型替换捆绑。
+    forbidden_actions:
+      - 不得逐关键词追赶已知成组 reader contract。
+      - 不得读取目标 tutorial、golden 或私有 evaluator。
   - skill_name: openfoam-compressible-transient
     triggers:
-      - 编写或修复 Foundation v10 的 rhoCentralFoam、rhoPimpleFoam 或 rhoSimpleFoam 算例。
+      - 编写或修复 Foundation v10 的 rhoCentralFoam、rhoPimpleFoam、rhoSimpleFoam 或 reactingFoam 算例。
     non_triggers:
       - 编写不可压缩压力速度耦合或固体位移算例。
     boundaries:
@@ -104,6 +122,7 @@ skills:
       - 依据运行时矩阵类型选择兼容的 solver 和 preconditioner。
       - 要求 maxDeltaT 大于初始 deltaT 并检查实际 Courant history。
       - 使用公开初态验证热力学可行性和解析波位置；negative temperature repair 先检查 thermo state。
+      - reactingFoam 一次核对 mixture、species、chemistry、combustion 和已注册 thermophysical transport。
     forbidden_actions:
       - 不得使用目标 tutorial 或 golden 波位置。
       - 不得忽略负温度、负压力或非有限字段。

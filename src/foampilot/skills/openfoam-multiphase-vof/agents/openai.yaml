@@ -1,4 +1,4 @@
 interface:
   display_name: "OpenFOAM 多相 VOF 算例"
-  short_description: "编写和修复 Foundation v10 多相界面与两液体输运算例"
-  default_prompt: "使用 $openfoam-multiphase-vof 编写或修复多相 VOF 算例。"
+  short_description: "编写和修复 Foundation v10 可压缩及不可压缩 VOF 算例"
+  default_prompt: "使用 $openfoam-multiphase-vof 编写或修复多相 VOF 与两液体输运算例。"

@@ -203,13 +203,14 @@ qualification 默认仍生成新计划。
 生成后的计划依次经过：
 
 1. 对模型原始输出中的无害 `step_id` 格式和完全重复 manifest field 做可审计的局部规范化；
-2. 狭窄的 MPI wrapper 规范化；
+2. 狭窄的 MPI wrapper 与已知 OpenFOAM utility stage 规范化；
 3. ExecutionPlan schema 和 typed command 策略校验；
 4. case 文件物化；
 5. 原生文件检查和高置信度语义检查。
 
-规范化器只会拆解可以无歧义识别的简单本地 MPI 启动形式，不猜测求解器、主机、
-核数或未知参数。
+规范化器只会拆解可以无歧义识别的简单本地 MPI 启动形式，并纠正 `blockMesh`、
+`checkMesh`、`postProcess` 等已知 utility 的确定性 stage。它不猜测求解器、主机、
+核数、未知命令或未知参数；原始 authored plan 和每项规范化记录仍单独保存。
 
 模型输出的局部规范化同样保守：`step_id` 只是内部标签，可以确定性转为小写安全标识并
 解决标签碰撞；manifest 中只有内容完全等价的重复 field 声明会被删除。相同 field identity
@@ -256,6 +257,8 @@ mesh intent、网格文件和命令、region 及工具版本组成的依赖键�
 
 返回码为零只表示程序正常退出，不自动等价于收敛、物理正确或 qualification
 通过。只有所有公开检查通过，普通求解状态才是 `PUBLIC_VALIDATION_PASS`。
+一次 validation 对每个 step 日志只解析一次，并把结构化摘要复用于全部公开检查；失败 step
+直接走失败层分类，不为后续物理检查重复扫描大日志。
 
 执行过原生网格步骤的 attempt 还会写出 `mesh-quality-report.json`，其中的 cell 数、
 non-orthogonality、skewness 等观测与 TaskSpec 阈值分开保存。网格命令失败使用
@@ -263,24 +266,24 @@ non-orthogonality、skewness 等观测与 TaskSpec 阈值分开保存。网格�
 
 ### 5.10 定向修复
 
-如果检查失败且 TaskSpec 尚有尝试预算，repair 模型只接收：
+如果检查失败且 TaskSpec 尚有尝试预算，FoamPilot 先由确定性组件完成：
 
-- 当前 TaskSpec 中允许公开的内容；
-- 当前 ExecutionPlan 和已生成文件；
-- 失败命令日志；
-- 公开验证报告；
-- 动态选择的公开知识和 Skill。
+- 对原始 OpenFOAM failure 分类；
+- 从分类结果、日志、公开验证和文件依赖构造 `RepairScope`；
+- 按上下文预算选择完整文件、匹配块、首尾摘要、结构或元数据表示；
+- 生成不含 protected/public asset 原文的 repair 状态快照。
 
-repair 可以替换 case 文件或已有 typed command，但仍要再次通过规范化、安全策略、
-物化、静态检查、OpenFOAM 执行和公开验证。重复失败、没有实质改动、环境错误或
-尝试预算耗尽时停止修复。
+repair 模型只在 `RepairScope` 内返回 `RepairPatch`。补丁可以新增或替换允许的 case
+文件，也可以在明确锚点前后插入、替换或删除 typed command。应用后的完整计划仍要再次通过
+规范化、安全策略、物化、静态检查、OpenFOAM 执行和公开验证。越界修改、无实质变化、
+重复 failure、环境错误或尝试预算耗尽时停止修复。
 
 新 attempt 会根据 repair 修改集合保守选择最早重跑阶段。求解字典变化可以复用前序网格，
 初始场变化从 initialize 开始；网格、patch、include、动态网格、多区域或并行拓扑依赖变化
 则完整重跑。复用只复制允许的前序产物，并对 parent/child 内容记录哈希；当前 `checkMesh`
 不会被跳过。
 
-mesh failure 使用更窄的 repair scope：默认只能修改网格文件和 mesh/check command；只有
+mesh failure 使用更窄的 `RepairScope`：默认只能修改网格文件和 mesh/check command；只有
 patch 变化有直接证据时才允许同步初始场 `boundaryField`，物性、求解器和初始内场保持不变。
 
 仓库随附任务的 `max_attempts` 当前均为 2，因此这些规范任务最多执行一次初始生成
@@ -381,6 +384,8 @@ task.yaml
 environment.json
 capability-profile.json
 agent-context.json
+agent-status-author-01.json
+agent-status-repair-01.json    # 仅在发生修复时
 resume-compatibility.json
 model-attempts.jsonl
 model-configuration.json
@@ -390,6 +395,9 @@ authored-execution-plan.json
 plan-normalization.json
 execution-plan.json
 workflow-events.jsonl
+failure-classification-attempt-01.json  # 仅在失败时
+repair-scope-attempt-01.json            # 仅在进入修复时
+repair-patch-attempt-01.json            # 仅在形成有效补丁时
 checkpoints/
 attempt-01/
   execution-plan.json
@@ -399,7 +407,6 @@ attempt-01/
   mesh-cache.json             # 显式缓存运行中可选
   execution-reuse.json        # 网格/repair 复用时可选
   public-validation.json
-  repair-decision.json        # 仅在发生修复时
   case/
     0/
     constant/

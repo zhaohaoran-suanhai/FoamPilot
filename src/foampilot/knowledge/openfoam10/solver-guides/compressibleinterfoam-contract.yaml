@@ -26,14 +26,17 @@ content:
   summary: Foundation v10 compressibleInterFoam 以单一混合动量方程耦合两相热物性、VOF 相分数、压力和能量。
   rules:
     - 提供 U、p、p_rgh、T、alpha.<phase>、g、phaseProperties、每相 physicalProperties.<phase>、根 constant/momentumTransport 与按模型需要的每相 momentumTransport.<phase>；具名字段和 phase 名必须一致。
-    - phaseProperties 顶层需要与 pressure limiting 相符的 pMin；不要只写 phases 和 surface-tension 子字典。
+    - phaseProperties 顶层需要与 pressure limiting 相符的 pMin；constant surface-tension reader 还从当前字典读取顶层 sigma（表面张力维度 [1 0 -2 0 0 0 0]）。不要只写 phases，或把 sigma 仅放在自创的 surfaceTension 子字典中。
     - 若使用非牛顿或黏弹性相，先依据 Foundation v10 已注册模型写完整 fvModels 或 phase momentum contract；不得假设其他 fork 的模型名称和层级可用。
-    - divSchemes、fvSolution 和 Final 项必须覆盖相分数、压力、密度、速度、能量以及实际日志请求的精确 operator key。alpha.<phase> entry 同时包含线性 solver 设置和 nAlphaCorr/nAlphaSubCycles 等 alpha controls，不能只写 regex controls 占位。
+    - divSchemes、fvSolution 和 Final 项必须覆盖相分数、压力、密度、速度、能量以及实际日志请求的精确 operator key。alpha.<phase> entry 同时包含线性 solver 设置和 nAlphaCorr/nAlphaSubCycles 等 alpha controls，并通过 alpha.<phase>Final 显式配对或用 alpha.<phase>.* 同时匹配 base/Final，不能只写不覆盖实际字段的 controls 占位。
+    - 对每个实际相核对其动量模型生成的黏性应力 operator。层流两相路径至少可能请求包含 alpha.<phase>、thermo:rho.<phase>、nuEff.<phase> 与 dev2(T(grad(U))) 的完整 div key；黏弹性相还会请求 sigma.<phase> 输运及模型专属应力 operator。default none 时不能用简化的单相黏性 key 替代这些精确名称。
     - 使用正的初始时间步，并同时限制 flow Courant 与 alpha Courant；先保证 p、T、rho 和能量状态一致、为正，再调整高阶格式。
   failure_signals:
     - phaseProperties 报告 pMin 未定义。
+    - phaseProperties 报告顶层 sigma 未定义，尽管某个 surfaceTension 子字典中存在同名值。
     - phase thermo、momentum model、能量字段或相分数字段无法读取。
     - 根 constant/momentumTransport 缺失，或 fvSolution 报告 alpha.<phase> solver entry 未定义。
+    - fvSolution 报告 alpha.<phase>Final 未定义，或 fvSchemes 报告含 nuEff.<phase>/dev2(T(grad(U))) 的黏性 operator 未定义。
     - fvSchemes 报告 default entry 解析到 EOF，或缺少精确 compressible/VOF operator。
     - 温度、压力、密度或相分数变为非有限值。
   validation:

@@ -1,6 +1,7 @@
 """独立、可替换的模型后端边界。"""
 
 from .base import (
+    ModelContextArtifact,
     ModelRequest,
 )
 from .backend import BackendHealth, BackendResponse, ModelBackend
@@ -57,6 +58,7 @@ __all__ = [
     "JsonlModelTraceSink",
     "LineageBudgetExhausted",
     "ModelAttemptTrace",
+    "ModelContextArtifact",
     "ModelBudgetLedger",
     "ModelBudgetWindow",
     "ModelGateway",

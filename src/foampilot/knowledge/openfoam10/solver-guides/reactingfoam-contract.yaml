@@ -26,15 +26,19 @@ content:
   summary: Foundation v10 reactingFoam 用 fluidReactionThermo、combustionModel 和 chemistry 推进可压缩多组分反应流。
   rules:
     - physicalProperties 的 thermoType 使用 Foundation v10 注册且大小写精确的 multiComponentMixture、coefficientWilkeMultiComponentMixture 或 valueMultiComponentMixture；reactingMixture 和 multicomponentMixture 都不是有效 type。
-    - 提供 species 列表、defaultSpecie、每个组分热物性/输运数据、reactions、chemistryProperties 与 combustionProperties，并为每个主动 species 提供 0/<species> 或一致的 Ydefault。
+    - 提供 species 列表、defaultSpecie、每个组分热物性/输运数据、reactions、chemistryProperties 与 combustionProperties，并为每个主动 species 提供 0/<species> 或一致的 Ydefault。独立生成 constant/reactions 还不够：chemistryProperties 必须用 #include "reactions" 将它并入当前字典，或直接内联 reactions 子字典，否则 ReactionList 的 subDict("reactions") 必然失败。
     - 各组分质量分数初值非负且和接近一；同时提供 U、p、T、alphat、momentumTransport 与所选能量字段需要的离散和 solver entry。
     - 层流 thermophysical transport 使用 Foundation v10 注册名称，例如 unityLewisFourier、FickianFourier、Fourier 或 MaxwellStefanFourier；unityLewis 不是有效模型名。
+    - chemistryType 必须提供已注册 solver；method 默认是 chemistryModel，可省略。只有在运行时明确支持时才显式写 method，不能写 standard 等未注册名称。
+    - reactingFoam 对每个 active species 使用统一 matrix selector Yi，并在 final corrector 请求 YiFinal；fvSolution 必须直接提供 Yi/YiFinal，或用经过核对且同时匹配两者的 entry，不能只列具体 species 名。
     - 先建立无反应/低反应速率的热物性一致状态，再启用完整 chemistry；时间步同时受 flow Courant、温度和 species source stiffness 限制。
   failure_signals:
     - Unknown mixture type reactingMixture。
     - Unknown mixture type multicomponentMixture，或 Unknown laminar thermophysical transport model unityLewis。
     - thermophysicalProperties/physicalProperties 报告 species、defaultSpecie 或组分数据缺失。
     - chemistry、reaction、combustion 或 species field 无法构造。
+    - chemistryType 报告 Unknown method type，或 chemistryProperties 报告 reactions 子字典未定义。
+    - fvSolution 报告 Yi 或 YiFinal 未定义，即使每个具体 species 名已有 solver entry。
     - 温度、密度、能量或质量分数变为非有限值。
   validation:
     - 要求正常达到 final time，p、T、rho 与全部 species field 有限且物理可接受。

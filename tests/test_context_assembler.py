@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from foampilot.context import assemble_agent_context
 from foampilot.routing import CapabilityProfile
 
@@ -214,6 +216,54 @@ def test_context_loads_general_and_at_most_one_matching_family_skill():
     )
     assert len(rho.skill_names) <= 2
     assert len(generic.skill_names) <= 2
+
+
+@pytest.mark.parametrize(
+    ("solver", "family", "knowledge_id", "skill_name"),
+    [
+        (
+            "compressibleInterFoam",
+            "compressible-vof",
+            "of10.solver.compressibleinterfoam-contract",
+            "openfoam-multiphase-vof",
+        ),
+        (
+            "driftFluxFoam",
+            "drift-flux",
+            "of10.solver.driftfluxfoam-contract",
+            "openfoam-multiphase-coupled",
+        ),
+        (
+            "multiphaseEulerFoam",
+            "multiphase-euler",
+            "of10.solver.multiphaseeulerfoam-contract",
+            "openfoam-multiphase-coupled",
+        ),
+        (
+            "reactingFoam",
+            "compressible-reacting",
+            "of10.solver.reactingfoam-contract",
+            "openfoam-compressible-transient",
+        ),
+    ],
+)
+def test_specialized_solver_context_pairs_guide_and_family_skill(
+    solver: str,
+    family: str,
+    knowledge_id: str,
+    skill_name: str,
+) -> None:
+    context = assemble_agent_context(
+        _task(),
+        _profile(solver, family=family),
+    )
+
+    assert context.knowledge_slots["solver_family_contract"] == knowledge_id
+    assert context.skill_names == (
+        "openfoam-author-native-case",
+        skill_name,
+    )
+    assert len(context.skill_names) == 2
 
 
 def test_payload_budget_prunes_whole_optional_entries_without_truncation():

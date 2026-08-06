@@ -6,7 +6,7 @@ from pathlib import Path
 import time
 
 from foampilot.agent import NativeAgent
-from foampilot.agent.repair import RepairDecision
+from foampilot.agent.repair_patch import RepairPatch
 from foampilot.artifacts import ArtifactStore
 from foampilot.models import (
     BackendError,
@@ -161,6 +161,7 @@ def test_native_agent_reaches_public_validation_pass(
     assert (run_dir / "task.yaml").is_file()
     assert (run_dir / "environment.json").is_file()
     assert (run_dir / "agent-context.json").is_file()
+    assert (run_dir / "agent-status-author-01.json").is_file()
     capability = json.loads(
         (run_dir / "capability-profile.json").read_text(encoding="utf-8")
     )
@@ -193,6 +194,10 @@ def test_native_agent_reaches_public_validation_pass(
     assert ArtifactStore(tmp_path / "runs").verify(run_dir) == []
     assert runner.calls == 1
     assert len(model.requests) == 1
+    assert model.requests[0].context_artifacts[0].path == (
+        "agent-status-author-01.json"
+    )
+    assert "DETERMINISTIC AGENT STATUS" in model.requests[0].user_prompt
     assert model.budgets[0].request_timeout_seconds == 420
     generation_deadline_remaining = (
         model.budgets[0].stage_deadline_monotonic - time.monotonic()
@@ -376,6 +381,55 @@ def test_native_agent_normalizes_simple_mpi_launcher_before_policy(
     assert records[0]["original_launcher"] == "mpirun"
 
 
+def test_native_agent_records_known_utility_stage_normalization(
+    tmp_path: Path,
+) -> None:
+    plan = _plan()
+    plan.commands.append(
+        NativeCommand(
+            step_id="post",
+            stage="solve",
+            executable="postProcess",
+            args=["-func", "CourantNo"],
+            timeout_seconds=10,
+        )
+    )
+    agent = NativeAgent(
+        gateway=RecordingModel([plan]),
+        runtime_config=_runtime_config(),
+        artifact_store=ArtifactStore(tmp_path / "runs"),
+        environment_snapshot=_environment(
+            "blockMesh",
+            "icoFoam",
+            "postProcess",
+        ),
+        runner=MeshQualityRunner(0.0),
+    )
+
+    outcome = agent.solve(_task())
+
+    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    raw = json.loads(
+        (outcome.run_dir / "authored-execution-plan.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    normalized = json.loads(
+        (outcome.run_dir / "execution-plan.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    records = json.loads(
+        (outcome.run_dir / "plan-normalization.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert raw["commands"][-1]["stage"] == "solve"
+    assert normalized["commands"][-1]["stage"] == "postprocess"
+    assert records[-1]["executable"] == "postProcess"
+    assert records[-1]["normalized_stage"] == "postprocess"
+
+
 def test_native_agent_rejects_incomplete_public_route_before_generation(
     tmp_path: Path,
 ) -> None:
@@ -403,17 +457,17 @@ def test_native_agent_applies_one_evidence_scoped_repair(
     tmp_path: Path,
 ) -> None:
     plan = _plan()
-    repair = RepairDecision(
+    repair = RepairPatch(
         because="The solver log contains non-finite evidence.",
         evidence=["nan appears in the solve log"],
-        cause="The initial time step is too large.",
-        changed_files=[
-            GeneratedFile(
-                path="system/controlDict",
-                content=_control_dict(delta_t=0.001),
-            )
+        file_operations=[
+            {
+                "operation": "replace",
+                "path": "system/controlDict",
+                "content": _control_dict(delta_t=0.001),
+            }
         ],
-        changed_commands=[],
+        command_operations=[],
         expected_check="The solve log reaches End without nan.",
         stable_control="The mesh and boundaries remain unchanged.",
     )
@@ -443,8 +497,17 @@ def test_native_agent_applies_one_evidence_scoped_repair(
         / "attempt-02/case/system/controlDict"
     ).read_text() == _control_dict(delta_t=0.001)
     assert (
-        outcome.run_dir / "attempt-01/repair-decision.json"
+        outcome.run_dir / "repair-patch-attempt-01.json"
     ).is_file()
+    assert (outcome.run_dir / "agent-status-repair-01.json").is_file()
+    assert (
+        outcome.run_dir / "failure-classification-attempt-01.json"
+    ).is_file()
+    assert (outcome.run_dir / "repair-scope-attempt-01.json").is_file()
+    assert model.requests[1].context_artifacts[0].path == (
+        "agent-status-repair-01.json"
+    )
+    assert '"current_stage": "repair"' in model.requests[1].user_prompt
     assert runner.calls == 2
 
 
@@ -472,17 +535,17 @@ functions
         content="FoamFile { class volVectorField; object U; }\n",
     )
     plan = _plan(files=[bad_control, velocity])
-    repair = RepairDecision(
+    repair = RepairPatch(
         because="The static report identifies an unsupported function object.",
         evidence=["UNSUPPORTED_OF10_FUNCTION_OBJECT in system/controlDict"],
-        cause="fieldMinMax is unavailable in Foundation OpenFOAM v10.",
-        changed_files=[
-            GeneratedFile(
-                path="system/controlDict",
-                content=_control_dict(),
-            )
+        file_operations=[
+            {
+                "operation": "replace",
+                "path": "system/controlDict",
+                "content": _control_dict(),
+            }
         ],
-        changed_commands=[],
+        command_operations=[],
         expected_check="Static inspection accepts controlDict.",
         stable_control="The mesh, fields, and solver command remain unchanged.",
     )
@@ -503,7 +566,7 @@ functions
         outcome.run_dir / "attempt-01/public-validation.json"
     ).is_file()
     assert (
-        outcome.run_dir / "attempt-01/repair-decision.json"
+        outcome.run_dir / "repair-patch-attempt-01.json"
     ).is_file()
     assert (
         outcome.run_dir / "attempt-02/case/system/controlDict"
@@ -522,12 +585,17 @@ def test_native_agent_repair_can_add_a_safe_required_dictionary(
             "viscosityModel constant;\nnu 1e-6;\nrho 1000;\n"
         ),
     )
-    repair = RepairDecision(
+    repair = RepairPatch(
         because="The solver reports a missing grouped phase dictionary.",
         evidence=["cannot find constant/physicalProperties.water"],
-        cause="The required grouped phase dictionary is absent.",
-        changed_files=[property_file],
-        changed_commands=[],
+        file_operations=[
+            {
+                "operation": "add",
+                "path": property_file.path,
+                "content": property_file.content,
+            }
+        ],
+        command_operations=[],
         expected_check="The solver opens the phase dictionary.",
         stable_control="Mesh, fields, and commands remain unchanged.",
     )
@@ -551,6 +619,112 @@ def test_native_agent_repair_can_add_a_safe_required_dictionary(
         / "attempt-02/case/constant/physicalProperties.water"
     ).read_text() == property_file.content
     assert runner.calls == 2
+
+
+def test_native_agent_repair_can_insert_missing_typed_command(
+    tmp_path: Path,
+) -> None:
+    plan = _plan()
+    repair = RepairPatch(
+        because="The public log identifies a missing initialization step.",
+        evidence=["required initialization command setFields is missing"],
+        file_operations=[],
+        command_operations=[
+            {
+                "operation": "insert_before",
+                "anchor_step_id": "solve",
+                "command": {
+                    "step_id": "set-fields",
+                    "stage": "initialize",
+                    "executable": "setFields",
+                    "args": [],
+                    "mpi_ranks": 1,
+                    "timeout_seconds": 10,
+                },
+            }
+        ],
+        expected_check="The initialization step runs before the solver.",
+        stable_control="Case files and solver settings remain unchanged.",
+    )
+    runner = SequencePlanRunner(
+        [
+            (1, "", "required initialization command setFields is missing"),
+            (0, "Time = 1\nEnd\n", ""),
+        ]
+    )
+    outcome = NativeAgent(
+        gateway=RecordingModel([plan, repair]),
+        runtime_config=_runtime_config(),
+        artifact_store=ArtifactStore(tmp_path / "runs"),
+        environment_snapshot=_environment(
+            "blockMesh", "setFields", "icoFoam"
+        ),
+        runner=runner,
+    ).solve(_task())
+
+    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    repaired_plan = json.loads(
+        (outcome.run_dir / "attempt-02/execution-plan.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert [item["step_id"] for item in repaired_plan["commands"]] == [
+        "mesh",
+        "set-fields",
+        "solve",
+    ]
+
+
+def test_native_agent_repair_can_remove_unsupported_typed_command(
+    tmp_path: Path,
+) -> None:
+    plan = _plan().model_copy(deep=True)
+    plan.commands.append(
+        NativeCommand(
+            step_id="optional-post",
+            stage="postprocess",
+            executable="postProcess",
+            timeout_seconds=10,
+        )
+    )
+    repair = RepairPatch(
+        because="The optional postprocess command is unsupported.",
+        evidence=["unsupported optional command is not required"],
+        file_operations=[],
+        command_operations=[
+            {
+                "operation": "remove",
+                "target_step_id": "optional-post",
+            }
+        ],
+        expected_check="The required solver path completes without the command.",
+        stable_control="Case files and solver command remain unchanged.",
+    )
+    runner = SequencePlanRunner(
+        [
+            (1, "", "unsupported optional command post is not required"),
+            (0, "Time = 1\nEnd\n", ""),
+        ]
+    )
+    outcome = NativeAgent(
+        gateway=RecordingModel([plan, repair]),
+        runtime_config=_runtime_config(),
+        artifact_store=ArtifactStore(tmp_path / "runs"),
+        environment_snapshot=_environment(
+            "blockMesh", "icoFoam", "postProcess"
+        ),
+        runner=runner,
+    ).solve(_task())
+
+    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    repaired_plan = json.loads(
+        (outcome.run_dir / "attempt-02/execution-plan.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "optional-post" not in {
+        item["step_id"] for item in repaired_plan["commands"]
+    }
 
 
 def test_native_agent_does_not_repair_environment_failure(

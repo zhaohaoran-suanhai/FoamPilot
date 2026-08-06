@@ -1,6 +1,6 @@
 ---
 name: openfoam-compressible-transient
-description: Use when authoring or repairing a Foundation OpenFOAM v10 compressible case with rhoCentralFoam, rhoPimpleFoam, or rhoSimpleFoam, especially when thermodynamics, shocks, acoustics, or adaptive time stepping are involved.
+description: Use when authoring or repairing a Foundation OpenFOAM v10 compressible case with rhoCentralFoam, rhoPimpleFoam, rhoSimpleFoam, or reactingFoam, especially when thermodynamics, shocks, species, chemistry, or adaptive time stepping are involved.
 ---
 
 # 可压缩流与瞬态传播算例
@@ -29,6 +29,27 @@ description: Use when authoring or repairing a Foundation OpenFOAM v10 compressi
    生成，不能假设字段已存在。
 8. 时间精度、写出精度和采样位置必须足以支持任务声明的公开验证。字典 compatibility 与初始
    thermo state 通过后，才调整 Courant、格式或松弛。
+
+## reactingFoam 分支
+
+对 `reactingFoam`，在启动前一次核对大小写精确且已注册的 thermo mixture runtime name、
+`species`/`defaultSpecie`、每个组分的热物性与初始场、reaction、`chemistryProperties` 和
+`combustionProperties`。有效 mixture 包括与公开任务相符的 `multiComponentMixture` 等
+Foundation v10 注册类型，不能使用错误大小写或其他 fork 的名称。
+
+若 reaction 写在独立 `constant/reactions` 文件中，`chemistryProperties` 必须通过
+`#include "reactions"` 把它并入当前字典；另一种合法形态是在 `chemistryProperties` 中直接
+提供 `reactions` 子字典。只生成未被 include 的 reactions 文件不构成 reader contract。
+`chemistryType` 的 `method` 默认是 `chemistryModel`，没有来源证据时省略该项，不写
+`standard` 等未注册名称。
+
+species 方程虽然遍历具体组分场，却用统一 selector `Yi` 求解，并在 final corrector 请求
+`Yi`/`YiFinal`。`fvSolution` 应直接覆盖这两个名称，或使用已核对的 base/Final 正则；只列出
+`CH4`、`O2` 等具体场名仍会在 reader 阶段失败。
+
+层流 thermophysical transport 使用运行时已注册名称，例如 `unityLewisFourier`，不能写成
+`unityLewis`。先得到可构造、正温、非负且质量分数和一致的 thermo/species 状态，再调整
+chemistry 强度、反应速率或时间步；不得把 reader contract 错误当作化学刚性。
 
 ## 结果检查
 
