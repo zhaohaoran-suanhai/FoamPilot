@@ -385,6 +385,9 @@ def _parser() -> argparse.ArgumentParser:
     job_terminate.add_argument("job_root", type=Path)
     job_terminate.add_argument("--grace-seconds", type=float, default=2.0)
     job_terminate.add_argument("--json", action="store_true")
+    job_recover = job_commands.add_parser("recover-finalize")
+    job_recover.add_argument("job_root", type=Path)
+    job_recover.add_argument("--json", action="store_true")
     return parser
 
 
@@ -488,6 +491,7 @@ def _job(arguments: argparse.Namespace) -> int:
     from foampilot.jobs import (
         LocalJobStore,
         reconcile_job,
+        recover_finalize,
         terminate_orphan,
     )
 
@@ -534,6 +538,14 @@ def _job(arguments: argparse.Namespace) -> int:
             decision.model_dump(mode="json"),
             as_json=arguments.json,
             human=f"{decision.state.value}: {decision.recovery_zh}",
+        )
+        return 0
+    if arguments.job_command == "recover-finalize":
+        decision = recover_finalize(store.root)
+        _emit(
+            decision.model_dump(mode="json"),
+            as_json=arguments.json,
+            human=f"{decision.state.value}: interrupted evidence finalized",
         )
         return 0
     raise ValueError("a job subcommand is required")

@@ -16,7 +16,7 @@ from .models import (
     RecoveryDecision,
     RecoveryState,
 )
-from .recovery import reconcile_job, terminate_orphan
+from .recovery import reconcile_job, recover_finalize, terminate_orphan
 from .store import LocalJobStore, build_job_spec
 from .worker import launch_local_job, run_local_job
 
@@ -37,6 +37,7 @@ __all__ = [
     "process_identity",
     "process_identity_matches",
     "reconcile_job",
+    "recover_finalize",
     "run_local_job",
     "terminate_orphan",
 ]

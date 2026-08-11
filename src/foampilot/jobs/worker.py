@@ -111,6 +111,7 @@ def run_local_job(
                     JobState.CANCELLED,
                     JobState.COMPLETED,
                     JobState.FAILED,
+                    JobState.INTERRUPTED,
                 }:
                     return
                 next_state = current.state

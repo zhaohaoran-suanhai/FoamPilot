@@ -37,6 +37,7 @@ class WorkflowEventState(StrEnum):
     FAILED = "failed"
     DEFERRED = "deferred"
     CANCELLED = "cancelled"
+    INTERRUPTED = "interrupted"
 
 
 class WorkflowState(StrEnum):
@@ -44,6 +45,7 @@ class WorkflowState(StrEnum):
     FAILED = "FAILED"
     DEFERRED = "DEFERRED"
     CANCELLED = "CANCELLED"
+    INTERRUPTED = "INTERRUPTED"
 
 
 class FailureDomain(StrEnum):

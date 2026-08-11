@@ -407,6 +407,7 @@ class DesktopJobController(QObject):
             JobState.CANCELLED,
             JobState.COMPLETED,
             JobState.FAILED,
+            JobState.INTERRUPTED,
         } and not self._terminal_emitted:
             self._terminal_emitted = True
             self.job_poll_timer.stop()
@@ -414,6 +415,8 @@ class DesktopJobController(QObject):
                 exit_code, exit_status = 130, "cancelled"
             elif status.state == JobState.FAILED:
                 exit_code, exit_status = 5, "crashed"
+            elif status.state == JobState.INTERRUPTED:
+                exit_code, exit_status = 5, "interrupted"
             else:
                 raw = status.terminal_code or "CLI_EXIT_5"
                 try:

@@ -33,11 +33,11 @@
 
 **Files:** modify workflow/artifact models; extend `jobs/recovery.py`; modify CLI; create recovery-finalization tests.
 
-- [ ] Write RED tests for worker/child absence, lock exclusion, idempotence, interruption evidence, event sequence, summary semantics and valid manifest.
-- [ ] Add `WorkflowState.INTERRUPTED` and event state `interrupted`; do not add a native CFD status.
-- [ ] Write `interruption.json`, append `RUN_FINALIZED/interrupted`, create `RunSummary` with workflow-domain blocker, `resume.allowed=false`, then finalize with `ArtifactStore`.
-- [ ] Mark the operational job `INTERRUPTED`; repeated calls return the same verified result without rewriting it.
-- [ ] Add `job recover-finalize` and commit `feat: finalize interrupted local jobs`.
+- [x] Write RED tests for worker/child absence, lock exclusion, idempotence, interruption evidence, event sequence, summary semantics and valid manifest.
+- [x] Add `WorkflowState.INTERRUPTED` and event state `interrupted`; do not add a native CFD status.
+- [x] Write `interruption.json`, append `RUN_FINALIZED/interrupted`, create `RunSummary` with workflow-domain blocker, `resume.allowed=false`, then finalize with `ArtifactStore`.
+- [x] Mark the operational job `INTERRUPTED`; repeated calls return the same verified result without rewriting it.
+- [x] Add `job recover-finalize` and commit `feat: finalize interrupted local jobs`.
 
 ### Task 3: Cross-job strict-resume lineage and explicit rerun
 

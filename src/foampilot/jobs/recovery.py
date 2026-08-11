@@ -4,12 +4,23 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timezone
+import json
 import os
 from pathlib import Path, PurePosixPath
 import signal
 import time
+import yaml
 
-from foampilot.artifacts import ArtifactStore
+from foampilot.artifacts import ArtifactStore, RunSummary
+from foampilot.workflow import (
+    FailureDomain,
+    FailureRecord,
+    ResumeMetadata,
+    WorkflowEvent,
+    WorkflowEventState,
+    WorkflowStage,
+    WorkflowState,
+)
 
 from .identity import process_identity_matches
 from .models import (
@@ -32,6 +43,7 @@ _TERMINAL_STATES = {
     JobState.CANCELLED,
     JobState.COMPLETED,
     JobState.FAILED,
+    JobState.INTERRUPTED,
 }
 
 
@@ -312,4 +324,196 @@ def terminate_orphan(
     return reconcile_job(store.root)
 
 
-__all__ = ["reconcile_job", "terminate_orphan"]
+def _write_json_exclusive(path: Path, payload: object) -> None:
+    with path.open("x", encoding="utf-8") as stream:
+        json.dump(payload, stream, ensure_ascii=False, indent=2, sort_keys=True)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _workflow_evidence(run_dir: Path) -> tuple[int, str | None]:
+    path = run_dir / "workflow-events.jsonl"
+    sequence = 0
+    last_completed: str | None = None
+    if not path.is_file() or path.is_symlink():
+        return sequence, last_completed
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            event = WorkflowEvent.model_validate_json(line)
+        except ValueError:
+            continue
+        sequence = max(sequence, event.sequence)
+        if event.state == WorkflowEventState.COMPLETED:
+            last_completed = event.stage.value
+    return sequence, last_completed
+
+
+def _append_interrupted_event(
+    run_dir: Path,
+    *,
+    sequence: int,
+    occurred_at: datetime,
+) -> None:
+    path = run_dir / "workflow-events.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    event = WorkflowEvent(
+        sequence=sequence,
+        stage=WorkflowStage.RUN_FINALIZED,
+        state=WorkflowEventState.INTERRUPTED,
+        occurred_at=occurred_at,
+        detail="The local worker stopped before a canonical terminal outcome.",
+        evidence_paths=["interruption.json"],
+    )
+    needs_separator = path.is_file() and path.stat().st_size > 0
+    if needs_separator:
+        with path.open("rb") as existing:
+            existing.seek(-1, os.SEEK_END)
+            needs_separator = existing.read(1) != b"\n"
+    with path.open("a", encoding="utf-8") as stream:
+        if needs_separator:
+            stream.write("\n")
+        stream.write(event.model_dump_json() + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _task_id(run_dir: Path, fallback: str) -> str:
+    path = run_dir / "task.yaml"
+    if not path.is_file() or path.is_symlink():
+        return fallback
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return fallback
+    if isinstance(payload, dict) and isinstance(payload.get("task_id"), str):
+        return payload["task_id"]
+    return fallback
+
+
+def recover_finalize(
+    job_root: str | Path,
+    *,
+    recorded_at: Callable[[], datetime] = _utc_now,
+) -> RecoveryDecision:
+    """Freeze an ownerless partial solve as neutral interrupted evidence."""
+
+    store = LocalJobStore(job_root)
+    decision = reconcile_job(store.root, now=recorded_at)
+    if decision.state == RecoveryState.FINALIZED and decision.run_dir is not None:
+        summary = ArtifactStore.read_summary(decision.run_dir)
+        if summary.workflow_state == WorkflowState.INTERRUPTED:
+            return decision
+        raise ValueError("JOB_RECOVERY_NOT_ALLOWED: run already has another terminal state")
+    if decision.state != RecoveryState.ORPHANED_STOPPED:
+        raise ValueError(f"JOB_RECOVERY_NOT_ALLOWED: {decision.state.value}")
+    run_dir = decision.run_dir
+    if run_dir is None:
+        raise ValueError("JOB_RUN_UNAVAILABLE: no partial run can be finalized")
+
+    with store.writer_lock():
+        status = store.read_status()
+        if (
+            status.worker is not None
+            and process_identity_matches(status.worker)
+        ) or (
+            status.current_child is not None
+            and process_identity_matches(status.current_child)
+        ):
+            raise ValueError("JOB_RECOVERY_NOT_ALLOWED: an owned process is alive")
+        if (run_dir / "summary.json").exists() or (
+            run_dir / ArtifactStore.manifest_name
+        ).exists():
+            raise ValueError("JOB_RECOVERY_NOT_ALLOWED: terminal evidence already exists")
+        timestamp = recorded_at()
+        current_boot = Path("/proc/sys/kernel/random/boot_id").read_text(
+            encoding="utf-8"
+        ).strip()
+        code = (
+            "HOST_RESTARTED"
+            if status.worker is not None
+            and status.worker.boot_id != current_boot
+            else "WORKER_INTERRUPTED"
+        )
+        log_offsets: dict[str, int] = {}
+        for path in (
+            store.root / "worker.stdout.log",
+            store.root / "worker.stderr.log",
+            store.root / "job-events.jsonl",
+            run_dir / "workflow-events.jsonl",
+            run_dir / "activity-events.jsonl",
+        ):
+            if path.is_file() and not path.is_symlink():
+                log_offsets[path.relative_to(store.root).as_posix()] = path.stat().st_size
+        sequence, last_completed = _workflow_evidence(run_dir)
+        interruption = {
+            "schema_version": 1,
+            "code": code,
+            "recorded_at": timestamp.isoformat(),
+            "last_stage": status.current_stage,
+            "last_step_id": status.current_step_id,
+            "last_heartbeat_at": (
+                status.last_heartbeat_at.isoformat()
+                if status.last_heartbeat_at is not None
+                else None
+            ),
+            "worker_identity": (
+                status.worker.model_dump(mode="json")
+                if status.worker is not None
+                else None
+            ),
+            "child_identity": (
+                status.current_child.model_dump(mode="json")
+                if status.current_child is not None
+                else None
+            ),
+            "cleanup": {
+                "worker_alive": False,
+                "child_alive": False,
+                "writer_lock_acquired": True,
+            },
+            "log_offsets": log_offsets,
+        }
+        _write_json_exclusive(run_dir / "interruption.json", interruption)
+        _append_interrupted_event(
+            run_dir,
+            sequence=sequence + 1,
+            occurred_at=timestamp,
+        )
+        blocker = FailureRecord(
+            domain=FailureDomain.WORKFLOW,
+            code=code,
+            retryable=False,
+            detail="The durable worker ended without a canonical terminal outcome.",
+            message="本机 worker 异常中断，现有证据已安全固化。",
+            recovery="从已保存的规范输入完整重跑；不要把它当作 OpenFOAM 断点续算。",
+            evidence_paths=["interruption.json"],
+        )
+        summary = RunSummary(
+            task_id=_task_id(run_dir, store.read_spec().job_id),
+            workflow_state=WorkflowState.INTERRUPTED,
+            last_completed_stage=last_completed,
+            primary_failure=None,
+            terminal_blocker=blocker,
+            resume=ResumeMetadata(
+                allowed=False,
+                reason="interrupted worker state is not a strict resume checkpoint",
+            ),
+            message="The interrupted local job was finalized without claiming CFD success.",
+        )
+        _write_json_exclusive(
+            run_dir / "summary.json",
+            summary.model_dump(mode="json"),
+        )
+        ArtifactStore(store.root).finalize(run_dir)
+        store.update_status(
+            state=JobState.INTERRUPTED,
+            current_child=None,
+            finished_at=timestamp,
+            last_heartbeat_at=timestamp,
+            terminal_code=code,
+        )
+    return reconcile_job(store.root, now=recorded_at)
+
+
+__all__ = ["reconcile_job", "recover_finalize", "terminate_orphan"]

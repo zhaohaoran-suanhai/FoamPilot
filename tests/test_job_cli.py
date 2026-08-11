@@ -60,6 +60,27 @@ def test_job_reconcile_cli_reports_allowed_actions(
     assert payload["allowed_actions"] == ["recover_finalize", "rerun"]
 
 
+def test_job_recover_finalize_cli_freezes_partial_run(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    store = _store(tmp_path)
+    run_dir = store.root / "run-partial"
+    run_dir.mkdir()
+    (run_dir / "task.yaml").write_text(
+        "schema_version: 2\ntask_id: interrupted-cli\n",
+        encoding="utf-8",
+    )
+    store.update_status(state=JobState.RUNNING, run_dir=run_dir.name)
+
+    assert main(["job", "recover-finalize", str(store.root), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["state"] == "FINALIZED"
+    assert store.read_status().state == JobState.INTERRUPTED
+    assert (run_dir / "interruption.json").is_file()
+
+
 def test_worker_cli_delegates_to_local_worker(
     tmp_path: Path,
     monkeypatch,

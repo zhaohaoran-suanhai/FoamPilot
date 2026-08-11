@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -16,10 +17,12 @@ from foampilot.jobs import (
     build_job_spec,
     current_process_identity,
     process_identity,
+    recover_finalize,
     reconcile_job,
     terminate_orphan,
 )
 from foampilot.workflow import ResumeMetadata, WorkflowState
+from foampilot.workflow import WorkflowEvent, WorkflowStage
 
 
 NOW = datetime.now(timezone.utc)
@@ -247,3 +250,96 @@ def test_reconcile_rejects_symbolic_run_binding(tmp_path: Path) -> None:
 
     assert decision.state == RecoveryState.EVIDENCE_DAMAGED
     assert "symbolic" in decision.manifest_issues[0]
+
+
+def _partial_run(store: LocalJobStore) -> Path:
+    run_dir = store.root / "run-partial"
+    run_dir.mkdir()
+    (run_dir / "task.yaml").write_text(
+        "schema_version: 2\ntask_id: interrupted-case\n",
+        encoding="utf-8",
+    )
+    event = WorkflowEvent.completed(
+        stage=WorkflowStage.TASK_VALIDATED,
+        sequence=1,
+        occurred_at=NOW,
+    )
+    (run_dir / "workflow-events.jsonl").write_text(
+        event.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "partial.log").write_text("partial output\n", encoding="utf-8")
+    dead = current_process_identity().model_copy(update={"start_token": 0})
+    store.update_status(
+        state=JobState.RUNNING,
+        worker=dead,
+        current_child=dead,
+        current_stage="solve",
+        current_step_id="solve-icofoam",
+        run_dir=run_dir.name,
+        last_heartbeat_at=NOW - timedelta(seconds=30),
+    )
+    return run_dir
+
+
+def test_recover_finalize_writes_neutral_interruption_and_valid_manifest(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path)
+    run_dir = _partial_run(store)
+
+    decision = recover_finalize(store.root, recorded_at=lambda: NOW)
+
+    assert decision.state == RecoveryState.FINALIZED
+    summary = ArtifactStore.read_summary(run_dir)
+    assert summary.workflow_state == WorkflowState.INTERRUPTED
+    assert summary.native_status is None
+    assert summary.primary_failure is None
+    assert summary.terminal_blocker is not None
+    assert summary.terminal_blocker.domain == "workflow"
+    assert summary.terminal_blocker.code == "WORKER_INTERRUPTED"
+    assert summary.resume.allowed is False
+    assert summary.last_completed_stage == "TASK_VALIDATED"
+    interruption = json.loads(
+        (run_dir / "interruption.json").read_text(encoding="utf-8")
+    )
+    assert interruption["last_stage"] == "solve"
+    assert interruption["last_step_id"] == "solve-icofoam"
+    events = [
+        WorkflowEvent.model_validate_json(line)
+        for line in (run_dir / "workflow-events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert events[-1].stage == WorkflowStage.RUN_FINALIZED
+    assert events[-1].state == "interrupted"
+    assert ArtifactStore(store.root).verify(run_dir) == []
+    assert store.read_status().state == JobState.INTERRUPTED
+
+
+def test_recover_finalize_is_idempotent(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    run_dir = _partial_run(store)
+    first = recover_finalize(store.root, recorded_at=lambda: NOW)
+    manifest = run_dir / ArtifactStore.manifest_name
+    original = manifest.read_bytes()
+    revision = store.read_status().revision
+
+    second = recover_finalize(store.root, recorded_at=lambda: NOW)
+
+    assert first == second
+    assert manifest.read_bytes() == original
+    assert store.read_status().revision == revision
+
+
+def test_recover_finalize_refuses_held_writer_lock(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    _partial_run(store)
+
+    with store.writer_lock():
+        try:
+            recover_finalize(store.root, recorded_at=lambda: NOW)
+        except ValueError as error:
+            assert "JOB_RECOVERY_NOT_ALLOWED" in str(error)
+        else:
+            raise AssertionError("recover-finalize accepted a held writer lock")

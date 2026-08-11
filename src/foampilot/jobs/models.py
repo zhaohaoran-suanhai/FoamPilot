@@ -30,6 +30,7 @@ class JobState(StrEnum):
     CANCELLED = "CANCELLED"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+    INTERRUPTED = "INTERRUPTED"
 
 
 class RecoveryState(StrEnum):
