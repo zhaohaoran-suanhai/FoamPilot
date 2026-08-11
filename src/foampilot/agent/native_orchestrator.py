@@ -2256,14 +2256,25 @@ class NativeAgent:
                     commands=commands_to_execute,
                 )
                 _write_json(risk_path, risk_report)
-                try:
-                    run_result = runner.run(
-                        case_dir=case_root,
-                        commands=commands_to_execute,
-                        budget=task.resource_budget,
-                        risk_report=risk_report,
-                        protected_paths=protected_paths,
+                runner_records_live_workflow = bool(
+                    getattr(runner, "emits_live_workflow", False)
+                )
+                runner_arguments = {
+                    "case_dir": case_root,
+                    "commands": commands_to_execute,
+                    "budget": task.resource_budget,
+                    "risk_report": risk_report,
+                    "protected_paths": protected_paths,
+                }
+                if runner_records_live_workflow:
+                    runner_arguments.update(
+                        {
+                            "workflow": workflow,
+                            "attempt": attempt_number,
+                        }
                     )
+                try:
+                    run_result = runner.run(**runner_arguments)
                 except RuntimeExecutionError as error:
                     risk_report = risk_report.model_copy(
                         update={"policy_decision": error.decision.code}
@@ -2372,36 +2383,42 @@ class NativeAgent:
                             step_id=run_result.failed_step_id,
                         ),
                     )
-                for step in run_result.steps:
-                    _record_event(
-                        workflow,
-                        stage=WorkflowStage.OPENFOAM_STEP_STARTED,
-                        state=WorkflowEventState.STARTED,
-                        attempt=attempt_number,
-                        step_id=step.step_id,
-                        detail="typed OpenFOAM command started",
-                        occurred_at=step.started_at,
-                    )
-                    _record_event(
-                        workflow,
-                        stage=WorkflowStage.OPENFOAM_STEP_COMPLETE,
-                        state=WorkflowEventState.COMPLETED,
-                        attempt=attempt_number,
-                        step_id=step.step_id,
-                        detail=(
-                            f"return_code={step.return_code}; "
-                            f"timed_out={step.timed_out}"
-                        ),
-                        evidence_paths=[
-                            step.stdout_path.relative_to(
-                                run_dir
-                            ).as_posix(),
-                            step.stderr_path.relative_to(
-                                run_dir
-                            ).as_posix(),
-                        ],
-                        occurred_at=step.finished_at,
-                    )
+                if not runner_records_live_workflow:
+                    for step in run_result.steps:
+                        _record_event(
+                            workflow,
+                            stage=WorkflowStage.OPENFOAM_STEP_STARTED,
+                            state=WorkflowEventState.STARTED,
+                            attempt=attempt_number,
+                            step_id=step.step_id,
+                            detail="typed OpenFOAM command started",
+                            occurred_at=step.started_at,
+                        )
+                        _record_event(
+                            workflow,
+                            stage=WorkflowStage.OPENFOAM_STEP_COMPLETE,
+                            state=(
+                                WorkflowEventState.FAILED
+                                if step.timed_out
+                                or step.return_code != 0
+                                else WorkflowEventState.COMPLETED
+                            ),
+                            attempt=attempt_number,
+                            step_id=step.step_id,
+                            detail=(
+                                f"return_code={step.return_code}; "
+                                f"timed_out={step.timed_out}"
+                            ),
+                            evidence_paths=[
+                                step.stdout_path.relative_to(
+                                    run_dir
+                                ).as_posix(),
+                                step.stderr_path.relative_to(
+                                    run_dir
+                                ).as_posix(),
+                            ],
+                            occurred_at=step.finished_at,
+                        )
                 mesh_quality = build_mesh_quality_report(
                     run_result,
                     task.mesh,

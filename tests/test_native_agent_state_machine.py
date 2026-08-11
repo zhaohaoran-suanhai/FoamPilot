@@ -23,6 +23,12 @@ from foampilot.runtime import (
     RuntimeExecutionError,
     SandboxProbe,
 )
+from foampilot.workflow import (
+    WorkflowEvent,
+    WorkflowEventState,
+    WorkflowStage,
+    WorkflowStore,
+)
 
 from tests.test_native_case_generation import (
     RecordingModel,
@@ -107,6 +113,35 @@ class SequencePlanRunner:
                 code="SANDBOX_SELECTED",
             ),
         )
+
+
+class LiveSequencePlanRunner(SequencePlanRunner):
+    emits_live_workflow = True
+
+    def run(self, *, workflow: WorkflowStore, attempt: int, **kwargs):
+        command = kwargs["commands"][-1]
+        now = datetime.now(timezone.utc)
+        workflow.record(
+            WorkflowEvent.started(
+                stage=WorkflowStage.OPENFOAM_STEP_STARTED,
+                sequence=workflow.next_sequence,
+                occurred_at=now,
+                attempt=attempt,
+                step_id=command.step_id,
+            )
+        )
+        result = super().run(**kwargs)
+        workflow.record(
+            WorkflowEvent(
+                sequence=workflow.next_sequence,
+                stage=WorkflowStage.OPENFOAM_STEP_COMPLETE,
+                state=WorkflowEventState.COMPLETED,
+                occurred_at=now,
+                attempt=attempt,
+                step_id=command.step_id,
+            )
+        )
+        return result
 
 
 class MeshQualityRunner:
@@ -267,6 +302,31 @@ def test_native_agent_reaches_public_validation_pass(
     assert '"stage":"OPENFOAM_STEP_STARTED"' in workflow_events
     assert '"stage":"OPENFOAM_STEP_COMPLETE"' in workflow_events
     assert '"stage":"ROUTING_READY"' in workflow_events
+
+
+def test_native_agent_uses_live_runner_events_without_replaying(
+    tmp_path: Path,
+) -> None:
+    runner = LiveSequencePlanRunner([(0, "Time = 1\nEnd\n", "")])
+
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=RecordingModel([_plan()]),
+        runner=runner,
+    ).solve(_task())
+
+    events = [
+        WorkflowEvent.model_validate_json(line)
+        for line in (outcome.run_dir / "workflow-events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert sum(
+        event.stage == WorkflowStage.OPENFOAM_STEP_STARTED for event in events
+    ) == 1
+    assert sum(
+        event.stage == WorkflowStage.OPENFOAM_STEP_COMPLETE for event in events
+    ) == 1
 
 
 def test_native_agent_freezes_runtime_and_execution_evidence(

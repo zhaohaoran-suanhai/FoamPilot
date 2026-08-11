@@ -5,12 +5,15 @@ from pathlib import Path
 
 import pytest
 
+from foampilot.activity import ActivityEvent, ActivityReporter
 from foampilot.environment import CommandFact, EnvironmentSnapshot
 from foampilot.plans import NativeCommand
 from foampilot.runtime import PlanRunner, RuntimeConfig
 from foampilot.runtime.models import ExecutionRiskReport, SandboxProbe
 from foampilot.runtime.plan_runner import RuntimeExecutionError
 from foampilot.tasks import ResourceBudget
+from foampilot.workflow import WorkflowEvent, WorkflowEventState, WorkflowStage
+from foampilot.workflow.store import WorkflowStore
 
 
 class RecordingExecutor:
@@ -19,6 +22,7 @@ class RecordingExecutor:
         return_codes: dict[str, int],
         stdout_by_marker: dict[str, str] | None = None,
         stderr_by_marker: dict[str, str] | None = None,
+        before_execute=None,
     ) -> None:
         self.return_codes = return_codes
         self.stdout_by_marker = stdout_by_marker or {}
@@ -26,8 +30,11 @@ class RecordingExecutor:
         self.invocations: list[list[str]] = []
         self.shell_values: list[bool] = []
         self.environments: list[dict[str, str] | None] = []
+        self.before_execute = before_execute
 
     def __call__(self, command, **kwargs):
+        if self.before_execute is not None:
+            self.before_execute()
         invoked = list(command)
         self.invocations.append(invoked)
         self.shell_values.append(kwargs["shell"])
@@ -165,12 +172,17 @@ def _probe(ok: bool, detail: str = "ok") -> SandboxProbe:
 
 def _runner(
     tmp_path: Path,
-    executor: RecordingExecutor,
+    executor: RecordingExecutor | None,
     *,
     config: RuntimeConfig | None = None,
     sandbox_probe=lambda **_: _probe(True),
+    activity_reporter: ActivityReporter | None = None,
+    heartbeat_seconds: float = 5.0,
 ) -> PlanRunner:
     active_config = config or _config(tmp_path)
+    kwargs = {}
+    if executor is not None:
+        kwargs["executor"] = executor
     return PlanRunner(
         runtime_config=active_config,
         environment=_environment(active_config, tmp_path),
@@ -185,19 +197,140 @@ def _runner(
             "checkMesh",
         },
         workspace_root=tmp_path,
-        executor=executor,
         sandbox_probe=sandbox_probe,
+        activity_reporter=activity_reporter,
+        heartbeat_seconds=heartbeat_seconds,
+        **kwargs,
     )
 
 
-def _run(runner: PlanRunner, case: Path, commands, budget=None):
+def _run(
+    runner: PlanRunner,
+    case: Path,
+    commands,
+    budget=None,
+    *,
+    workflow: WorkflowStore | None = None,
+    attempt: int | None = None,
+):
     return runner.run(
         case_dir=case,
         commands=commands,
         budget=budget or _budget(),
         risk_report=_risk(),
         protected_paths=(),
+        workflow=workflow,
+        attempt=attempt,
     )
+
+
+def test_runner_records_step_start_before_executor_and_terminal_after(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run"
+    case = run_dir / "attempt-01/case"
+    case.mkdir(parents=True)
+    workflow = WorkflowStore(run_dir=run_dir)
+
+    def assert_started() -> None:
+        events = [
+            WorkflowEvent.model_validate_json(line)
+            for line in workflow.events_path.read_text(encoding="utf-8").splitlines()
+        ]
+        assert [(event.stage, event.state) for event in events] == [
+            (WorkflowStage.OPENFOAM_STEP_STARTED, WorkflowEventState.STARTED)
+        ]
+
+    executor = RecordingExecutor(
+        return_codes={"solve": 0},
+        before_execute=assert_started,
+    )
+
+    _run(
+        _runner(tmp_path, executor),
+        case,
+        [_command("solve")],
+        workflow=workflow,
+        attempt=1,
+    )
+
+    events = [
+        WorkflowEvent.model_validate_json(line)
+        for line in workflow.events_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [(event.stage, event.state) for event in events] == [
+        (WorkflowStage.OPENFOAM_STEP_STARTED, WorkflowEventState.STARTED),
+        (WorkflowStage.OPENFOAM_STEP_COMPLETE, WorkflowEventState.COMPLETED),
+    ]
+    assert all(event.attempt == 1 for event in events)
+    assert all(event.step_id == "solve" for event in events)
+
+
+def test_runner_records_failed_terminal_step_state(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    case = run_dir / "attempt-01/case"
+    case.mkdir(parents=True)
+    workflow = WorkflowStore(run_dir=run_dir)
+    executor = RecordingExecutor(return_codes={"solve": 7})
+
+    _run(
+        _runner(tmp_path, executor),
+        case,
+        [_command("solve")],
+        workflow=workflow,
+        attempt=1,
+    )
+
+    events = [
+        WorkflowEvent.model_validate_json(line)
+        for line in workflow.events_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert events[-1].stage == WorkflowStage.OPENFOAM_STEP_COMPLETE
+    assert events[-1].state == WorkflowEventState.FAILED
+
+
+def test_runner_streams_real_log_growth_and_residual_metric(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path, isolation="trusted_host")
+    solver = config.openfoam_root / "bin/icoFoam"
+    solver.parent.mkdir(parents=True, exist_ok=True)
+    solver.write_text(
+        "#!/bin/sh\n"
+        "echo 'Time = 0.5'\n"
+        "echo 'Solving for Ux, Initial residual = 0.12, Final residual = 0.0002, No Iterations 3'\n"
+        "sleep 0.08\n",
+        encoding="utf-8",
+    )
+    solver.chmod(0o755)
+    seen: list[ActivityEvent] = []
+    reporter = ActivityReporter(operation_id="op-1", listeners=[seen.append])
+    case = tmp_path / "run/attempt-01/case"
+    case.mkdir(parents=True)
+
+    result = _run(
+        _runner(
+            tmp_path,
+            None,
+            config=config,
+            activity_reporter=reporter,
+            heartbeat_seconds=0.02,
+        ),
+        case,
+        [_command("solve", executable="icoFoam")],
+    )
+
+    assert result.passed
+    assert any(event.kind == "log" and event.evidence_offset for event in seen)
+    residuals = [event for event in seen if event.kind == "metric"]
+    assert len(residuals) == 1
+    assert residuals[0].metrics == {
+        "field": "Ux",
+        "initial_residual": 0.12,
+        "final_residual": 0.0002,
+        "solver_iterations": 3,
+        "simulation_time": 0.5,
+    }
 
 
 def test_runner_executes_argument_array_and_stops_at_first_failure(

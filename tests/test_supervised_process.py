@@ -38,6 +38,23 @@ def test_silent_child_emits_heartbeat_before_completion() -> None:
     assert all(event.pid == result.pid for event in seen)
 
 
+def test_supervised_process_calls_tick_during_run_and_at_completion() -> None:
+    ticks: list[tuple[float, int]] = []
+
+    result = run_supervised_process(
+        [sys.executable, "-c", "import time; time.sleep(0.08)"],
+        timeout_seconds=1,
+        heartbeat_seconds=0.02,
+        source="runner",
+        on_tick=lambda elapsed, pid: ticks.append((elapsed, pid)),
+    )
+
+    assert result.returncode == 0
+    assert len(ticks) >= 2
+    assert all(pid == result.pid for _, pid in ticks)
+    assert ticks == sorted(ticks)
+
+
 def test_child_timeout_is_reported_and_reaped() -> None:
     reporter, seen = _reporter()
 

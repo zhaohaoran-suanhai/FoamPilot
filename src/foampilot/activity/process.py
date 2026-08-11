@@ -29,6 +29,7 @@ class SupervisedProcessResult:
 
 
 PopenFactory = Callable[..., subprocess.Popen[str]]
+TickCallback = Callable[[float, int], None]
 
 
 def _utc_now() -> datetime:
@@ -62,6 +63,7 @@ def run_supervised_process(
     popen_factory: PopenFactory = subprocess.Popen,
     monotonic: Callable[[], float] = time.monotonic,
     utc_now: Callable[[], datetime] = _utc_now,
+    on_tick: TickCallback | None = None,
 ) -> SupervisedProcessResult:
     """Run fixed argv, emit heartbeat while silent, and always reap the child."""
 
@@ -119,6 +121,27 @@ def run_supervised_process(
             message="external process started",
         )
 
+    def notify_tick(elapsed: float) -> None:
+        if on_tick is None:
+            return
+        try:
+            on_tick(elapsed, process.pid)
+        except Exception as error:
+            if reporter is not None:
+                reporter.emit(
+                    kind="warning",
+                    state="failed",
+                    source=source,
+                    elapsed_seconds=elapsed,
+                    deadline_seconds=timeout_seconds,
+                    attempt=attempt,
+                    stage=stage,
+                    step_id=step_id,
+                    pid=process.pid,
+                    detail_code="OBSERVABILITY_DEGRADED",
+                    message=f"activity tick failed: {type(error).__name__}",
+                )
+
     pending_input = stdin_text
     captured_stdout: str | None = None
     captured_stderr: str | None = None
@@ -158,9 +181,11 @@ def run_supervised_process(
                     pid=process.pid,
                     message="external process is still running",
                 )
+            notify_tick(elapsed)
 
     finished_at = utc_now()
     elapsed_seconds = max(monotonic() - started_mono, 0)
+    notify_tick(elapsed_seconds)
     returncode = None if timed_out else process.returncode
     if reporter is not None:
         reporter.emit(

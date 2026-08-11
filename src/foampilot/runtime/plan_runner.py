@@ -9,9 +9,16 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from foampilot.activity import ActivityReporter, run_supervised_process
 from foampilot.environment.models import EnvironmentSnapshot
 from foampilot.plans import NativeCommand
 from foampilot.tasks import ResourceBudget
+from foampilot.workflow import (
+    WorkflowEvent,
+    WorkflowEventState,
+    WorkflowStage,
+    WorkflowStore,
+)
 
 from .models import (
     ExecutionPolicyDecision,
@@ -29,6 +36,7 @@ from .sandbox import (
     not_requested_probe,
     probe_sandbox,
 )
+from .telemetry import IncrementalOpenFOAMLogParser, ResidualMetric
 
 
 _SOURCE_AND_EXEC_HOST = (
@@ -54,6 +62,93 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class _StepLogObserver:
+    def __init__(
+        self,
+        *,
+        stdout_path: Path,
+        evidence_path: str,
+        reporter: ActivityReporter | None,
+        attempt: int | None,
+        stage: str,
+        step_id: str,
+    ) -> None:
+        self.stdout_path = stdout_path
+        self.evidence_path = evidence_path
+        self.reporter = reporter
+        self.attempt = attempt
+        self.stage = stage
+        self.step_id = step_id
+        self.offset = 0
+        self.parser = IncrementalOpenFOAMLogParser()
+
+    def _metric(
+        self,
+        metric: ResidualMetric,
+        *,
+        elapsed: float,
+        pid: int,
+    ) -> None:
+        if self.reporter is None:
+            return
+        values: dict[str, float | int | str] = {
+            "field": metric.field,
+            "initial_residual": metric.initial_residual,
+            "final_residual": metric.final_residual,
+            "solver_iterations": metric.solver_iterations,
+        }
+        if metric.simulation_time is not None:
+            values["simulation_time"] = metric.simulation_time
+        if metric.iteration is not None:
+            values["iteration"] = metric.iteration
+        self.reporter.emit(
+            kind="metric",
+            state="progressed",
+            source="runner",
+            elapsed_seconds=elapsed,
+            attempt=self.attempt,
+            stage=self.stage,
+            step_id=self.step_id,
+            pid=pid,
+            message="OpenFOAM residual updated",
+            metrics=values,
+            evidence_path=self.evidence_path,
+            evidence_offset=self.offset,
+        )
+
+    def poll(self, elapsed: float, pid: int) -> None:
+        if self.reporter is None or not self.stdout_path.is_file():
+            return
+        size = self.stdout_path.stat().st_size
+        if size <= self.offset:
+            return
+        with self.stdout_path.open("rb") as stream:
+            stream.seek(self.offset)
+            payload = stream.read(size - self.offset)
+        self.offset = size
+        self.reporter.emit(
+            kind="log",
+            state="progressed",
+            source="runner",
+            elapsed_seconds=elapsed,
+            attempt=self.attempt,
+            stage=self.stage,
+            step_id=self.step_id,
+            pid=pid,
+            message="OpenFOAM stdout log grew",
+            metrics={"new_bytes": len(payload)},
+            evidence_path=self.evidence_path,
+            evidence_offset=self.offset,
+        )
+        for metric in self.parser.feed(payload.decode("utf-8", errors="replace")):
+            self._metric(metric, elapsed=elapsed, pid=pid)
+
+    def finish(self, elapsed: float, pid: int) -> None:
+        self.poll(elapsed, pid)
+        for metric in self.parser.finish():
+            self._metric(metric, elapsed=elapsed, pid=pid)
+
+
 class RuntimeExecutionError(RuntimeError):
     def __init__(
         self,
@@ -69,6 +164,8 @@ class RuntimeExecutionError(RuntimeError):
 class PlanRunner:
     """Execute typed steps after freezing one policy decision per attempt."""
 
+    emits_live_workflow = True
+
     def __init__(
         self,
         *,
@@ -78,7 +175,11 @@ class PlanRunner:
         workspace_root: str | Path,
         executor: Executor = subprocess.run,
         sandbox_probe: SandboxProbeCallable = probe_sandbox,
+        activity_reporter: ActivityReporter | None = None,
+        heartbeat_seconds: float = 5.0,
     ) -> None:
+        if heartbeat_seconds <= 0:
+            raise ValueError("heartbeat interval must be positive")
         self.runtime_config = runtime_config
         self.environment = environment
         approved_roots = (
@@ -121,6 +222,8 @@ class PlanRunner:
         self.workspace_root = Path(workspace_root).resolve()
         self.executor = executor
         self.sandbox_probe = sandbox_probe
+        self.activity_reporter = activity_reporter
+        self.heartbeat_seconds = heartbeat_seconds
 
     @classmethod
     def from_runtime_config(
@@ -130,12 +233,16 @@ class PlanRunner:
         *,
         environment: EnvironmentSnapshot,
         workspace_root: str | Path,
+        activity_reporter: ActivityReporter | None = None,
+        heartbeat_seconds: float = 5.0,
     ) -> "PlanRunner":
         return cls(
             runtime_config=runtime_config,
             environment=environment,
             available_executables=available_executables,
             workspace_root=workspace_root,
+            activity_reporter=activity_reporter,
+            heartbeat_seconds=heartbeat_seconds,
         )
 
     def _validate_argument(self, argument: str) -> None:
@@ -300,6 +407,8 @@ class PlanRunner:
         budget: ResourceBudget,
         risk_report: ExecutionRiskReport,
         protected_paths: Sequence[Path],
+        workflow: WorkflowStore | None = None,
+        attempt: int | None = None,
     ) -> PlanRunResult:
         case = Path(case_dir).resolve()
         if not case.is_relative_to(self.workspace_root) or not case.is_dir():
@@ -348,27 +457,72 @@ class PlanRunner:
                 break
 
             started = _utc_now()
+            if workflow is not None:
+                workflow.record(
+                    WorkflowEvent.started(
+                        stage=WorkflowStage.OPENFOAM_STEP_STARTED,
+                        sequence=workflow.next_sequence,
+                        occurred_at=started,
+                        attempt=attempt,
+                        step_id=command.step_id,
+                        detail="typed OpenFOAM command started",
+                    )
+                )
             timed_out = False
             return_code: int | None
+            finished = started
+            evidence_path = stdout_path.relative_to(
+                self.workspace_root
+            ).as_posix()
+            log_observer = _StepLogObserver(
+                stdout_path=stdout_path,
+                evidence_path=evidence_path,
+                reporter=self.activity_reporter,
+                attempt=attempt,
+                stage=command.stage.value,
+                step_id=command.step_id,
+            )
             with stdout_path.open("w", encoding="utf-8") as stdout_stream, stderr_path.open(
                 "w", encoding="utf-8"
             ) as stderr_stream:
-                try:
-                    completed = self.executor(
+                if self.executor is subprocess.run:
+                    completed = run_supervised_process(
                         full_argv,
-                        stdin=subprocess.DEVNULL,
+                        timeout_seconds=command.timeout_seconds,
+                        source="runner",
+                        reporter=self.activity_reporter,
+                        stage=command.stage.value,
+                        step_id=command.step_id,
+                        attempt=attempt,
                         stdout=stdout_stream,
                         stderr=stderr_stream,
-                        check=False,
-                        timeout=command.timeout_seconds,
-                        text=True,
-                        shell=False,
+                        heartbeat_seconds=self.heartbeat_seconds,
+                        on_tick=log_observer.poll,
                         **executor_options,
                     )
                     return_code = completed.returncode
-                except subprocess.TimeoutExpired:
-                    timed_out = True
-                    return_code = None
+                    timed_out = completed.timed_out
+                    started = completed.started_at
+                    finished = completed.finished_at
+                    log_observer.finish(completed.elapsed_seconds, completed.pid)
+                else:
+                    try:
+                        legacy_completed = self.executor(
+                            full_argv,
+                            stdin=subprocess.DEVNULL,
+                            stdout=stdout_stream,
+                            stderr=stderr_stream,
+                            check=False,
+                            timeout=command.timeout_seconds,
+                            text=True,
+                            shell=False,
+                            **executor_options,
+                        )
+                        return_code = legacy_completed.returncode
+                    except subprocess.TimeoutExpired:
+                        timed_out = True
+                        return_code = None
+                    finished = _utc_now()
 
             semantic_failure = False
             if command.executable == "checkMesh" and return_code == 0 and not timed_out:
@@ -384,7 +538,7 @@ class PlanRunner:
                 command=typed_argv,
                 return_code=return_code,
                 started_at=started,
-                finished_at=_utc_now(),
+                finished_at=finished,
                 timed_out=timed_out,
                 stdout_path=stdout_path,
                 stderr_path=stderr_path,
@@ -400,7 +554,30 @@ class PlanRunner:
             )
             if sandbox_setup_failure:
                 execution_error_code = "SANDBOX_SETUP_FAILED"
-            if timed_out or return_code != 0 or semantic_failure:
+            step_failed = timed_out or return_code != 0 or semantic_failure
+            if workflow is not None:
+                workflow.record(
+                    WorkflowEvent(
+                        sequence=workflow.next_sequence,
+                        stage=WorkflowStage.OPENFOAM_STEP_COMPLETE,
+                        state=(
+                            WorkflowEventState.FAILED
+                            if step_failed
+                            else WorkflowEventState.COMPLETED
+                        ),
+                        occurred_at=finished,
+                        attempt=attempt,
+                        step_id=command.step_id,
+                        detail=(
+                            f"return_code={return_code}; timed_out={timed_out}"
+                        ),
+                        evidence_paths=[
+                            stdout_path.relative_to(workflow.run_dir).as_posix(),
+                            stderr_path.relative_to(workflow.run_dir).as_posix(),
+                        ],
+                    )
+                )
+            if step_failed:
                 failed_step_id = command.step_id
                 run_timed_out = timed_out
                 break
