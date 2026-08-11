@@ -23,11 +23,11 @@
 
 **Files:** create `src/foampilot/jobs/recovery.py`; modify job models/store/exports; create `tests/test_job_recovery.py`.
 
-- [ ] Write RED decision-table tests for running, unresponsive, orphaned-active, orphaned-stopped, finalized, damaged evidence, PID reuse and held/free writer lock.
-- [ ] Implement strict `RecoveryState`, `RecoveryAction`, `RecoveryDecision` and read-only `reconcile_job()`.
-- [ ] Add non-mutating writer-lock inspection and bounded, identity-checked orphan process-group termination.
-- [ ] Add `job reconcile` and `job terminate-orphan` JSON CLI contracts.
-- [ ] Run focused jobs/CLI tests and commit `feat: reconcile local job recovery state`.
+- [x] Write RED decision-table tests for running, unresponsive, orphaned-active, orphaned-stopped, finalized, damaged evidence, PID reuse and held/free writer lock.
+- [x] Implement strict `RecoveryState`, `RecoveryAction`, `RecoveryDecision` and read-only `reconcile_job()`.
+- [x] Add non-mutating writer-lock inspection and bounded, identity-checked orphan process-group termination.
+- [x] Add `job reconcile` and `job terminate-orphan` JSON CLI contracts.
+- [x] Run focused jobs/CLI tests and commit `feat: reconcile local job recovery state`.
 
 ### Task 2: Neutral recover-finalize
 

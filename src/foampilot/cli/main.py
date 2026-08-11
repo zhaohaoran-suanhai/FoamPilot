@@ -377,6 +377,14 @@ def _parser() -> argparse.ArgumentParser:
     job_cancel = job_commands.add_parser("cancel")
     job_cancel.add_argument("job_root", type=Path)
     job_cancel.add_argument("--json", action="store_true")
+    job_reconcile = job_commands.add_parser("reconcile")
+    job_reconcile.add_argument("job_root", type=Path)
+    job_reconcile.add_argument("--heartbeat-stale-seconds", type=float, default=5.0)
+    job_reconcile.add_argument("--json", action="store_true")
+    job_terminate = job_commands.add_parser("terminate-orphan")
+    job_terminate.add_argument("job_root", type=Path)
+    job_terminate.add_argument("--grace-seconds", type=float, default=2.0)
+    job_terminate.add_argument("--json", action="store_true")
     return parser
 
 
@@ -477,7 +485,11 @@ def _worker(arguments: argparse.Namespace) -> int:
 
 
 def _job(arguments: argparse.Namespace) -> int:
-    from foampilot.jobs import LocalJobStore
+    from foampilot.jobs import (
+        LocalJobStore,
+        reconcile_job,
+        terminate_orphan,
+    )
 
     store = LocalJobStore(arguments.job_root)
     if arguments.job_command == "status":
@@ -500,6 +512,28 @@ def _job(arguments: argparse.Namespace) -> int:
             },
             as_json=arguments.json,
             human=f"CANCEL_REQUESTED: {request.job_id}",
+        )
+        return 0
+    if arguments.job_command == "reconcile":
+        decision = reconcile_job(
+            store.root,
+            heartbeat_stale_seconds=arguments.heartbeat_stale_seconds,
+        )
+        _emit(
+            decision.model_dump(mode="json"),
+            as_json=arguments.json,
+            human=f"{decision.state.value}: {decision.reason_zh}",
+        )
+        return 0
+    if arguments.job_command == "terminate-orphan":
+        decision = terminate_orphan(
+            store.root,
+            grace_seconds=arguments.grace_seconds,
+        )
+        _emit(
+            decision.model_dump(mode="json"),
+            as_json=arguments.json,
+            human=f"{decision.state.value}: {decision.recovery_zh}",
         )
         return 0
     raise ValueError("a job subcommand is required")

@@ -32,6 +32,26 @@ class JobState(StrEnum):
     FAILED = "FAILED"
 
 
+class RecoveryState(StrEnum):
+    RUNNING = "RUNNING"
+    UNRESPONSIVE = "UNRESPONSIVE"
+    ORPHANED_ACTIVE = "ORPHANED_ACTIVE"
+    ORPHANED_STOPPED = "ORPHANED_STOPPED"
+    FINALIZED = "FINALIZED"
+    EVIDENCE_DAMAGED = "EVIDENCE_DAMAGED"
+
+
+class RecoveryAction(StrEnum):
+    ATTACH = "attach"
+    INSPECT = "inspect"
+    CANCEL = "cancel"
+    TERMINATE_ORPHAN = "terminate_orphan"
+    RECOVER_FINALIZE = "recover_finalize"
+    STRICT_RESUME = "strict_resume"
+    RERUN = "rerun"
+    REPORT = "report"
+
+
 class ProcessIdentity(StrictModel):
     pid: int = Field(ge=1)
     pgid: int = Field(ge=1)
@@ -92,6 +112,21 @@ class CancelRequest(StrictModel):
     requested_by: str = Field(min_length=1, max_length=128)
 
 
+class RecoveryDecision(StrictModel):
+    schema_version: Literal[1] = 1
+    job_id: str
+    state: RecoveryState
+    code: str = Field(min_length=1, max_length=128)
+    reason_zh: str = Field(min_length=1)
+    recovery_zh: str = Field(min_length=1)
+    allowed_actions: tuple[RecoveryAction, ...] = ()
+    worker_alive: bool
+    child_alive: bool
+    writer_lock_held: bool
+    run_dir: Path | None = None
+    manifest_issues: tuple[str, ...] = ()
+
+
 __all__ = [
     "CancelRequest",
     "JobOperation",
@@ -99,4 +134,7 @@ __all__ = [
     "JobState",
     "JobStatus",
     "ProcessIdentity",
+    "RecoveryAction",
+    "RecoveryDecision",
+    "RecoveryState",
 ]

@@ -217,6 +217,19 @@ class LocalJobStore:
             )
         return request
 
+    def writer_lock_held(self) -> bool:
+        """Inspect the existing worker lock without creating or changing it."""
+
+        if not self.lock_path.is_file() or self.lock_path.is_symlink():
+            return False
+        with self.lock_path.open("r", encoding="utf-8") as stream:
+            try:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+            return False
+
     @contextmanager
     def writer_lock(self) -> Iterator[None]:
         with self.lock_path.open("a+", encoding="utf-8") as stream:

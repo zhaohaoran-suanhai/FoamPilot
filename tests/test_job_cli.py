@@ -46,6 +46,20 @@ def test_job_status_and_cancel_cli_are_json_and_idempotent(
     assert first == second
 
 
+def test_job_reconcile_cli_reports_allowed_actions(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    store = _store(tmp_path)
+
+    assert main(["job", "reconcile", str(store.root), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["state"] == "ORPHANED_STOPPED"
+    assert payload["code"] == "JOB_ORPHANED_STOPPED"
+    assert payload["allowed_actions"] == ["recover_finalize", "rerun"]
+
+
 def test_worker_cli_delegates_to_local_worker(
     tmp_path: Path,
     monkeypatch,
