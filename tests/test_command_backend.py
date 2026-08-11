@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from threading import Event, Timer
 import time
 from types import SimpleNamespace
 
 import pytest
 
+from foampilot.activity import ActivityReporter, OperationCancelled
 from foampilot.models import BackendError, BackendFailureKind, ModelRequest
 from foampilot.models.command_backend import (
     CommandBackend,
@@ -271,3 +273,38 @@ time.sleep(5)
     assert captured.value.kind == BackendFailureKind.TIMEOUT
     assert captured.value.request_timed_out is True
     assert elapsed < 2
+
+
+def test_command_backend_propagates_cooperative_cancellation(
+    tmp_path: Path,
+) -> None:
+    executable = tmp_path / "slow-model"
+    executable.write_text(
+        "#!/usr/bin/env python3\nimport time\ntime.sleep(30)\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    backend = CommandBackend(
+        CommandBackendConfig(
+            backend_id="slow-command",
+            model="test",
+            argv_template=(str(executable),),
+            probe_argv=((str(executable),),),
+        )
+    )
+    cancel = Event()
+    reporter = ActivityReporter(
+        operation_id="cancel-model",
+        cancel_requested=cancel.is_set,
+    )
+    timer = Timer(0.08, cancel.set)
+    timer.start()
+    try:
+        with pytest.raises(OperationCancelled):
+            backend.exchange(
+                _request(),
+                timeout_seconds=10,
+                activity=reporter,
+            )
+    finally:
+        timer.cancel()

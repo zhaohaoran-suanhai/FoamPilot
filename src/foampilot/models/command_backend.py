@@ -15,7 +15,11 @@ from typing import Literal
 
 from pydantic import field_validator
 
-from foampilot.activity import run_supervised_process
+from foampilot.activity import (
+    ActivityReporter,
+    OperationCancelled,
+    run_supervised_process,
+)
 
 from .backend import BackendHealth, BackendResponse
 from .base import ModelRequest, StrictModel
@@ -234,6 +238,7 @@ class CommandBackend:
         request: ModelRequest,
         *,
         timeout_seconds: float,
+        activity: ActivityReporter | None = None,
     ) -> BackendResponse:
         with tempfile.TemporaryDirectory(
             prefix="foampilot-model-"
@@ -268,6 +273,7 @@ class CommandBackend:
                     stdin_text=_prompt(request),
                     cwd=work_dir,
                     env=_child_environment(self.config.pass_env),
+                    reporter=activity,
                 )
             except FileNotFoundError as error:
                 raise self._error(
@@ -276,6 +282,8 @@ class CommandBackend:
                     detail=str(error),
                     retryable=False,
                 ) from error
+            if bool(getattr(completed, "cancelled", False)):
+                raise OperationCancelled()
             if completed.timed_out:
                 raise self._error(
                     kind=BackendFailureKind.TIMEOUT,

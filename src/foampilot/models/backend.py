@@ -6,6 +6,8 @@ from typing import Literal, Protocol
 
 from pydantic import Field
 
+from foampilot.activity import ActivityReporter
+
 from .base import ModelRequest, StrictModel
 
 
@@ -48,4 +50,5 @@ class ModelBackend(Protocol):
         request: ModelRequest,
         *,
         timeout_seconds: float,
+        activity: ActivityReporter | None = None,
     ) -> BackendResponse: ...

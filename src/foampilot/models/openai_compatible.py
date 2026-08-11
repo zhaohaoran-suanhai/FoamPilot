@@ -14,6 +14,8 @@ from urllib import request as urlrequest
 
 from pydantic import Field, field_validator
 
+from foampilot.activity import ActivityReporter
+
 from .backend import BackendHealth, BackendResponse
 from .base import ModelRequest, StrictModel
 from .errors import BackendError, BackendFailureKind
@@ -206,7 +208,10 @@ class OpenAICompatibleBackend:
         request: ModelRequest,
         *,
         timeout_seconds: float,
+        activity: ActivityReporter | None = None,
     ) -> BackendResponse:
+        if activity is not None:
+            activity.raise_if_cancelled()
         schema_text = json.dumps(
             request.response_schema,
             separators=(",", ":"),
@@ -247,6 +252,9 @@ class OpenAICompatibleBackend:
                 failure,
                 purpose=request.purpose,
             ) from failure
+
+        if activity is not None:
+            activity.raise_if_cancelled()
 
         try:
             payload = json.loads(raw)

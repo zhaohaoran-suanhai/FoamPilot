@@ -14,7 +14,7 @@ from uuid import uuid4
 from pydantic import BaseModel
 import yaml
 
-from foampilot.activity import ActivityReporter
+from foampilot.activity import ActivityReporter, OperationCancelled
 from foampilot.artifacts import (
     ArtifactStore,
     AttemptSummary,
@@ -692,7 +692,8 @@ class NativeAgent:
             else WorkflowState.FAILED
         )
         if primary_failure is None and (
-            active_workflow_state != WorkflowState.DEFERRED
+            active_workflow_state
+            not in {WorkflowState.DEFERRED, WorkflowState.CANCELLED}
             or status in _NATIVE_STATUSES
         ):
             primary_failure = _failure_record(
@@ -708,6 +709,7 @@ class NativeAgent:
             WorkflowState.COMPLETED: WorkflowEventState.COMPLETED,
             WorkflowState.FAILED: WorkflowEventState.FAILED,
             WorkflowState.DEFERRED: WorkflowEventState.DEFERRED,
+            WorkflowState.CANCELLED: WorkflowEventState.CANCELLED,
         }[active_workflow_state]
         _record_event(
             workflow,
@@ -721,7 +723,11 @@ class NativeAgent:
                 state=(
                     "completed"
                     if active_workflow_state == WorkflowState.COMPLETED
-                    else "failed"
+                    else (
+                        "cancelled"
+                        if active_workflow_state == WorkflowState.CANCELLED
+                        else "failed"
+                    )
                 ),
                 source="workflow",
                 stage="solve",
@@ -862,6 +868,38 @@ class NativeAgent:
         return NativeAgentOutcome(
             run_dir=run_dir,
             summary=summary,
+        )
+
+    def _finish_cancelled(
+        self,
+        *,
+        run_dir: Path,
+        task: TaskSpec,
+        attempts: list[AttemptSummary],
+        model_calls: int,
+        stage: str,
+    ) -> NativeAgentOutcome:
+        _write_json(
+            run_dir / "cancellation.json",
+            {
+                "schema_version": 1,
+                "code": "USER_CANCELLED",
+                "stage": stage,
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        return self._finish(
+            run_dir=run_dir,
+            task=task,
+            status="CANCELLED",
+            attempts=attempts,
+            message="The local job was cancelled by the user.",
+            model_calls=model_calls,
+            workflow_state=WorkflowState.CANCELLED,
+            resume=ResumeMetadata(
+                allowed=False,
+                reason="cancelled runs require an explicit rerun",
+            ),
         )
 
     def _environment(self, run_dir: Path) -> EnvironmentSnapshot:
@@ -1377,6 +1415,14 @@ class NativeAgent:
                     ),
                     trace=model_trace,
                 )
+        except OperationCancelled:
+            return self._finish_cancelled(
+                run_dir=run_dir,
+                task=task,
+                attempts=attempts,
+                model_calls=model_calls,
+                stage="routing",
+            )
         except RoutingError as error:
             if error.model_route_used:
                 model_calls += 1
@@ -1689,6 +1735,14 @@ class NativeAgent:
                     ),
                     current_files=current_files,
                 )
+            except OperationCancelled:
+                return self._finish_cancelled(
+                    run_dir=run_dir,
+                    task=task,
+                    attempts=attempts,
+                    model_calls=model_calls,
+                    stage="repair",
+                )
             except (
                 FailureClassificationError,
                 RepairScopeError,
@@ -1876,6 +1930,14 @@ class NativeAgent:
                         max_transport_attempts=3,
                     ),
                     trace=model_trace,
+                )
+            except OperationCancelled:
+                return self._finish_cancelled(
+                    run_dir=run_dir,
+                    task=task,
+                    attempts=attempts,
+                    model_calls=model_calls,
+                    stage="generation",
                 )
             except AgentStatusError as error:
                 return self._finish(
@@ -2407,6 +2469,20 @@ class NativeAgent:
                         update={"reused_steps": reused_steps}
                     )
                 _write_json(attempt_root / "run-result.json", run_result)
+                if run_result.cancelled:
+                    attempts.append(
+                        AttemptSummary(
+                            attempt=attempt_number,
+                            status="CANCELLED",
+                        )
+                    )
+                    return self._finish_cancelled(
+                        run_dir=run_dir,
+                        task=task,
+                        attempts=attempts,
+                        model_calls=model_calls,
+                        stage="openfoam",
+                    )
                 if run_result.execution_error_code is not None:
                     attempts.append(
                         AttemptSummary(
@@ -2796,6 +2872,14 @@ class NativeAgent:
                         environment.available_executable_names
                     ),
                     current_files=current_files,
+                )
+            except OperationCancelled:
+                return self._finish_cancelled(
+                    run_dir=run_dir,
+                    task=task,
+                    attempts=attempts,
+                    model_calls=model_calls,
+                    stage="repair",
                 )
             except (RepairScopeError, RepairPatchError) as error:
                 return self._finish(

@@ -42,6 +42,7 @@ AttemptStatus = Literal[
     "POSTPROCESS_FAILED",
     "PUBLIC_VALIDATION_FAILED",
     "PUBLIC_VALIDATION_PASS",
+    "CANCELLED",
 ]
 
 # Kept as an import alias for callers that only type native attempt results.

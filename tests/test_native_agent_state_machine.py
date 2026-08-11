@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import time
 
+from foampilot.activity import OperationCancelled
 from foampilot.agent import NativeAgent
 from foampilot.agent.repair_patch import RepairPatch
 from foampilot.artifacts import ArtifactStore
@@ -1118,6 +1119,26 @@ def test_native_agent_classifies_exhausted_model_transport_as_environment(
     assert outcome.summary.terminal_blocker.message == "无法连接模型服务。"
     assert outcome.summary.terminal_blocker.recovery.endswith("。")
     assert outcome.summary.attempts == []
+    assert runner.calls == 0
+
+
+def test_native_agent_finalizes_user_cancel_without_repair(
+    tmp_path: Path,
+) -> None:
+    runner = SequencePlanRunner([])
+
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=RecordingModel([OperationCancelled()]),
+        runner=runner,
+    ).solve(_task())
+
+    assert outcome.status == "CANCELLED"
+    assert outcome.summary.workflow_state == "CANCELLED"
+    assert outcome.summary.primary_failure is None
+    assert outcome.summary.resume.allowed is False
+    assert (outcome.run_dir / "cancellation.json").is_file()
+    assert ArtifactStore(outcome.run_dir.parent).verify(outcome.run_dir) == []
     assert runner.calls == 0
 
 

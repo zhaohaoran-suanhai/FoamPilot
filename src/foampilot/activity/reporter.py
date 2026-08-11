@@ -18,6 +18,15 @@ from .sinks import JsonlActivitySink
 
 
 ActivityListener = Callable[[ActivityEvent], None]
+CancellationCheck = Callable[[], bool]
+
+
+class OperationCancelled(RuntimeError):
+    """The owning local job requested cancellation at a safe boundary."""
+
+    def __init__(self, message: str = "operation cancelled by user") -> None:
+        super().__init__(message)
+        self.code = "OPERATION_CANCELLED"
 
 _SECRET_PATTERNS = (
     re.compile(r"(?i)Bearer\s+[A-Za-z0-9._~+/=-]+"),
@@ -45,16 +54,39 @@ class ActivityReporter:
         operation_id: str,
         listeners: Iterable[ActivityListener] = (),
         utc_now: Callable[[], datetime] | None = None,
+        cancel_requested: CancellationCheck | None = None,
     ) -> None:
         if not operation_id:
             raise ValueError("operation_id must not be empty")
         self.operation_id = operation_id
         self._listeners = list(listeners)
         self._utc_now = utc_now or (lambda: datetime.now(timezone.utc))
+        self._cancel_requested = cancel_requested
         self._sequence = 0
         self._run_id: str | None = None
         self._degradation_messages: list[str] = []
         self._lock = RLock()
+
+    @property
+    def cancellation_enabled(self) -> bool:
+        return self._cancel_requested is not None
+
+    def is_cancel_requested(self) -> bool:
+        check = self._cancel_requested
+        if check is None:
+            return False
+        try:
+            return bool(check())
+        except Exception as error:
+            with self._lock:
+                detail = f"cancellation check failed: {type(error).__name__}: {error}"
+                if detail not in self._degradation_messages:
+                    self._degradation_messages.append(detail)
+            return False
+
+    def raise_if_cancelled(self) -> None:
+        if self.is_cancel_requested():
+            raise OperationCancelled()
 
     @property
     def degraded(self) -> bool:
@@ -130,4 +162,9 @@ class ActivityReporter:
         return event
 
 
-__all__ = ["ActivityListener", "ActivityReporter"]
+__all__ = [
+    "ActivityListener",
+    "ActivityReporter",
+    "CancellationCheck",
+    "OperationCancelled",
+]

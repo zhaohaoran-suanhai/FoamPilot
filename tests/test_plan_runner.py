@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from threading import Event, Timer
 
 import pytest
 
@@ -222,6 +223,48 @@ def _run(
         workflow=workflow,
         attempt=attempt,
     )
+
+
+def test_runner_marks_cancelled_step_without_solver_failure(
+    tmp_path: Path,
+) -> None:
+    config = _config(
+        tmp_path,
+        isolation="trusted_host",
+        allow_dynamic_code_on_host=True,
+    )
+    executable = config.openfoam_root / "bin/solve"
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    executable.write_text(
+        "#!/usr/bin/env python3\nimport time\ntime.sleep(30)\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    cancel = Event()
+    reporter = ActivityReporter(
+        operation_id="cancel-runner",
+        cancel_requested=cancel.is_set,
+    )
+    runner = _runner(
+        tmp_path,
+        None,
+        config=config,
+        activity_reporter=reporter,
+        heartbeat_seconds=1,
+    )
+    case = tmp_path / "run/attempt-01/case"
+    case.mkdir(parents=True)
+    timer = Timer(0.08, cancel.set)
+    timer.start()
+    try:
+        result = _run(runner, case, [_command("solve")])
+    finally:
+        timer.cancel()
+
+    assert result.cancelled is True
+    assert result.failed_step_id is None
+    assert result.passed is False
+    assert result.steps[0].cancelled is True
 
 
 def test_runner_records_step_start_before_executor_and_terminal_after(

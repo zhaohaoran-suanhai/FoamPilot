@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timezone
 from hashlib import sha256
+import inspect
 import json
 from threading import Event, Thread
 import time
@@ -301,6 +302,8 @@ class ModelGateway:
         ]
         | None = None,
     ) -> ModelResult[T]:
+        if self.activity_reporter is not None:
+            self.activity_reporter.raise_if_cancelled()
         logical_request_id = uuid4().hex
         started = self.monotonic()
         base_request = request.model_copy(
@@ -352,6 +355,8 @@ class ModelGateway:
             backend_failure: BackendError | None = None
 
             while attempts < budget.max_transport_attempts:
+                if self.activity_reporter is not None:
+                    self.activity_reporter.raise_if_cancelled()
                 now = self.monotonic()
                 attempt_timeout = min(
                     budget.request_timeout_seconds,
@@ -419,9 +424,17 @@ class ModelGateway:
                     model=backend.model,
                 )
                 try:
+                    exchange_parameters = inspect.signature(
+                        backend.exchange
+                    ).parameters
+                    exchange_options: dict[str, object] = {
+                        "timeout_seconds": attempt_timeout,
+                    }
+                    if "activity" in exchange_parameters:
+                        exchange_options["activity"] = self.activity_reporter
                     response = backend.exchange(
                         active_request,
-                        timeout_seconds=attempt_timeout,
+                        **exchange_options,
                     )
                     if (
                         response.backend_id != backend.backend_id
@@ -628,7 +641,21 @@ class ModelGateway:
                         budget=budget,
                     )
                     break
-                self.sleep(delay)
+                if (
+                    self.activity_reporter is None
+                    or not self.activity_reporter.cancellation_enabled
+                ):
+                    self.sleep(delay)
+                else:
+                    retry_deadline = self.monotonic() + delay
+                    while self.monotonic() < retry_deadline:
+                        self.activity_reporter.raise_if_cancelled()
+                        self.sleep(
+                            min(
+                                0.25,
+                                retry_deadline - self.monotonic(),
+                            )
+                        )
 
             if backend_failure is not None:
                 last_failure = backend_failure

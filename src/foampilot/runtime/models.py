@@ -212,6 +212,7 @@ class PlanStepResult(StrictModel):
     started_at: datetime
     finished_at: datetime
     timed_out: bool
+    cancelled: bool = False
     stdout_path: Path
     stderr_path: Path
     execution_backend: Literal["bubblewrap", "host"] = "bubblewrap"
@@ -232,6 +233,7 @@ class PlanRunResult(StrictModel):
     steps: list[PlanStepResult]
     failed_step_id: str | None = None
     timed_out: bool = False
+    cancelled: bool = False
     reused_steps: list[ReusedStepResult] = Field(default_factory=list)
     sandbox_probe: SandboxProbe | None = None
     execution_policy: ExecutionPolicyDecision | None = None
@@ -239,4 +241,8 @@ class PlanRunResult(StrictModel):
 
     @property
     def passed(self) -> bool:
-        return self.failed_step_id is None and bool(self.steps)
+        return (
+            self.failed_step_id is None
+            and bool(self.steps)
+            and not self.cancelled
+        )

@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import sys
+from threading import Event, Timer
+import time
 
 import pytest
 
@@ -139,3 +141,46 @@ def test_supervised_process_reports_launch_failure() -> None:
 
     assert seen[-1].state == "failed"
     assert seen[-1].detail_code == "PROCESS_LAUNCH_FAILED"
+
+
+def test_cancel_terminates_owned_process_group_and_reports_cancelled() -> None:
+    cancel = Event()
+    seen: list[ActivityEvent] = []
+    reporter = ActivityReporter(
+        operation_id="cancel-op",
+        listeners=[seen.append],
+        cancel_requested=cancel.is_set,
+    )
+    timer = Timer(0.12, cancel.set)
+    timer.start()
+    try:
+        result = run_supervised_process(
+            [
+                sys.executable,
+                "-c",
+                "import signal,subprocess,sys,time; "
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "child=subprocess.Popen([sys.executable,'-c',"
+                "'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)']); "
+                "print(child.pid, flush=True); time.sleep(30)",
+            ],
+            timeout_seconds=10,
+            heartbeat_seconds=2,
+            cancellation_poll_seconds=0.02,
+            cancellation_grace_seconds=0.05,
+            reporter=reporter,
+            source="runner",
+        )
+    finally:
+        timer.cancel()
+
+    assert result.cancelled is True
+    assert result.timed_out is False
+    assert result.returncode is None
+    assert seen[-1].state == "cancelled"
+    assert seen[-1].detail_code == "PROCESS_CANCELLED"
+    child_pid = int((result.stdout or "").strip())
+    deadline = time.monotonic() + 1
+    while Path(f"/proc/{child_pid}").exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert not Path(f"/proc/{child_pid}").exists()

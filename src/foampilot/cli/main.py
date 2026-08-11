@@ -16,6 +16,7 @@ import yaml
 from foampilot.activity import (
     ActivityReporter,
     JsonlStreamActivitySink,
+    OperationCancelled,
     PlainActivitySink,
 )
 from foampilot.agent import (
@@ -863,6 +864,8 @@ def _native_solve(arguments: argparse.Namespace) -> int:
 
 
 def _native_outcome_exit_code(outcome) -> int:
+    if outcome.summary.workflow_state == "CANCELLED":
+        return 130
     if outcome.summary.native_status == "PUBLIC_VALIDATION_PASS":
         return 0
     if (
@@ -1388,6 +1391,17 @@ def main(argv: list[str] | None = None) -> int:
             "task": _task_builder,
         }
         return handlers[arguments.command](arguments)
+    except OperationCancelled:
+        as_json = bool(getattr(arguments, "json", False))
+        _emit(
+            {
+                "status": "CANCELLED",
+                "code": "USER_CANCELLED",
+            },
+            as_json=as_json,
+            human="CANCELLED: 本机任务已按用户请求取消。",
+        )
+        return 130
     except GatewayRequestError as error:
         as_json = bool(getattr(arguments, "json", False))
         backend_payload = backend_error_payload_zh(error.failure)

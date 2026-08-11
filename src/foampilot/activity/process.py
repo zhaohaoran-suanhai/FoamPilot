@@ -25,6 +25,7 @@ class SupervisedProcessResult:
     finished_at: datetime
     elapsed_seconds: float
     timed_out: bool
+    cancelled: bool
     pid: int
 
 
@@ -43,6 +44,24 @@ def _kill_owned_process_group(process: subprocess.Popen[str]) -> None:
         return
     except OSError:
         process.kill()
+
+
+def _terminate_owned_process_group(
+    process: subprocess.Popen[str],
+    *,
+    grace_seconds: float,
+) -> tuple[str | None, str | None]:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return process.communicate()
+    except OSError:
+        process.terminate()
+    try:
+        return process.communicate(timeout=grace_seconds)
+    except subprocess.TimeoutExpired:
+        _kill_owned_process_group(process)
+        return process.communicate()
 
 
 def run_supervised_process(
@@ -64,6 +83,8 @@ def run_supervised_process(
     monotonic: Callable[[], float] = time.monotonic,
     utc_now: Callable[[], datetime] = _utc_now,
     on_tick: TickCallback | None = None,
+    cancellation_poll_seconds: float = 0.25,
+    cancellation_grace_seconds: float = 2.0,
 ) -> SupervisedProcessResult:
     """Run fixed argv, emit heartbeat while silent, and always reap the child."""
 
@@ -76,6 +97,12 @@ def run_supervised_process(
         raise ValueError("timeout_seconds must be positive")
     if heartbeat_seconds <= 0:
         raise ValueError("heartbeat_seconds must be positive")
+    if cancellation_poll_seconds <= 0:
+        raise ValueError("cancellation poll interval must be positive")
+    if cancellation_grace_seconds < 0:
+        raise ValueError("cancellation grace period must not be negative")
+    if reporter is not None:
+        reporter.raise_if_cancelled()
 
     started_at = utc_now()
     started_mono = monotonic()
@@ -146,8 +173,17 @@ def run_supervised_process(
     captured_stdout: str | None = None
     captured_stderr: str | None = None
     timed_out = False
+    cancelled = False
+    next_heartbeat = heartbeat_seconds
     while True:
         elapsed = max(monotonic() - started_mono, 0)
+        if reporter is not None and reporter.is_cancel_requested():
+            captured_stdout, captured_stderr = _terminate_owned_process_group(
+                process,
+                grace_seconds=cancellation_grace_seconds,
+            )
+            cancelled = True
+            break
         remaining = timeout_seconds - elapsed
         if remaining <= 0:
             _kill_owned_process_group(process)
@@ -157,7 +193,16 @@ def run_supervised_process(
         try:
             captured_stdout, captured_stderr = process.communicate(
                 input=pending_input,
-                timeout=min(heartbeat_seconds, remaining),
+                timeout=min(
+                    heartbeat_seconds,
+                    remaining,
+                    (
+                        cancellation_poll_seconds
+                        if reporter is not None
+                        and reporter.cancellation_enabled
+                        else heartbeat_seconds
+                    ),
+                ),
             )
             break
         except subprocess.TimeoutExpired:
@@ -168,32 +213,38 @@ def run_supervised_process(
                 captured_stdout, captured_stderr = process.communicate()
                 timed_out = True
                 break
-            if reporter is not None:
-                reporter.emit(
-                    kind="heartbeat",
-                    state="alive",
-                    source=source,
-                    elapsed_seconds=elapsed,
-                    deadline_seconds=timeout_seconds,
-                    attempt=attempt,
-                    stage=stage,
-                    step_id=step_id,
-                    pid=process.pid,
-                    message="external process is still running",
-                )
-            notify_tick(elapsed)
+            if elapsed >= next_heartbeat:
+                if reporter is not None:
+                    reporter.emit(
+                        kind="heartbeat",
+                        state="alive",
+                        source=source,
+                        elapsed_seconds=elapsed,
+                        deadline_seconds=timeout_seconds,
+                        attempt=attempt,
+                        stage=stage,
+                        step_id=step_id,
+                        pid=process.pid,
+                        message="external process is still running",
+                    )
+                next_heartbeat = elapsed + heartbeat_seconds
+                notify_tick(elapsed)
 
     finished_at = utc_now()
     elapsed_seconds = max(monotonic() - started_mono, 0)
     notify_tick(elapsed_seconds)
-    returncode = None if timed_out else process.returncode
+    returncode = None if timed_out or cancelled else process.returncode
     if reporter is not None:
         reporter.emit(
             kind="command",
             state=(
-                "timed_out"
-                if timed_out
-                else ("completed" if returncode == 0 else "failed")
+                "cancelled"
+                if cancelled
+                else (
+                    "timed_out"
+                    if timed_out
+                    else ("completed" if returncode == 0 else "failed")
+                )
             ),
             source=source,
             elapsed_seconds=elapsed_seconds,
@@ -203,14 +254,22 @@ def run_supervised_process(
             step_id=step_id,
             pid=process.pid,
             detail_code=(
-                "PROCESS_TIMEOUT"
-                if timed_out
-                else ("PROCESS_EXIT_NONZERO" if returncode != 0 else None)
+                "PROCESS_CANCELLED"
+                if cancelled
+                else (
+                    "PROCESS_TIMEOUT"
+                    if timed_out
+                    else ("PROCESS_EXIT_NONZERO" if returncode != 0 else None)
+                )
             ),
             message=(
-                "external process timed out"
-                if timed_out
-                else f"external process exited with return code {returncode}"
+                "external process cancelled"
+                if cancelled
+                else (
+                    "external process timed out"
+                    if timed_out
+                    else f"external process exited with return code {returncode}"
+                )
             ),
         )
     return SupervisedProcessResult(
@@ -221,6 +280,7 @@ def run_supervised_process(
         finished_at=finished_at,
         elapsed_seconds=elapsed_seconds,
         timed_out=timed_out,
+        cancelled=cancelled,
         pid=process.pid,
     )
 

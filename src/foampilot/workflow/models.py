@@ -36,12 +36,14 @@ class WorkflowEventState(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     DEFERRED = "deferred"
+    CANCELLED = "cancelled"
 
 
 class WorkflowState(StrEnum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     DEFERRED = "DEFERRED"
+    CANCELLED = "CANCELLED"
 
 
 class FailureDomain(StrEnum):

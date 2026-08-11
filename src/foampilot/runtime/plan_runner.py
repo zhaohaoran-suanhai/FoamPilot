@@ -469,6 +469,7 @@ class PlanRunner:
                     )
                 )
             timed_out = False
+            cancelled = False
             return_code: int | None
             finished = started
             evidence_path = stdout_path.relative_to(
@@ -502,6 +503,7 @@ class PlanRunner:
                     )
                     return_code = completed.returncode
                     timed_out = completed.timed_out
+                    cancelled = completed.cancelled
                     started = completed.started_at
                     finished = completed.finished_at
                     log_observer.finish(completed.elapsed_seconds, completed.pid)
@@ -540,6 +542,7 @@ class PlanRunner:
                 started_at=started,
                 finished_at=finished,
                 timed_out=timed_out,
+                cancelled=cancelled,
                 stdout_path=stdout_path,
                 stderr_path=stderr_path,
                 execution_backend=decision.actual_backend,
@@ -554,22 +557,29 @@ class PlanRunner:
             )
             if sandbox_setup_failure:
                 execution_error_code = "SANDBOX_SETUP_FAILED"
-            step_failed = timed_out or return_code != 0 or semantic_failure
+            step_failed = (
+                timed_out or cancelled or return_code != 0 or semantic_failure
+            )
             if workflow is not None:
                 workflow.record(
                     WorkflowEvent(
                         sequence=workflow.next_sequence,
                         stage=WorkflowStage.OPENFOAM_STEP_COMPLETE,
                         state=(
-                            WorkflowEventState.FAILED
-                            if step_failed
-                            else WorkflowEventState.COMPLETED
+                            WorkflowEventState.CANCELLED
+                            if cancelled
+                            else (
+                                WorkflowEventState.FAILED
+                                if step_failed
+                                else WorkflowEventState.COMPLETED
+                            )
                         ),
                         occurred_at=finished,
                         attempt=attempt,
                         step_id=command.step_id,
                         detail=(
-                            f"return_code={return_code}; timed_out={timed_out}"
+                            f"return_code={return_code}; timed_out={timed_out}; "
+                            f"cancelled={cancelled}"
                         ),
                         evidence_paths=[
                             stdout_path.relative_to(workflow.run_dir).as_posix(),
@@ -578,7 +588,7 @@ class PlanRunner:
                     )
                 )
             if step_failed:
-                failed_step_id = command.step_id
+                failed_step_id = None if cancelled else command.step_id
                 run_timed_out = timed_out
                 break
 
@@ -587,6 +597,7 @@ class PlanRunner:
             steps=steps,
             failed_step_id=failed_step_id,
             timed_out=run_timed_out,
+            cancelled=any(step.cancelled for step in steps),
             sandbox_probe=probe,
             execution_policy=decision,
             execution_error_code=execution_error_code,
