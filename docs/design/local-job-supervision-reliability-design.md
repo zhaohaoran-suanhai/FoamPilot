@@ -1,6 +1,6 @@
 # FoamPilot 本机任务监督与 Desktop 可靠性规格
 
-状态：已确认，按三项串行任务中的第二项实施。本文依赖
+状态：已实施并通过本机确定性门禁与 Foundation OpenFOAM v10 detached job 门禁。本文依赖
 [核心执行可观测性与活性规格](execution-observability-liveness-design.md)，定义单机、单用户
 FoamPilot 的可靠取消、窗口关闭后继续运行、崩溃重连和 Qt 响应性。
 

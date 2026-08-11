@@ -22,6 +22,8 @@ SUPPORTED_COMMANDS = (
     "qualify",
     "improve",
     "task",
+    "worker",
+    "job",
 )
 
 

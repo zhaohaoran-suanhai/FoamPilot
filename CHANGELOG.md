@@ -3,6 +3,19 @@
 FoamPilot 的重要变更记录在此文件中。版本号遵循 Semantic Versioning；在 `1.0.0` 之前，
 次版本可能调整仍在稳定过程中的接口。
 
+## [Unreleased]
+
+### Added
+
+- 增加统一核心活动事件、模型/OpenFOAM 心跳、日志增长和增量残差事件。
+- 增加工程内持久化本机 job、detached worker、进程身份校验、心跳、取消请求和 Desktop 重连。
+
+### Changed
+
+- Desktop 长任务不再由窗口进程持有；关闭窗口后继续运行，重新打开工程可恢复观察并显式取消。
+- 活跃 run 改为增量读取 workflow/log，节流文件扫描、缓存 manifest 验证，并在后台线程构建
+  projection。
+
 ## [0.2.0] - 2026-08-11
 
 ### Added

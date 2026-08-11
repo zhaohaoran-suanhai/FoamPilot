@@ -9,7 +9,6 @@ from pathlib import Path
 import subprocess
 import sys
 from threading import Event, Thread
-from typing import TextIO
 
 from foampilot.activity import (
     ActivityEvent,

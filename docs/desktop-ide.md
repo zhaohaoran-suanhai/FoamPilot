@@ -37,7 +37,8 @@ PySide6 不属于 FoamPilot 核心依赖。未安装 desktop extra 时，CLI 与
 3. 检查事实、可见假设和待确认问题。问题行可以直接填写；点击“2. 应用回答并确认”，再
    点击“3. 验证并编译 TaskSpec”。没有完成高影响确认时，IDE 不允许进入求解。
 4. 检查编译后的 `TaskSpec`，点击“4. 开始规范求解”。IDE 会先执行确定性 `validate`，
-   再为本次作业创建唯一 `runs/job-*` 目录并调用规范 `solve`。
+   再为本次作业创建唯一 `runs/job-*` 目录并启动可分离的本机 worker；worker 内部仍调用规范
+   `solve`。
 
 TaskDraft 和 TaskSpec YAML 只作为高级视图保留；正常流程不要求手工编辑 YAML。已有完整
 TaskSpec 的用户也可以直接粘贴到 TaskSpec 页并开始求解。TaskSpec 中的公开资产路径以所选
@@ -71,9 +72,20 @@ isolation；TaskDraft 不接收 Runtime 参数。
 
 残差下降只是数值证据之一。求解器出现正常 `End` 不自动证明充分收敛、网格无关或工程适用。
 
+## 取消、关闭和重新连接
+
+长任务不再由窗口进程持有。生成草稿或求解开始后，可以正常关闭 Desktop，worker 会继续写入
+工程内的 `runs/job-*`。再次打开同一个工程时，Desktop 会发现最新的活动 job，校验 worker
+进程身份并重新连接事件、日志和 run。关闭窗口不会隐式取消任务。
+
+点击“取消任务”只会创建幂等的控制请求。worker 在安全点停止启动新阶段，并对自己拥有且身份
+匹配的模型/OpenFOAM/MPI 进程组先发送 `SIGTERM`、超时后发送 `SIGKILL`；确认进程组退出并
+固化 partial artifacts 后才显示 `CANCELLED`。`UNRESPONSIVE` 仅表示心跳过期，不能等同于
+求解失败或取消完成。
+
 ## 状态解释
 
-- `IDE Job`：桌面启动的子进程是否仍在运行及其退出码；
+- `IDE Job`：持久化 worker 的运行、取消或终态，以及心跳健康度；
 - `Workflow`：规范 Agent 工作流是完成、失败还是暂缓；
 - `Native`：OpenFOAM/公开验证达到的状态；
 - `Qualification`：只有独立 qualification 证据时才成立，普通 run 显示
@@ -92,15 +104,18 @@ isolation；TaskDraft 不接收 Runtime 参数。
 ## 安全与当前边界
 
 - 命令由固定 Python executable、CLI 子命令白名单和参数数组组成，不使用 shell 字符串；
-- 每次求解使用唯一 job root，并只绑定其中发现的唯一 `run-*`；
+- 每次长任务使用唯一 job root、不可变 receipt、原子 status、heartbeat 和进程身份，只绑定其中
+  发现的唯一 `run-*`；
 - run 文件查看拒绝符号链接、绝对路径、`..`、未登记文件和超过显示上限的文件；
 - QSettings 仅保存上次 run 和窗口布局，不写入 run；
 - Desktop 只展示 run 中公开、规范的 `runtime-config.json`、
   `execution-risk-report.json`、`execution-policy.json` 等证据和模型实际收到的 Knowledge/Skill；
   不展示隐藏思维过程。audited host 与 bubblewrap 不具有相同安全性；
-- 规范作业运行期间关闭窗口会被阻止，以免 Qt 销毁子进程；v1 尚无取消按钮；
-- 当前没有 resume、人工 repair、case revision、三维 VTK/PyVista 视图、ParaView 启动、远程
-  HPC、多用户和权限管理。
+- 活跃 run 的 workflow/log 通过 byte cursor 增量读取；文件树扫描节流，manifest 验证缓存，
+  重型 projection 在 Qt 后台线程执行。刷新失败保留上一次画面并显示
+  `DESKTOP_REFRESH_DEGRADED`；
+- 当前 Desktop 尚未提供恢复固化、严格 resume/rerun 决策、人工 repair、case revision、三维
+  VTK/PyVista 视图、ParaView 启动、远程 HPC、多用户和权限管理。
 
 ## Linux xcb 启动故障
 

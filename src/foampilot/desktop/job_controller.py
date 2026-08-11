@@ -12,7 +12,6 @@ from foampilot.activity import ActivityEvent
 from foampilot.jobs import (
     JobOperation,
     JobState,
-    JobStatus,
     LocalJobStore,
     build_job_spec,
     launch_local_job,

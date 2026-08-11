@@ -363,6 +363,56 @@ def test_incremental_snapshot_matches_fresh_full_projection(
     assert incremental == rebuilt
 
 
+def test_large_active_projection_keeps_residual_history_bounded(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run-large-active"
+    events = run_dir / "workflow-events.jsonl"
+    events.parent.mkdir()
+    events.write_text(
+        "\n".join(
+            _event(sequence, WorkflowStage.OPENFOAM_STEP_COMPLETE)
+            .model_dump_json()
+            for sequence in range(1, 2_001)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    log = run_dir / "attempt-01/case/.foampilot/logs/solve.stdout.log"
+    log.parent.mkdir(parents=True)
+    log.write_text(
+        "".join(
+            f"Time = {index}\n"
+            f"Solving for p, Initial residual = 0.1, "
+            f"Final residual = 0.01, No Iterations 1\n"
+            for index in range(6_000)
+        ),
+        encoding="utf-8",
+    )
+    repository = RunRepository(active_rescan_seconds=0.0)
+
+    first = repository.open(run_dir)
+    with events.open("a", encoding="utf-8") as stream:
+        stream.write(
+            _event(2_001, WorkflowStage.RUN_FINALIZED).model_dump_json()
+            + "\n"
+        )
+    with log.open("a", encoding="utf-8") as stream:
+        stream.write(
+            "Time = 6000\n"
+            "Solving for Ux, Initial residual = 0.05, "
+            "Final residual = 0.005, No Iterations 1\n"
+        )
+    incremental = repository.open(run_dir)
+    rebuilt = RunRepository(active_rescan_seconds=0.0).open(run_dir)
+
+    assert len(first.timeline) == 2_000
+    assert len(incremental.timeline) == 2_001
+    assert len(incremental.residual_samples) == 5_000
+    assert incremental.residual_samples[-1].field == "Ux"
+    assert incremental == rebuilt
+
+
 def test_desktop_projects_latest_runtime_security_artifacts(
     tmp_path: Path,
 ) -> None:
