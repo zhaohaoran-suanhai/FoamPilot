@@ -6,6 +6,7 @@ from .models import (
     ActivitySource,
     ActivityState,
 )
+from .process import SupervisedProcessResult, run_supervised_process
 from .reporter import ActivityListener, ActivityReporter
 from .sinks import JsonlActivitySink, PlainActivitySink
 
@@ -18,4 +19,6 @@ __all__ = [
     "ActivityState",
     "JsonlActivitySink",
     "PlainActivitySink",
+    "SupervisedProcessResult",
+    "run_supervised_process",
 ]
