@@ -6,11 +6,14 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+from threading import Event, Thread
 import time
 from typing import Generic, TypeVar
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, ValidationError
+
+from foampilot.activity import ActivityReporter
 
 from .backend import BackendResponse, ModelBackend
 from .base import ModelRequest, StrictModel
@@ -146,7 +149,11 @@ class ModelGateway:
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         utc_now: Callable[[], datetime] = _utc_now,
+        activity_reporter: ActivityReporter | None = None,
+        activity_heartbeat_seconds: float = 5.0,
     ) -> None:
+        if activity_heartbeat_seconds <= 0:
+            raise ValueError("activity heartbeat interval must be positive")
         self.registry = registry
         self.mode = BackendMode(mode)
         self.pinned_backend_id = pinned_backend_id
@@ -154,6 +161,8 @@ class ModelGateway:
         self.monotonic = monotonic
         self.sleep = sleep
         self.utc_now = utc_now
+        self.activity_reporter = activity_reporter
+        self.activity_heartbeat_seconds = activity_heartbeat_seconds
         self.circuit_breaker = circuit_breaker or SharedCircuitBreaker(
             monotonic=monotonic
         )
@@ -205,6 +214,49 @@ class ModelGateway:
             model=backend.model,
             identity_hash=backend.identity_hash,
         )
+
+    def _start_activity_heartbeat(
+        self,
+        *,
+        stop: Event,
+        started: float,
+        timeout_seconds: float,
+        purpose: str,
+        logical_request_id: str,
+        attempt: int,
+        backend_id: str,
+        model: str,
+    ) -> Thread | None:
+        reporter = self.activity_reporter
+        if reporter is None:
+            return None
+
+        def pulse() -> None:
+            while not stop.wait(self.activity_heartbeat_seconds):
+                reporter.emit(
+                    kind="heartbeat",
+                    state="alive",
+                    source="model",
+                    elapsed_seconds=max(self.monotonic() - started, 0),
+                    deadline_seconds=timeout_seconds,
+                    attempt=attempt,
+                    stage=purpose,
+                    step_id=logical_request_id,
+                    message="model transport is still running",
+                    metrics={
+                        "backend_id": backend_id,
+                        "model": model,
+                        "transport_attempt": attempt,
+                    },
+                )
+
+        thread = Thread(
+            target=pulse,
+            name=f"foampilot-model-heartbeat-{logical_request_id[:8]}",
+            daemon=True,
+        )
+        thread.start()
+        return thread
 
     def _circuit_failure(
         self,
@@ -338,6 +390,34 @@ class ModelGateway:
                 normalizations: tuple[
                     StructuredOutputNormalization, ...
                 ] = ()
+                activity_stop = Event()
+                if self.activity_reporter is not None:
+                    self.activity_reporter.emit(
+                        kind="stage",
+                        state="started",
+                        source="model",
+                        elapsed_seconds=0,
+                        deadline_seconds=attempt_timeout,
+                        attempt=attempts,
+                        stage=request.purpose,
+                        step_id=logical_request_id,
+                        message="model transport attempt started",
+                        metrics={
+                            "backend_id": backend.backend_id,
+                            "model": backend.model,
+                            "transport_attempt": attempts,
+                        },
+                    )
+                activity_thread = self._start_activity_heartbeat(
+                    stop=activity_stop,
+                    started=attempt_started_mono,
+                    timeout_seconds=attempt_timeout,
+                    purpose=request.purpose,
+                    logical_request_id=logical_request_id,
+                    attempt=attempts,
+                    backend_id=backend.backend_id,
+                    model=backend.model,
+                )
                 try:
                     response = backend.exchange(
                         active_request,
@@ -378,6 +458,12 @@ class ModelGateway:
                         ) from error
                 except BackendError as error:
                     failure = error
+                finally:
+                    activity_stop.set()
+                    if activity_thread is not None:
+                        activity_thread.join(
+                            timeout=self.activity_heartbeat_seconds + 0.1
+                        )
 
                 attempt_finished_mono = self.monotonic()
                 attempt_finished_utc = self.utc_now()
@@ -429,6 +515,46 @@ class ModelGateway:
                         context_artifacts=request.context_artifacts,
                     )
                 )
+                if self.activity_reporter is not None:
+                    self.activity_reporter.emit(
+                        kind="stage",
+                        state=(
+                            "completed"
+                            if failure is None
+                            else (
+                                "timed_out"
+                                if failure.request_timed_out
+                                else "failed"
+                            )
+                        ),
+                        source="model",
+                        elapsed_seconds=max(
+                            attempt_finished_mono - attempt_started_mono,
+                            0,
+                        ),
+                        deadline_seconds=attempt_timeout,
+                        attempt=attempts,
+                        stage=request.purpose,
+                        step_id=logical_request_id,
+                        detail_code=(
+                            failure.kind.value if failure is not None else None
+                        ),
+                        message=(
+                            "model transport attempt completed"
+                            if failure is None
+                            else "model transport attempt failed"
+                        ),
+                        metrics={
+                            "backend_id": backend.backend_id,
+                            "model": backend.model,
+                            "transport_attempt": attempts,
+                            "output_bytes": (
+                                response.output_bytes
+                                if response is not None
+                                else 0
+                            ),
+                        },
+                    )
 
                 if failure is None:
                     assert value is not None

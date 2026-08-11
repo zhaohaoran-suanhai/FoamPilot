@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+import signal
 import subprocess
 import time
 from typing import TextIO
@@ -32,6 +33,15 @@ PopenFactory = Callable[..., subprocess.Popen[str]]
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _kill_owned_process_group(process: subprocess.Popen[str]) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    except OSError:
+        process.kill()
 
 
 def run_supervised_process(
@@ -77,6 +87,7 @@ def run_supervised_process(
             stderr=stderr,
             cwd=Path(cwd) if cwd is not None else None,
             env=dict(env) if env is not None else None,
+            start_new_session=True,
         )
     except (OSError, ValueError) as error:
         if reporter is not None:
@@ -116,7 +127,7 @@ def run_supervised_process(
         elapsed = max(monotonic() - started_mono, 0)
         remaining = timeout_seconds - elapsed
         if remaining <= 0:
-            process.kill()
+            _kill_owned_process_group(process)
             captured_stdout, captured_stderr = process.communicate()
             timed_out = True
             break
@@ -130,7 +141,7 @@ def run_supervised_process(
             pending_input = None
             elapsed = max(monotonic() - started_mono, 0)
             if elapsed >= timeout_seconds:
-                process.kill()
+                _kill_owned_process_group(process)
                 captured_stdout, captured_stderr = process.communicate()
                 timed_out = True
                 break

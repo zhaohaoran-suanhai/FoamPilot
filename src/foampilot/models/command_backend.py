@@ -15,6 +15,8 @@ from typing import Literal
 
 from pydantic import field_validator
 
+from foampilot.activity import run_supervised_process
+
 from .backend import BackendHealth, BackendResponse
 from .base import ModelRequest, StrictModel
 from .errors import BackendError, BackendFailureKind
@@ -259,16 +261,13 @@ class CommandBackend:
                 for argument in self.config.argv_template
             ]
             try:
-                completed = subprocess.run(
+                completed = run_supervised_process(
                     argv,
-                    shell=False,
-                    text=True,
-                    input=_prompt(request),
-                    capture_output=True,
+                    timeout_seconds=timeout_seconds,
+                    source="model",
+                    stdin_text=_prompt(request),
                     cwd=work_dir,
                     env=_child_environment(self.config.pass_env),
-                    timeout=timeout_seconds,
-                    check=False,
                 )
             except FileNotFoundError as error:
                 raise self._error(
@@ -277,14 +276,14 @@ class CommandBackend:
                     detail=str(error),
                     retryable=False,
                 ) from error
-            except subprocess.TimeoutExpired as error:
+            if completed.timed_out:
                 raise self._error(
                     kind=BackendFailureKind.TIMEOUT,
                     purpose=request.purpose,
                     detail="external model command timed out",
                     retryable=True,
                     request_timed_out=True,
-                ) from error
+                )
             if completed.returncode != 0:
                 detail = completed.stderr or completed.stdout
                 kind, retryable = _command_failure_kind(detail)

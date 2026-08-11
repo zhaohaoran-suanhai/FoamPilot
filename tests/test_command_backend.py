@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -90,6 +91,49 @@ def test_command_backend_uses_fixed_argv_and_output_file(
     assert recorded["secret_visible"] is False
     assert recorded["schema"]["properties"]["answer"]["type"] == "integer"
     assert "Return a JSON object." in recorded["stdin"]
+
+
+def test_command_backend_uses_shared_supervised_process(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_supervisor(argv, **kwargs):
+        observed["argv"] = list(argv)
+        observed["kwargs"] = kwargs
+        output_index = argv.index("--output") + 1
+        Path(argv[output_index]).write_text('{"answer": 7}', encoding="utf-8")
+        return SimpleNamespace(
+            returncode=0,
+            stdout="",
+            stderr="",
+            timed_out=False,
+        )
+
+    monkeypatch.setattr(
+        "foampilot.models.command_backend.run_supervised_process",
+        fake_supervisor,
+    )
+    backend = CommandBackend(
+        CommandBackendConfig(
+            backend_id="fake-command",
+            model="fake-model",
+            argv_template=(
+                "fake-model",
+                "--output",
+                "{output_file}",
+            ),
+            probe_argv=(("fake-model", "--probe"),),
+        )
+    )
+
+    response = backend.exchange(_request(), timeout_seconds=12)
+
+    assert response.output_text == '{"answer": 7}'
+    assert observed["argv"][0] == "fake-model"
+    assert observed["kwargs"]["timeout_seconds"] == 12
+    assert "系统要求" in observed["kwargs"]["stdin_text"]
 
 
 def test_codex_preset_never_mentions_auth_files() -> None:

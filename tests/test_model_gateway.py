@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import time
 
 from pydantic import BaseModel
 import pytest
 
+from foampilot.activity import ActivityEvent, ActivityReporter
 from foampilot.models import (
     BackendFailureKind,
     BackendMode,
@@ -66,6 +68,9 @@ def _window(
 def _gateway(
     backend: ScriptedBackend,
     clock: FakeClock,
+    *,
+    activity_reporter: ActivityReporter | None = None,
+    activity_heartbeat_seconds: float = 5.0,
 ) -> ModelGateway:
     registry = BackendRegistry()
     registry.register(backend, priority=10)
@@ -75,7 +80,38 @@ def _gateway(
         monotonic=clock.monotonic,
         sleep=clock.sleep,
         utc_now=clock.utc_now,
+        activity_reporter=activity_reporter,
+        activity_heartbeat_seconds=activity_heartbeat_seconds,
     )
+
+
+def test_gateway_reports_silent_transport_without_response_body() -> None:
+    clock = FakeClock()
+    seen: list[ActivityEvent] = []
+    reporter = ActivityReporter(operation_id="op-1", listeners=[seen.append])
+    backend = ScriptedBackend(
+        [valid_response('{"value":"secret response body"}')],
+        on_exchange=lambda: time.sleep(0.07),
+    )
+
+    result = _gateway(
+        backend,
+        clock,
+        activity_reporter=reporter,
+        activity_heartbeat_seconds=0.02,
+    ).generate_structured(
+        REQUEST,
+        ExampleOutput,
+        budget=_window(clock),
+        trace=InMemoryModelTraceSink(),
+    )
+
+    assert result.value.value == "secret response body"
+    assert seen[0].state == "started"
+    assert any(event.kind == "heartbeat" for event in seen)
+    assert seen[-1].state == "completed"
+    assert all("secret response body" not in event.message for event in seen)
+    assert seen[-1].metrics["backend_id"] == "fake"
 
 
 def test_gateway_uses_minimum_remaining_deadline() -> None:
