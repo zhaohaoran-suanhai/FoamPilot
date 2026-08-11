@@ -31,6 +31,7 @@ class RecordingExecutor:
         self.invocations: list[list[str]] = []
         self.shell_values: list[bool] = []
         self.environments: list[dict[str, str] | None] = []
+        self.timeouts: list[float] = []
         self.before_execute = before_execute
 
     def __call__(self, command, **kwargs):
@@ -40,6 +41,7 @@ class RecordingExecutor:
         self.invocations.append(invoked)
         self.shell_values.append(kwargs["shell"])
         self.environments.append(kwargs.get("env"))
+        self.timeouts.append(kwargs["timeout"])
         names = {Path(value).name for value in invoked}
         marker = (
             "check"
@@ -213,6 +215,7 @@ def _run(
     *,
     workflow: WorkflowStore | None = None,
     attempt: int | None = None,
+    execution_seconds_used: float = 0,
 ):
     return runner.run(
         case_dir=case,
@@ -222,7 +225,50 @@ def _run(
         protected_paths=(),
         workflow=workflow,
         attempt=attempt,
+        execution_seconds_used=execution_seconds_used,
     )
+
+
+def test_runner_rejects_exhausted_cumulative_wall_budget(
+    tmp_path: Path,
+) -> None:
+    executor = RecordingExecutor(return_codes={"solve": 0})
+    case = tmp_path / "case"
+    case.mkdir()
+
+    result = _run(
+        _runner(tmp_path, executor),
+        case,
+        [_command("solve")],
+        _budget(max_wall_seconds=30),
+        execution_seconds_used=30,
+    )
+
+    assert result.passed is False
+    assert result.timed_out is True
+    assert result.execution_error_code == "EXECUTION_WALL_BUDGET_EXHAUSTED"
+    assert executor.invocations == []
+
+
+def test_runner_clamps_step_timeout_to_remaining_lineage_budget(
+    tmp_path: Path,
+) -> None:
+    executor = RecordingExecutor(return_codes={"solve": 0})
+    case = tmp_path / "case"
+    case.mkdir()
+
+    result = _run(
+        _runner(tmp_path, executor),
+        case,
+        [_command("solve", timeout_seconds=30)],
+        _budget(max_wall_seconds=30),
+        execution_seconds_used=29.5,
+    )
+
+    assert result.passed is True
+    assert len(executor.timeouts) == 1
+    assert 0 < executor.timeouts[0] <= 0.5
+    assert result.steps[0].elapsed_seconds >= 0
 
 
 def test_runner_marks_cancelled_step_without_solver_failure(

@@ -176,6 +176,21 @@ foampilot resume /tmp/foampilot-runs/PARENT_RUN \
   --json
 ```
 
+这里的 `resume` 只恢复 summary 明确允许的模型生成/修复请求，不是从任意 OpenFOAM 时间目录
+断点续算。若要从一个 manifest 有效的 parent 完整重新执行 preflight、case generation、
+OpenFOAM 和 public validation，并保留显式 lineage：
+
+```bash
+foampilot rerun /tmp/foampilot-runs/PARENT_RUN \
+  --run-root /tmp/foampilot-reruns \
+  --backend auto \
+  --model-name gpt-5.6-sol \
+  --json
+```
+
+修改 TaskSpec 或其他规范输入时使用 `--task` 和可重复的 `--change-category`；新 run 会标记为
+`rerun_with_changes`，原 parent 及其 manifest 保持不变。
+
 对完全相同的 `TaskSpec`，可以显式复用一个已经通过完整性、网格和 solver 正常结束
 检查的 ExecutionPlan；也可以显式启用内容寻址的几何/网格缓存：
 
@@ -195,6 +210,10 @@ qualification 也不启用复用。
 默认后端通过公开 `codex exec` 调用已登录的 Codex CLI；FoamPilot 不读取认证文件。
 任务可以允许串行或有界 MPI 执行。模型声明 `mpi_ranks`；MPI launcher 由 Runner 而不是
 模型负责。
+
+取消语义按后端区分：Codex CLI 与 OpenFOAM/MPI 属于受监督的本机进程，可执行
+`SIGTERM`/`SIGKILL` 升级；非流式 OpenAI-compatible HTTP 请求只能在请求前后检查取消，
+传输进行中最多需要等待响应或该请求 timeout，不能承诺立即中止远端请求。
 
 ## 公开知识与 Skills
 

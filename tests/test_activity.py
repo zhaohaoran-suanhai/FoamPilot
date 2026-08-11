@@ -137,6 +137,28 @@ def test_plain_sink_does_not_render_metrics_as_model_content() -> None:
     assert "output_text" not in rendered
 
 
+def test_reporter_drops_content_metrics_and_redacts_metric_strings() -> None:
+    seen: list[ActivityEvent] = []
+    reporter = ActivityReporter(operation_id="op-1", listeners=[seen.append])
+
+    reporter.emit(
+        kind="command",
+        state="started",
+        source="model",
+        metrics={
+            "output_text": "secret body",
+            "secret body as a key": "also secret",
+            "backend_id": "token=sk-123456789-secret",
+            "transport_attempt": 1,
+        },
+    )
+
+    assert seen[0].metrics == {
+        "backend_id": "token=[REDACTED]",
+        "transport_attempt": 1,
+    }
+
+
 def test_reporter_records_degraded_listener_without_raising() -> None:
     seen: list[ActivityEvent] = []
 
@@ -153,6 +175,26 @@ def test_reporter_records_degraded_listener_without_raising() -> None:
     assert reporter.degraded
     assert reporter.degradation_messages == ("OSError: disk full",)
     assert len(seen) == 1
+
+
+def test_reporter_propagates_critical_listener_failure() -> None:
+    seen: list[ActivityEvent] = []
+
+    def broken_control_listener(event: ActivityEvent) -> None:
+        del event
+        raise OSError("status disk full")
+
+    reporter = ActivityReporter(
+        operation_id="op-1",
+        listeners=[seen.append],
+        critical_listeners=[broken_control_listener],
+    )
+
+    with pytest.raises(OSError, match="status disk full"):
+        reporter.emit(kind="command", state="started", source="runner")
+
+    assert seen == []
+    assert reporter.degraded is False
 
 
 def test_reporter_delivers_concurrent_events_in_sequence_order() -> None:

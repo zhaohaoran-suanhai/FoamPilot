@@ -235,9 +235,10 @@ def _native_seconds(
                     f"{attempt_root.name} step {step.step_id} has no plan stage"
                 )
                 continue
-            result[stage_group[stage]] += _seconds(
-                step.started_at,
-                step.finished_at,
+            result[stage_group[stage]] += (
+                step.elapsed_seconds
+                if step.elapsed_seconds is not None
+                else _seconds(step.started_at, step.finished_at)
             )
     return result
 

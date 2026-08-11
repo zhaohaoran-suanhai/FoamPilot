@@ -92,6 +92,7 @@ class ResumeCompatibility(StrictModel):
     model: str
     backend_id: str
     backend_policy_sha256: str
+    runtime_policy_sha256: str
     package_version: str
     package_artifact_sha256: str
     git_revision: str | None = None
@@ -102,11 +103,14 @@ class ResumeCompatibility(StrictModel):
     skill_hash: str
     openfoam_target: dict[str, str]
     executable_names: list[str]
+    executable_paths: dict[str, str]
+    executable_identities: dict[str, str]
 
     @field_validator(
         "task_sha256",
         "public_assets_sha256",
         "backend_policy_sha256",
+        "runtime_policy_sha256",
         "package_artifact_sha256",
         "knowledge_hash",
         "skill_hash",

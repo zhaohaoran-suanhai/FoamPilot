@@ -318,6 +318,12 @@ class DesktopJobController(QObject):
         if decision != self._recovery_decision:
             self._recovery_decision = decision
             self.recovery_decision_changed.emit(decision)
+        if decision.state in {
+            RecoveryState.ORPHANED_STOPPED,
+            RecoveryState.FINALIZED,
+            RecoveryState.EVIDENCE_DAMAGED,
+        }:
+            self.job_poll_timer.stop()
 
     def reconcile_current_job(self):
         if self._active_store is None:

@@ -56,8 +56,48 @@ def test_job_reconcile_cli_reports_allowed_actions(
     payload = json.loads(capsys.readouterr().out)
 
     assert payload["state"] == "ORPHANED_STOPPED"
-    assert payload["code"] == "JOB_ORPHANED_STOPPED"
-    assert payload["allowed_actions"] == ["recover_finalize"]
+    assert payload["code"] == "JOB_ORPHANED_STOPPED_WITHOUT_RUN"
+    assert payload["allowed_actions"] == ["inspect"]
+
+
+def test_job_cancel_cli_rejects_terminal_or_orphaned_job(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    store = _store(tmp_path)
+    store.update_status(state=JobState.FAILED, terminal_code="FAILED")
+
+    assert main(["job", "cancel", str(store.root), "--json"]) == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "INVALID_INPUT"
+    assert "cannot be cancelled" in payload["error"]
+    assert not store.cancel_path.exists()
+
+
+def test_job_cancel_cli_reports_terminal_race_truthfully(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    store = _store(tmp_path)
+    original = LocalJobStore.request_cancel
+
+    def finish_during_cancel(self, *, requested_by):
+        request = original(self, requested_by=requested_by)
+        self.update_status(state=JobState.FAILED, terminal_code="CLI_EXIT_5")
+        return request
+
+    monkeypatch.setattr(
+        LocalJobStore,
+        "request_cancel",
+        finish_during_cancel,
+    )
+
+    assert main(["job", "cancel", str(store.root), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ALREADY_TERMINAL"
+    assert payload["job_state"] == "FAILED"
+    assert payload["code"] == "JOB_TERMINAL_RUN_MISSING"
 
 
 def test_job_recover_finalize_cli_freezes_partial_run(

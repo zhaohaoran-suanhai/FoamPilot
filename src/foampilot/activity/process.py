@@ -134,8 +134,20 @@ def run_supervised_process(
             )
         raise
 
+    def emit_activity(**values: object) -> None:
+        if reporter is None:
+            return
+        try:
+            reporter.emit(**values)
+        except BaseException:
+            _terminate_owned_process_group(
+                process,
+                grace_seconds=cancellation_grace_seconds,
+            )
+            raise
+
     if reporter is not None:
-        reporter.emit(
+        emit_activity(
             kind="command",
             state="started",
             source=source,
@@ -155,7 +167,7 @@ def run_supervised_process(
             on_tick(elapsed, process.pid)
         except Exception as error:
             if reporter is not None:
-                reporter.emit(
+                emit_activity(
                     kind="warning",
                     state="failed",
                     source=source,
@@ -215,7 +227,7 @@ def run_supervised_process(
                 break
             if elapsed >= next_heartbeat:
                 if reporter is not None:
-                    reporter.emit(
+                    emit_activity(
                         kind="heartbeat",
                         state="alive",
                         source=source,
@@ -235,7 +247,7 @@ def run_supervised_process(
     notify_tick(elapsed_seconds)
     returncode = None if timed_out or cancelled else process.returncode
     if reporter is not None:
-        reporter.emit(
+        emit_activity(
             kind="command",
             state=(
                 "cancelled"

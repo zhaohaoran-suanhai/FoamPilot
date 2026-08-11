@@ -210,6 +210,9 @@ class FoamPilotMainWindow(QMainWindow):
         self.solve_action.triggered.connect(self.start_solve)
         toolbar.addAction(self.solve_action)
         self.cancel_action = QAction("取消任务", self)
+        self.cancel_action.setToolTip(
+            "OpenFOAM/Codex CLI 会终止受控进程组；非流式 HTTP 模型请求需等待响应或超时"
+        )
         self.cancel_action.triggered.connect(self.cancel_job)
         toolbar.addAction(self.cancel_action)
         self.terminate_orphan_action = QAction("终止孤儿进程", self)
@@ -669,7 +672,10 @@ class FoamPilotMainWindow(QMainWindow):
             self._desktop_error("DESKTOP_CANCEL_FAILED", str(error))
             return
         self.job_status_label.setText("IDE Job: CANCEL_REQUESTED")
-        self.statusBar().showMessage("已请求取消；正在等待受控进程组退出。", 8000)
+        self.statusBar().showMessage(
+            "已请求取消；进程型任务正在退出，HTTP 模型请求可能需等待响应或超时。",
+            8000,
+        )
 
     def terminate_orphan_job(self) -> None:
         try:
@@ -1220,7 +1226,7 @@ class FoamPilotMainWindow(QMainWindow):
         if self._recovery_decision is not None:
             self.cancel_action.setEnabled(RecoveryAction.CANCEL in allowed)
         self.terminate_orphan_action.setEnabled(
-            RecoveryAction.TERMINATE_ORPHAN in allowed and not busy
+            RecoveryAction.TERMINATE_ORPHAN in allowed
         )
         self.recover_finalize_action.setEnabled(
             RecoveryAction.RECOVER_FINALIZE in allowed and not busy

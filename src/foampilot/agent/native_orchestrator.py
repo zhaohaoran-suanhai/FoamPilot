@@ -233,9 +233,38 @@ def _execution_environment_failure(
     )
 
 
+def _execution_budget_failure(
+    *,
+    evidence_paths: Sequence[str],
+    step_id: str | None,
+) -> FailureRecord:
+    return FailureRecord(
+        domain=FailureDomain.WORKFLOW,
+        code="EXECUTION_WALL_BUDGET_EXHAUSTED",
+        step_id=step_id,
+        detail=(
+            "the cumulative OpenFOAM execution time across this continuation "
+            "lineage reached task.resource_budget.max_wall_seconds"
+        ),
+        message="累计求解时间预算已用尽。",
+        recovery=(
+            "检查已有日志；如需增加 max_wall_seconds，请以 rerun-with-changes "
+            "启动新的完整求解。"
+        ),
+        evidence_paths=list(evidence_paths),
+    )
+
+
 def _run_result_seconds(run: PlanRunResult) -> float:
     return sum(
-        max((step.finished_at - step.started_at).total_seconds(), 0.0)
+        (
+            step.elapsed_seconds
+            if step.elapsed_seconds is not None
+            else max(
+                (step.finished_at - step.started_at).total_seconds(),
+                0.0,
+            )
+        )
         for step in run.steps
     )
 
@@ -978,6 +1007,7 @@ class NativeAgent:
         current = build_resume_fingerprint(
             task=task,
             environment=environment,
+            runtime_config=self.runtime_config,
             model=self.gateway.primary_model,
             backend_id=self.gateway.primary_backend_id,
             backend_policy_sha256=self.gateway.policy_sha256,
@@ -1612,6 +1642,7 @@ class NativeAgent:
             fingerprint = build_resume_fingerprint(
                 task=task,
                 environment=environment,
+                runtime_config=self.runtime_config,
                 model=self.gateway.primary_model,
                 backend_id=self.gateway.primary_backend_id,
                 backend_policy_sha256=self.gateway.policy_sha256,
@@ -2476,6 +2507,7 @@ class NativeAgent:
                     "budget": task.resource_budget,
                     "risk_report": risk_report,
                     "protected_paths": protected_paths,
+                    "execution_seconds_used": execution_seconds_used,
                 }
                 if runner_records_live_workflow:
                     runner_arguments.update(
@@ -2578,10 +2610,18 @@ class NativeAgent:
                         stage="openfoam",
                     )
                 if run_result.execution_error_code is not None:
+                    wall_budget_exhausted = (
+                        run_result.execution_error_code
+                        == "EXECUTION_WALL_BUDGET_EXHAUSTED"
+                    )
                     attempts.append(
                         AttemptSummary(
                             attempt=attempt_number,
-                            status="BLOCKED_ENVIRONMENT",
+                            status=(
+                                "EXECUTION_BUDGET_EXHAUSTED"
+                                if wall_budget_exhausted
+                                else "BLOCKED_ENVIRONMENT"
+                            ),
                             failed_step_id=run_result.failed_step_id,
                         )
                     )
@@ -2594,18 +2634,33 @@ class NativeAgent:
                     return self._finish(
                         run_dir=run_dir,
                         task=task,
-                        status="BLOCKED_ENVIRONMENT",
+                        status=(
+                            "EXECUTION_WALL_BUDGET_EXHAUSTED"
+                            if wall_budget_exhausted
+                            else "BLOCKED_ENVIRONMENT"
+                        ),
                         attempts=attempts,
-                        message="Sandbox setup failed during execution.",
+                        message=(
+                            "Cumulative OpenFOAM execution budget exhausted."
+                            if wall_budget_exhausted
+                            else "Sandbox setup failed during execution."
+                        ),
                         model_calls=model_calls,
-                        primary_failure=_execution_environment_failure(
-                            code=run_result.execution_error_code,
-                            detail=(
-                                "the selected sandbox backend failed before "
-                                "a trustworthy OpenFOAM result was produced"
-                            ),
-                            evidence_paths=evidence,
-                            step_id=run_result.failed_step_id,
+                        primary_failure=(
+                            _execution_budget_failure(
+                                evidence_paths=evidence,
+                                step_id=run_result.failed_step_id,
+                            )
+                            if wall_budget_exhausted
+                            else _execution_environment_failure(
+                                code=run_result.execution_error_code,
+                                detail=(
+                                    "the selected sandbox backend failed before "
+                                    "a trustworthy OpenFOAM result was produced"
+                                ),
+                                evidence_paths=evidence,
+                                step_id=run_result.failed_step_id,
+                            )
                         ),
                     )
                 if not runner_records_live_workflow:

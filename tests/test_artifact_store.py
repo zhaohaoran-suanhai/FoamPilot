@@ -39,6 +39,21 @@ def test_artifact_store_rejects_run_outside_root(tmp_path: Path) -> None:
         store.finalize(outside)
 
 
+def test_verify_reports_malformed_manifest_files_without_throwing(
+    tmp_path: Path,
+) -> None:
+    store = ArtifactStore(tmp_path / "runs")
+    run_dir = store.create_run()
+    (run_dir / "artifact-manifest.json").write_text(
+        '{"schema_version": 1, "files": null}\n',
+        encoding="utf-8",
+    )
+
+    assert store.verify(run_dir) == [
+        "invalid manifest: files must be a mapping"
+    ]
+
+
 def test_finalize_never_leaves_a_partial_manifest(
     tmp_path: Path,
     monkeypatch,

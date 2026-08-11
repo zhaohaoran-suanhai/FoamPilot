@@ -137,6 +137,18 @@ def reconcile_job(
         run_dir,
     )
     issues = (*path_issues, *artifact_issues)
+    control_failure = store.root / "worker-control-failure.json"
+    control_failure_recorded = False
+    if control_failure.is_file() and not control_failure.is_symlink():
+        try:
+            payload = json.loads(control_failure.read_text(encoding="utf-8"))
+            control_failure_recorded = (
+                isinstance(payload, dict)
+                and payload.get("job_id") == spec.job_id
+                and payload.get("code") == "JOB_STATUS_WRITE_FAILED"
+            )
+        except (OSError, ValueError):
+            control_failure_recorded = False
 
     if worker_alive and lock_held and status.state in _ACTIVE_STATES:
         heartbeat = status.last_heartbeat_at
@@ -215,6 +227,36 @@ def reconcile_job(
             manifest_issues=tuple(issues) or ("terminal run is invalid",),
         )
     if status.state in _TERMINAL_STATES and run_dir is None:
+        if (
+            status.state == JobState.CANCELLED
+            and status.terminal_code == "USER_CANCELLED"
+        ):
+            return RecoveryDecision(
+                job_id=spec.job_id,
+                state=RecoveryState.FINALIZED,
+                code="JOB_CANCELLED_BEFORE_RUN",
+                reason_zh="任务在产生 run 前已按用户请求正常取消。",
+                recovery_zh="可检查 worker 日志，或从原始规范输入重新提交。",
+                allowed_actions=(RecoveryAction.INSPECT,),
+                worker_alive=worker_alive,
+                child_alive=child_alive,
+                writer_lock_held=lock_held,
+            )
+        if status.state == JobState.FAILED and status.terminal_code in {
+            "JOB_BOOTSTRAP_FAILED",
+            "JOB_STATUS_WRITE_FAILED",
+        }:
+            return RecoveryDecision(
+                job_id=spec.job_id,
+                state=RecoveryState.FINALIZED,
+                code=status.terminal_code,
+                reason_zh="worker 在产生 run 前记录了明确的本机控制面失败。",
+                recovery_zh="检查 worker 日志并修复输入或存储后重新提交。",
+                allowed_actions=(RecoveryAction.INSPECT,),
+                worker_alive=worker_alive,
+                child_alive=child_alive,
+                writer_lock_held=lock_held,
+            )
         if spec.operation in _RUN_PRODUCING_OPERATIONS:
             return RecoveryDecision(
                 job_id=spec.job_id,
@@ -240,6 +282,37 @@ def reconcile_job(
             writer_lock_held=lock_held,
         )
     if not worker_alive and not child_alive and not lock_held:
+        if control_failure_recorded:
+            return RecoveryDecision(
+                job_id=spec.job_id,
+                state=RecoveryState.ORPHANED_STOPPED,
+                code="JOB_STATUS_WRITE_FAILED",
+                reason_zh="worker 已停止，且独立证据记录了 job 状态持久化失败。",
+                recovery_zh=(
+                    "检查 worker 日志；有 partial run 时先固化中断，否则修复存储后重新提交。"
+                ),
+                allowed_actions=(
+                    (RecoveryAction.RECOVER_FINALIZE,)
+                    if run_dir is not None
+                    else (RecoveryAction.INSPECT,)
+                ),
+                worker_alive=False,
+                child_alive=False,
+                writer_lock_held=False,
+                run_dir=run_dir,
+            )
+        if run_dir is None:
+            return RecoveryDecision(
+                job_id=spec.job_id,
+                state=RecoveryState.ORPHANED_STOPPED,
+                code="JOB_ORPHANED_STOPPED_WITHOUT_RUN",
+                reason_zh="worker 已停止，但任务尚未产生可固化的 run。",
+                recovery_zh="检查 worker 日志，并从原始规范输入重新提交任务。",
+                allowed_actions=(RecoveryAction.INSPECT,),
+                worker_alive=False,
+                child_alive=False,
+                writer_lock_held=False,
+            )
         return RecoveryDecision(
             job_id=spec.job_id,
             state=RecoveryState.ORPHANED_STOPPED,

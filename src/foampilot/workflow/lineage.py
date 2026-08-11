@@ -16,6 +16,7 @@ from foampilot import __version__
 from foampilot.artifacts import ArtifactStore, RunSummary
 from foampilot.environment import EnvironmentSnapshot
 from foampilot.plans import ExecutionPlan
+from foampilot.runtime.models import RuntimeConfig
 from foampilot.tasks import TaskSpec
 
 from .models import (
@@ -32,6 +33,7 @@ _STRICT_FIELDS = (
     "model",
     "backend_id",
     "backend_policy_sha256",
+    "runtime_policy_sha256",
     "package_version",
     "package_artifact_sha256",
     "git_revision",
@@ -140,10 +142,71 @@ def _public_assets_sha256(
     return _hash_json(entries)
 
 
+def _runtime_policy_sha256(
+    config: RuntimeConfig,
+    environment: EnvironmentSnapshot,
+) -> str:
+    """Hash the local execution contract, including sandbox identity."""
+
+    bubblewrap_sha256: str | None = None
+    if config.bubblewrap is not None and config.bubblewrap.is_file():
+        bubblewrap_sha256 = _file_sha256(config.bubblewrap)
+    return _hash_json(
+        {
+            "config": config.model_dump(mode="json"),
+            "bubblewrap_sha256": bubblewrap_sha256,
+            "environment": {
+                "distribution": environment.distribution,
+                "version": environment.version,
+                "openfoam_root": str(environment.openfoam_root),
+                "mpi_launcher": (
+                    str(environment.mpi_launcher)
+                    if environment.mpi_launcher is not None
+                    else None
+                ),
+                "mpi_launcher_identity": (
+                    _executable_identity(environment.mpi_launcher)
+                    if environment.mpi_launcher is not None
+                    else None
+                ),
+                "max_mpi_ranks": environment.max_mpi_ranks,
+            },
+        }
+    )
+
+
+def _executable_identity(path: Path) -> str:
+    """Return a cheap rebuild-sensitive identity for a local executable."""
+
+    try:
+        stat = path.stat()
+        facts: dict[str, object] = {
+            "path": str(path),
+            "device": stat.st_dev,
+            "inode": stat.st_ino,
+            "bytes": stat.st_size,
+            "mtime_ns": stat.st_mtime_ns,
+            "mode": stat.st_mode,
+        }
+    except OSError:
+        facts = {"path": str(path), "unavailable": True}
+    return _hash_json(facts)
+
+
+def _environment_executable_paths(
+    environment: EnvironmentSnapshot,
+) -> dict[str, Path]:
+    paths = {item.name: item.path for item in environment.commands}
+    if environment.gmsh is not None:
+        paths["gmsh"] = environment.gmsh
+    return paths
+
+
 def build_resume_fingerprint(
     *,
     task: TaskSpec,
     environment: EnvironmentSnapshot,
+    runtime_config: RuntimeConfig,
     model: str,
     backend_id: str,
     backend_policy_sha256: str,
@@ -155,6 +218,7 @@ def build_resume_fingerprint(
 ) -> ResumeCompatibility:
     """Describe every input whose change would make resume a new experiment."""
 
+    executable_paths = _environment_executable_paths(environment)
     return ResumeCompatibility(
         task_sha256=_hash_json(task.model_dump(mode="json")),
         public_assets_sha256=_public_assets_sha256(
@@ -164,6 +228,10 @@ def build_resume_fingerprint(
         model=model,
         backend_id=backend_id,
         backend_policy_sha256=backend_policy_sha256,
+        runtime_policy_sha256=_runtime_policy_sha256(
+            runtime_config,
+            environment,
+        ),
         package_version=__version__,
         package_artifact_sha256=_package_artifact_sha256(),
         git_revision=_git_revision(),
@@ -174,6 +242,14 @@ def build_resume_fingerprint(
         skill_hash=_hash_text(skills_text),
         openfoam_target=task.openfoam_target.model_dump(mode="json"),
         executable_names=sorted(environment.available_executable_names),
+        executable_paths={
+            name: str(executable_paths[name])
+            for name in sorted(executable_paths)
+        },
+        executable_identities={
+            name: _executable_identity(executable_paths[name])
+            for name in sorted(executable_paths)
+        },
     )
 
 
@@ -203,7 +279,6 @@ class LineageRecord(StrictModel):
         "strict_resume",
         "rerun_same_input",
         "rerun_with_changes",
-        "openfoam_continuation",
     ]
     parent_run_id: str
     parent_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -332,6 +407,10 @@ def _run_result_seconds(path: Path) -> float:
     for step in steps:
         if not isinstance(step, dict):
             continue
+        elapsed = step.get("elapsed_seconds")
+        if isinstance(elapsed, (int, float)) and elapsed >= 0:
+            total += float(elapsed)
+            continue
         try:
             started = datetime.fromisoformat(str(step["started_at"]))
             finished = datetime.fromisoformat(str(step["finished_at"]))
@@ -369,9 +448,12 @@ def prepare_continuation(
     fingerprint_path = parent / "resume-compatibility.json"
     if not fingerprint_path.is_file():
         raise ResumeCompatibilityError("resume_compatibility")
-    previous = ResumeCompatibility.model_validate(
-        _read_json(fingerprint_path)
-    )
+    try:
+        previous = ResumeCompatibility.model_validate(
+            _read_json(fingerprint_path)
+        )
+    except ValueError as error:
+        raise ResumeCompatibilityError("resume_compatibility") from error
     for field in _STRICT_FIELDS:
         if getattr(previous, field) != getattr(current, field):
             raise ResumeCompatibilityError(field)
@@ -381,6 +463,15 @@ def prepare_continuation(
     )
     if missing_executables:
         raise ResumeCompatibilityError("executable_names")
+    for name in previous.executable_names:
+        if previous.executable_paths.get(
+            name
+        ) != current.executable_paths.get(name):
+            raise ResumeCompatibilityError("executable_identity")
+        if previous.executable_identities.get(
+            name
+        ) != current.executable_identities.get(name):
+            raise ResumeCompatibilityError("executable_identity")
     warnings: list[str] = []
     extra_executables = sorted(
         set(current.executable_names) - set(previous.executable_names)
@@ -497,11 +588,16 @@ def prepare_rerun(
     store.read_summary(parent)
     parent_task = load_parent_task(parent)
     fingerprint_path = parent / "resume-compatibility.json"
-    fingerprint = (
-        ResumeCompatibility.model_validate(_read_json(fingerprint_path))
-        if fingerprint_path.is_file()
-        else None
-    )
+    fingerprint: ResumeCompatibility | None = None
+    if fingerprint_path.is_file():
+        try:
+            fingerprint = ResumeCompatibility.model_validate(
+                _read_json(fingerprint_path)
+            )
+        except ValueError:
+            # A legacy/unknown fingerprint cannot be reused, but its run can
+            # still be the immutable parent of a cold rerun.
+            fingerprint = None
     return RerunInput(
         parent_run=parent,
         parent_manifest_sha256=store.manifest_sha256(parent),
@@ -542,6 +638,7 @@ def build_lineage_record(
                 "model": "model",
                 "backend_id": "backend",
                 "backend_policy_sha256": "backend_policy",
+                "runtime_policy_sha256": "runtime_policy",
                 "package_version": "package",
                 "package_artifact_sha256": "package",
                 "git_revision": "package",
@@ -551,6 +648,8 @@ def build_lineage_record(
                 "skill_hash": "skills",
                 "openfoam_target": "openfoam_target",
                 "executable_names": "runtime_executables",
+                "executable_paths": "runtime_executables",
+                "executable_identities": "runtime_executables",
             }
             for field, category in mapping.items():
                 if getattr(rerun.parent_fingerprint, field) != getattr(

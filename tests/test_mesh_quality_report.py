@@ -29,6 +29,7 @@ def _run(
         return_code=return_code,
         started_at=now,
         finished_at=now,
+        elapsed_seconds=0.0,
         timed_out=False,
         stdout_path=stdout,
         stderr_path=stderr,

@@ -113,6 +113,7 @@ def _step(
         return_code=return_code,
         started_at=now,
         finished_at=now,
+        elapsed_seconds=0.0,
         timed_out=timed_out,
         stdout_path=stdout_path,
         stderr_path=stderr_path,

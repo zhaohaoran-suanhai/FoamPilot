@@ -121,8 +121,9 @@ class RepairReuseRunner:
         budget,
         risk_report,
         protected_paths,
+        execution_seconds_used=0.0,
     ):
-        del budget, risk_report
+        del budget, risk_report, execution_seconds_used
         case = Path(case_dir)
         self.calls.append([item.executable for item in commands])
         call_number = len(self.calls)
@@ -167,6 +168,7 @@ class RepairReuseRunner:
                     return_code=return_code,
                     started_at=now,
                     finished_at=now,
+                    elapsed_seconds=0.0,
                     timed_out=False,
                     stdout_path=stdout,
                     stderr_path=stderr,

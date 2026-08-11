@@ -502,6 +502,8 @@ def _worker(arguments: argparse.Namespace) -> int:
 def _job(arguments: argparse.Namespace) -> int:
     from foampilot.jobs import (
         LocalJobStore,
+        JobState,
+        RecoveryAction,
         reconcile_job,
         recover_finalize,
         terminate_orphan,
@@ -520,7 +522,45 @@ def _job(arguments: argparse.Namespace) -> int:
         )
         return 0
     if arguments.job_command == "cancel":
+        status = store.read_status()
+        decision = reconcile_job(store.root)
+        pristine_submission = (
+            status.state == JobState.SUBMITTED
+            and status.worker is None
+            and status.current_child is None
+            and not decision.writer_lock_held
+        )
+        if (
+            RecoveryAction.CANCEL not in decision.allowed_actions
+            and not pristine_submission
+        ):
+            raise ValueError(
+                f"job cannot be cancelled in recovery state "
+                f"{decision.state.value}: {decision.code}"
+            )
         request = store.request_cancel(requested_by="cli")
+        observed_status = store.read_status()
+        if observed_status.state in {
+            JobState.CANCELLED,
+            JobState.COMPLETED,
+            JobState.FAILED,
+            JobState.INTERRUPTED,
+        }:
+            observed = reconcile_job(store.root)
+            _emit(
+                {
+                    "status": "ALREADY_TERMINAL",
+                    "job_state": observed_status.state.value,
+                    "code": observed.code,
+                    "request": request.model_dump(mode="json"),
+                },
+                as_json=arguments.json,
+                human=(
+                    f"ALREADY_TERMINAL: {observed_status.state.value} "
+                    f"{observed.code}"
+                ),
+            )
+            return 0
         _emit(
             {
                 "status": "CANCEL_REQUESTED",

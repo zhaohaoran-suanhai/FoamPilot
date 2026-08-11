@@ -119,9 +119,15 @@ class ArtifactStore:
         manifest = directory / self.manifest_name
         if not manifest.is_file():
             return [f"missing manifest: {manifest}"]
-        expected = json.loads(manifest.read_text(encoding="utf-8")).get(
-            "files", {}
-        )
+        try:
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            return [f"invalid manifest: {type(error).__name__}"]
+        if not isinstance(payload, dict):
+            return ["invalid manifest: root must be a mapping"]
+        expected = payload.get("files")
+        if not isinstance(expected, dict):
+            return ["invalid manifest: files must be a mapping"]
         actual = self._entries(directory)
         problems: list[str] = []
         for relative in sorted(set(expected) - set(actual)):

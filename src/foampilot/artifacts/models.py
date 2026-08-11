@@ -33,6 +33,7 @@ NativeStatus = Literal[
 
 AttemptStatus = Literal[
     "BLOCKED_ENVIRONMENT",
+    "EXECUTION_BUDGET_EXHAUSTED",
     "CASE_GENERATION_FAILED",
     "STATIC_INSPECTION_FAILED",
     "MESH_FAILED",
@@ -83,6 +84,7 @@ class RunSummary(StrictModel):
             "REQUEST_INCOMPLETE",
             "ROUTING_UNRESOLVED",
             "BLOCKED_ENVIRONMENT",
+            "EXECUTION_WALL_BUDGET_EXHAUSTED",
             "PLAN_INVALID",
             "GENERATION_INVALID",
             "CASE_GENERATION_FAILED",

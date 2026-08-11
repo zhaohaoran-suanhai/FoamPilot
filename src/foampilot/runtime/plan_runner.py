@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import time
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -409,7 +410,10 @@ class PlanRunner:
         protected_paths: Sequence[Path],
         workflow: WorkflowStore | None = None,
         attempt: int | None = None,
+        execution_seconds_used: float = 0.0,
     ) -> PlanRunResult:
+        if execution_seconds_used < 0:
+            raise ValueError("execution_seconds_used must be non-negative")
         case = Path(case_dir).resolve()
         if not case.is_relative_to(self.workspace_root) or not case.is_dir():
             raise ValueError("case is missing or outside runner workspace")
@@ -428,8 +432,23 @@ class PlanRunner:
         failed_step_id: str | None = None
         run_timed_out = False
         execution_error_code: str | None = None
+        run_started_monotonic = time.monotonic()
 
         for index, command in enumerate(commands, start=1):
+            remaining_wall_seconds = (
+                float(budget.max_wall_seconds)
+                - execution_seconds_used
+                - (time.monotonic() - run_started_monotonic)
+            )
+            if remaining_wall_seconds <= 0:
+                failed_step_id = command.step_id
+                run_timed_out = True
+                execution_error_code = "EXECUTION_WALL_BUDGET_EXHAUSTED"
+                break
+            effective_timeout = min(
+                float(command.timeout_seconds),
+                remaining_wall_seconds,
+            )
             stdout_path = log_directory / f"{index:02d}-{command.step_id}.stdout.log"
             stderr_path = log_directory / f"{index:02d}-{command.step_id}.stderr.log"
             try:
@@ -457,6 +476,7 @@ class PlanRunner:
                 break
 
             started = _utc_now()
+            step_started_monotonic = time.monotonic()
             if workflow is not None:
                 workflow.record(
                     WorkflowEvent.started(
@@ -489,7 +509,7 @@ class PlanRunner:
                 if self.executor is subprocess.run:
                     completed = run_supervised_process(
                         full_argv,
-                        timeout_seconds=command.timeout_seconds,
+                        timeout_seconds=effective_timeout,
                         source="runner",
                         reporter=self.activity_reporter,
                         stage=command.stage.value,
@@ -506,6 +526,7 @@ class PlanRunner:
                     cancelled = completed.cancelled
                     started = completed.started_at
                     finished = completed.finished_at
+                    step_elapsed_seconds = completed.elapsed_seconds
                     log_observer.finish(completed.elapsed_seconds, completed.pid)
                 else:
                     try:
@@ -515,7 +536,7 @@ class PlanRunner:
                             stdout=stdout_stream,
                             stderr=stderr_stream,
                             check=False,
-                            timeout=command.timeout_seconds,
+                            timeout=effective_timeout,
                             text=True,
                             shell=False,
                             **executor_options,
@@ -525,6 +546,10 @@ class PlanRunner:
                         timed_out = True
                         return_code = None
                     finished = _utc_now()
+                    step_elapsed_seconds = max(
+                        time.monotonic() - step_started_monotonic,
+                        0.0,
+                    )
 
             semantic_failure = False
             if command.executable == "checkMesh" and return_code == 0 and not timed_out:
@@ -541,6 +566,7 @@ class PlanRunner:
                 return_code=return_code,
                 started_at=started,
                 finished_at=finished,
+                elapsed_seconds=step_elapsed_seconds,
                 timed_out=timed_out,
                 cancelled=cancelled,
                 stdout_path=stdout_path,
@@ -557,6 +583,8 @@ class PlanRunner:
             )
             if sandbox_setup_failure:
                 execution_error_code = "SANDBOX_SETUP_FAILED"
+            elif timed_out and effective_timeout < command.timeout_seconds:
+                execution_error_code = "EXECUTION_WALL_BUDGET_EXHAUSTED"
             step_failed = (
                 timed_out or cancelled or return_code != 0 or semantic_failure
             )

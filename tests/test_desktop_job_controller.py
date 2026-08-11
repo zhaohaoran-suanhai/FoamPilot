@@ -273,7 +273,7 @@ def test_attach_latest_exposes_orphaned_stopped_job(
     assert controller.current_job_dir == job_root.resolve()
     assert decisions[-1].state == RecoveryState.ORPHANED_STOPPED
     assert controller.is_running is False
-    controller.job_poll_timer.stop()
+    assert controller.job_poll_timer.isActive() is False
 
 
 def test_attach_latest_falls_back_to_most_recent_finalized_job(
@@ -328,4 +328,4 @@ def test_attach_latest_falls_back_to_most_recent_finalized_job(
     assert decisions[-1].state == RecoveryState.FINALIZED
     assert finished == []
     assert controller.is_running is False
-    controller.job_poll_timer.stop()
+    assert controller.job_poll_timer.isActive() is False

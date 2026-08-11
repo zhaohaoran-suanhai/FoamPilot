@@ -181,7 +181,8 @@ def test_terminate_orphan_is_identity_checked_and_leaves_stopped_state(
 
     assert result.state == RecoveryState.ORPHANED_STOPPED
     assert result.child_alive is False
-    assert RecoveryAction.RECOVER_FINALIZE in result.allowed_actions
+    assert result.code == "JOB_ORPHANED_STOPPED_WITHOUT_RUN"
+    assert result.allowed_actions == (RecoveryAction.INSPECT,)
 
 
 def test_reconcile_dead_worker_and_child_is_orphaned_stopped(
@@ -199,6 +200,22 @@ def test_reconcile_dead_worker_and_child_is_orphaned_stopped(
     decision = reconcile_job(store.root, now=lambda: NOW)
 
     assert decision.state == RecoveryState.ORPHANED_STOPPED
+    assert decision.code == "JOB_ORPHANED_STOPPED_WITHOUT_RUN"
+    assert decision.allowed_actions == (RecoveryAction.INSPECT,)
+
+
+def test_reconcile_stopped_partial_run_allows_recover_finalize(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path)
+    run_dir = store.root / "run-partial"
+    run_dir.mkdir()
+    store.update_status(state=JobState.RUNNING, run_dir=run_dir.name)
+
+    decision = reconcile_job(store.root, now=lambda: NOW)
+
+    assert decision.state == RecoveryState.ORPHANED_STOPPED
+    assert decision.code == "JOB_ORPHANED_STOPPED"
     assert decision.allowed_actions == (RecoveryAction.RECOVER_FINALIZE,)
 
 
@@ -232,6 +249,24 @@ def test_reconcile_terminal_solve_without_run_is_evidence_damaged(
     assert decision.state == RecoveryState.EVIDENCE_DAMAGED
     assert decision.code == "JOB_TERMINAL_RUN_MISSING"
     assert decision.allowed_actions == (RecoveryAction.INSPECT,)
+
+
+def test_reconcile_pre_run_user_cancel_is_not_evidence_damage(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path)
+    store.update_status(
+        state=JobState.CANCELLED,
+        finished_at=NOW,
+        terminal_code="USER_CANCELLED",
+    )
+
+    decision = reconcile_job(store.root, now=lambda: NOW)
+
+    assert decision.state == RecoveryState.FINALIZED
+    assert decision.code == "JOB_CANCELLED_BEFORE_RUN"
+    assert decision.allowed_actions == (RecoveryAction.INSPECT,)
+    assert decision.manifest_issues == ()
 
 
 def test_reconcile_terminal_plan_without_run_is_finalized(tmp_path: Path) -> None:

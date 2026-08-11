@@ -9,12 +9,22 @@ FoamPilot 的重要变更记录在此文件中。版本号遵循 Semantic Versio
 
 - 增加统一核心活动事件、模型/OpenFOAM 心跳、日志增长和增量残差事件。
 - 增加工程内持久化本机 job、detached worker、进程身份校验、心跳、取消请求和 Desktop 重连。
+- 增加确定性 job reconcile、身份安全的孤儿进程终止、`INTERRUPTED` 中立固化，以及
+  `job reconcile`/`job recover-finalize` 命令。
+- 增加跨 job 的严格模型阶段 resume、完整 `rerun` 与不可变 `lineage.json`；Desktop 只按
+  恢复证据启用对应操作，并明确不支持通用 OpenFOAM 时间步 continuation。
 
 ### Changed
 
 - Desktop 长任务不再由窗口进程持有；关闭窗口后继续运行，重新打开工程可恢复观察并显式取消。
 - 活跃 run 改为增量读取 workflow/log，节流文件扫描、缓存 manifest 验证，并在后台线程构建
   projection。
+- artifact manifest 改为原子、排他写入；被中断的 recover-finalize 可幂等完成，不会把中断
+  错报为 solver failure 或成功。
+- strict resume 现在强制执行跨 lineage 的累计 OpenFOAM wall budget，并把 runtime/isolation、
+  OpenFOAM executable identity 与 bubblewrap identity 纳入兼容性指纹。
+- job 状态持久化改为控制面关键写入；Desktop 孤儿终止、终态轮询和无 partial run 恢复动作按
+  最终 reconcile 证据收紧。
 
 ## [0.2.0] - 2026-08-11
 

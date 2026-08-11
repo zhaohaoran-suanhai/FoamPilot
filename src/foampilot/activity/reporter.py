@@ -36,6 +36,37 @@ _SECRET_PATTERNS = (
         r"\s*[:=]\s*[^\s,;]+"
     ),
 )
+_SENSITIVE_METRIC_KEYS = frozenset(
+    {
+        "api_key",
+        "access_token",
+        "auth_token",
+        "authorization",
+        "output_text",
+        "password",
+        "prompt",
+        "request_body",
+        "response",
+        "response_body",
+        "system_prompt",
+        "user_prompt",
+    }
+)
+_ALLOWED_METRIC_KEYS = frozenset(
+    {
+        "backend_id",
+        "field",
+        "final_residual",
+        "initial_residual",
+        "iteration",
+        "model",
+        "new_bytes",
+        "output_bytes",
+        "simulation_time",
+        "solver_iterations",
+        "transport_attempt",
+    }
+)
 
 
 def _safe_message(value: str) -> str:
@@ -43,6 +74,25 @@ def _safe_message(value: str) -> str:
     for pattern in _SECRET_PATTERNS:
         text = pattern.sub("[REDACTED]", text)
     return text if len(text) <= 480 else text[:477] + "..."
+
+
+def _safe_metrics(
+    values: dict[str, float | int | str] | None,
+) -> dict[str, float | int | str]:
+    if not values:
+        return {}
+    sanitized: dict[str, float | int | str] = {}
+    for key, value in values.items():
+        normalized_key = key.casefold()
+        if (
+            normalized_key in _SENSITIVE_METRIC_KEYS
+            or normalized_key not in _ALLOWED_METRIC_KEYS
+        ):
+            continue
+        sanitized[normalized_key] = (
+            _safe_message(value) if isinstance(value, str) else value
+        )
+    return sanitized
 
 
 class ActivityReporter:
@@ -53,6 +103,7 @@ class ActivityReporter:
         *,
         operation_id: str,
         listeners: Iterable[ActivityListener] = (),
+        critical_listeners: Iterable[ActivityListener] = (),
         utc_now: Callable[[], datetime] | None = None,
         cancel_requested: CancellationCheck | None = None,
     ) -> None:
@@ -60,6 +111,7 @@ class ActivityReporter:
             raise ValueError("operation_id must not be empty")
         self.operation_id = operation_id
         self._listeners = list(listeners)
+        self._critical_listeners = list(critical_listeners)
         self._utc_now = utc_now or (lambda: datetime.now(timezone.utc))
         self._cancel_requested = cancel_requested
         self._sequence = 0
@@ -147,11 +199,14 @@ class ActivityReporter:
                 pid=pid,
                 detail_code=detail_code,
                 message=_safe_message(message),
-                metrics=metrics or {},
+                metrics=_safe_metrics(metrics),
                 evidence_path=evidence_path,
                 evidence_offset=evidence_offset,
             )
+            critical_listeners = tuple(self._critical_listeners)
             listeners = tuple(self._listeners)
+            for listener in critical_listeners:
+                listener(event)
             for listener in listeners:
                 try:
                     listener(event)

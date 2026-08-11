@@ -58,6 +58,7 @@ class SequencePlanRunner:
         self.calls = 0
         self.risk_reports: list[ExecutionRiskReport] = []
         self.protected_paths: list[tuple[Path, ...]] = []
+        self.execution_seconds_used_values: list[float] = []
 
     def run(
         self,
@@ -67,10 +68,12 @@ class SequencePlanRunner:
         budget,
         risk_report,
         protected_paths,
+        execution_seconds_used=0.0,
     ):
         del budget
         self.risk_reports.append(risk_report)
         self.protected_paths.append(tuple(protected_paths))
+        self.execution_seconds_used_values.append(execution_seconds_used)
         return_code, stdout_text, stderr_text = self.outcomes[self.calls]
         self.calls += 1
         command = commands[-1]
@@ -87,6 +90,7 @@ class SequencePlanRunner:
             return_code=return_code,
             started_at=now,
             finished_at=now,
+            elapsed_seconds=0.0,
             timed_out=False,
             stdout_path=stdout,
             stderr_path=stderr,
@@ -157,10 +161,12 @@ class MeshQualityRunner:
         budget,
         risk_report,
         protected_paths,
+        execution_seconds_used=0.0,
     ):
         del budget
         del risk_report
         del protected_paths
+        del execution_seconds_used
         case = Path(case_dir)
         log_dir = case / ".foampilot/logs"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -186,6 +192,7 @@ class MeshQualityRunner:
                     return_code=0,
                     started_at=now,
                     finished_at=now,
+                    elapsed_seconds=0.0,
                     timed_out=False,
                     stdout_path=stdout,
                     stderr_path=stderr,
@@ -404,8 +411,16 @@ class PolicyBlockedRunner:
         budget,
         risk_report,
         protected_paths,
+        execution_seconds_used=0.0,
     ):
-        del case_dir, commands, budget, risk_report, protected_paths
+        del (
+            case_dir,
+            commands,
+            budget,
+            risk_report,
+            protected_paths,
+            execution_seconds_used,
+        )
         self.calls += 1
         probe = SandboxProbe(
             status="failed",
@@ -431,6 +446,18 @@ class SandboxSetupFailureRunner(SequencePlanRunner):
             update={
                 "failed_step_id": result.steps[0].step_id,
                 "execution_error_code": "SANDBOX_SETUP_FAILED",
+            }
+        )
+
+
+class WallBudgetFailureRunner(SequencePlanRunner):
+    def run(self, **kwargs):
+        result = super().run(**kwargs)
+        return result.model_copy(
+            update={
+                "failed_step_id": result.steps[0].step_id,
+                "timed_out": True,
+                "execution_error_code": "EXECUTION_WALL_BUDGET_EXHAUSTED",
             }
         )
 
@@ -473,6 +500,31 @@ def test_native_agent_maps_runtime_sandbox_setup_failure_without_repair(
     assert outcome.status == "BLOCKED_ENVIRONMENT"
     assert outcome.summary.primary_failure is not None
     assert outcome.summary.primary_failure.code == "SANDBOX_SETUP_FAILED"
+    assert runner.calls == 1
+    assert len(model.requests) == 1
+    assert not (outcome.run_dir / "attempt-02").exists()
+
+
+def test_native_agent_maps_cumulative_wall_budget_to_workflow_failure(
+    tmp_path: Path,
+) -> None:
+    runner = WallBudgetFailureRunner([(1, "", "deadline")])
+    model = RecordingModel([_plan()])
+
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=model,
+        runner=runner,
+    ).solve(_task())
+
+    assert outcome.status == "EXECUTION_WALL_BUDGET_EXHAUSTED"
+    assert outcome.summary.attempts[-1].status == "EXECUTION_BUDGET_EXHAUSTED"
+    assert outcome.summary.primary_failure is not None
+    assert outcome.summary.primary_failure.domain == "workflow"
+    assert (
+        outcome.summary.primary_failure.code
+        == "EXECUTION_WALL_BUDGET_EXHAUSTED"
+    )
     assert runner.calls == 1
     assert len(model.requests) == 1
     assert not (outcome.run_dir / "attempt-02").exists()

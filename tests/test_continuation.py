@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -8,8 +9,11 @@ import pytest
 from foampilot.agent import NativeAgent
 from foampilot.agent.repair_patch import RepairPatch
 from foampilot.artifacts import ArtifactStore
+from foampilot.environment import CommandFact
 from foampilot.plans import GeneratedFile
+from foampilot.runtime import RuntimeConfig
 from foampilot.workflow import ResumeCompatibilityError
+from foampilot.workflow.lineage import LineageRecord
 
 from tests.test_native_agent_state_machine import (
     SequencePlanRunner,
@@ -28,10 +32,11 @@ def _agent(
     replies: list,
     runner: SequencePlanRunner,
     knowledge_text: str | None = None,
+    runtime_config: RuntimeConfig | None = None,
 ) -> NativeAgent:
     return NativeAgent(
         gateway=RecordingModel(replies),
-        runtime_config=_runtime_config(),
+        runtime_config=runtime_config or _runtime_config(),
         artifact_store=ArtifactStore(root),
         environment_snapshot=_environment("blockMesh", "icoFoam"),
         runner=runner,
@@ -149,6 +154,37 @@ def test_cross_job_resume_keeps_cumulative_continuation_budget(
     assert child_two.summary.resume.allowed is False
 
 
+def test_cross_job_resume_passes_prior_execution_time_to_runner(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "runs"
+    parent = _deferred_parent(root)
+    run_result_path = parent.run_dir / "attempt-01/run-result.json"
+    run_result = json.loads(run_result_path.read_text(encoding="utf-8"))
+    started = datetime.now(timezone.utc)
+    run_result["steps"][0]["started_at"] = started.isoformat()
+    run_result["steps"][0]["finished_at"] = (
+        started - timedelta(seconds=100)
+    ).isoformat()
+    run_result["steps"][0]["elapsed_seconds"] = 12.5
+    run_result_path.write_text(
+        json.dumps(run_result, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (parent.run_dir / "artifact-manifest.json").unlink()
+    ArtifactStore(root).finalize(parent.run_dir)
+    runner = SequencePlanRunner([(0, "Time = 1\nEnd\n", "")])
+
+    child = _agent(
+        root=root,
+        replies=[_repair()],
+        runner=runner,
+    ).resume(parent.run_dir)
+
+    assert child.summary.workflow_state == "COMPLETED"
+    assert runner.execution_seconds_used_values == [pytest.approx(12.5)]
+
+
 def test_rerun_same_input_is_a_cold_child_with_lineage(tmp_path: Path) -> None:
     parent = _agent(
         root=tmp_path / "job-parent",
@@ -172,6 +208,14 @@ def test_rerun_same_input_is_a_cold_child_with_lineage(tmp_path: Path) -> None:
     assert lineage["input_hash_before"] == lineage["input_hash_after"]
     assert child.summary.parent_run is None
     assert (parent.run_dir / "artifact-manifest.json").read_bytes() == parent_manifest
+
+
+def test_lineage_contract_does_not_advertise_openfoam_continuation() -> None:
+    relation_schema = LineageRecord.model_json_schema()["properties"][
+        "relation"
+    ]
+
+    assert "openfoam_continuation" not in relation_schema["enum"]
 
 
 def test_rerun_changed_task_is_explicitly_classified(tmp_path: Path) -> None:
@@ -210,6 +254,51 @@ def test_resume_rejects_changed_knowledge(tmp_path: Path) -> None:
             runner=SequencePlanRunner([]),
             knowledge_text="changed knowledge",
         ).resume(parent.run_dir)
+
+
+def test_resume_rejects_changed_runtime_policy(tmp_path: Path) -> None:
+    root = tmp_path / "runs"
+    parent = _deferred_parent(root)
+    changed_runtime = _runtime_config().model_copy(
+        update={"isolation": "trusted_host"}
+    )
+
+    with pytest.raises(
+        ResumeCompatibilityError,
+        match="runtime_policy_sha256 changed",
+    ):
+        _agent(
+            root=root,
+            replies=[_repair()],
+            runner=SequencePlanRunner([]),
+            runtime_config=changed_runtime,
+        ).resume(parent.run_dir)
+
+
+def test_rerun_changed_runtime_policy_is_explicitly_classified(
+    tmp_path: Path,
+) -> None:
+    parent = _agent(
+        root=tmp_path / "job-parent",
+        replies=[_plan()],
+        runner=SequencePlanRunner([(0, "Time = 1\nEnd\n", "")]),
+    ).solve(_task())
+    changed_runtime = _runtime_config().model_copy(
+        update={"isolation": "trusted_host"}
+    )
+
+    child = _agent(
+        root=tmp_path / "job-rerun",
+        replies=[_plan()],
+        runner=SequencePlanRunner([(0, "Time = 1\nEnd\n", "")]),
+        runtime_config=changed_runtime,
+    ).rerun(parent.run_dir)
+
+    lineage = json.loads(
+        (child.run_dir / "lineage.json").read_text(encoding="utf-8")
+    )
+    assert lineage["relation"] == "rerun_with_changes"
+    assert "runtime_policy" in lineage["change_categories"]
 
 
 def test_resume_generation_reissues_generation_and_enters_solver(
@@ -292,6 +381,80 @@ def test_resume_rejects_missing_runtime_executable(tmp_path: Path) -> None:
         match="executable_names changed",
     ):
         agent.resume(parent.run_dir)
+
+
+def test_resume_rejects_changed_runtime_executable_identity(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "runs"
+    parent = _deferred_parent(root)
+    agent = _agent(
+        root=root,
+        replies=[_repair()],
+        runner=SequencePlanRunner([]),
+    )
+    environment = _environment("blockMesh", "icoFoam")
+    agent.environment_snapshot = environment.model_copy(
+        update={
+            "commands": [
+                CommandFact(
+                    name=item.name,
+                    path=(
+                        Path("/opt/alternate/bin/icoFoam")
+                        if item.name == "icoFoam"
+                        else item.path
+                    ),
+                )
+                for item in environment.commands
+            ]
+        }
+    )
+
+    with pytest.raises(
+        ResumeCompatibilityError,
+        match="executable_identity changed",
+    ):
+        agent.resume(parent.run_dir)
+
+
+def test_resume_rejects_same_path_executable_rebuild(tmp_path: Path) -> None:
+    root = tmp_path / "runs"
+    executable = tmp_path / "icoFoam"
+    executable.write_text("first build\n", encoding="utf-8")
+    environment = _environment("blockMesh", "icoFoam")
+    environment = environment.model_copy(
+        update={
+            "commands": [
+                CommandFact(
+                    name=item.name,
+                    path=executable if item.name == "icoFoam" else item.path,
+                )
+                for item in environment.commands
+            ]
+        }
+    )
+    parent_agent = _agent(
+        root=root,
+        replies=[_plan(), _transport_failure()],
+        runner=SequencePlanRunner(
+            [(1, "", "FOAM FATAL ERROR: missing keyword")]
+        ),
+    )
+    parent_agent.environment_snapshot = environment
+    parent = parent_agent.solve(_task())
+    executable.write_text("second rebuilt executable\n", encoding="utf-8")
+    child_agent = _agent(
+        root=root,
+        replies=[_repair()],
+        runner=SequencePlanRunner([]),
+    )
+    child_agent.environment_snapshot = environment
+
+    with pytest.raises(
+        ResumeCompatibilityError,
+        match="executable_identity changed",
+    ):
+        child_agent.resume(parent.run_dir)
 
 
 def test_third_repair_continuation_is_not_allowed(

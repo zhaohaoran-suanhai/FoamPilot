@@ -211,6 +211,8 @@ class PlanStepResult(StrictModel):
     return_code: int | None
     started_at: datetime
     finished_at: datetime
+    # None denotes a legacy run-result that predates monotonic timing.
+    elapsed_seconds: float | None = Field(default=None, ge=0)
     timed_out: bool
     cancelled: bool = False
     stdout_path: Path
@@ -237,7 +239,10 @@ class PlanRunResult(StrictModel):
     reused_steps: list[ReusedStepResult] = Field(default_factory=list)
     sandbox_probe: SandboxProbe | None = None
     execution_policy: ExecutionPolicyDecision | None = None
-    execution_error_code: Literal["SANDBOX_SETUP_FAILED"] | None = None
+    execution_error_code: Literal[
+        "SANDBOX_SETUP_FAILED",
+        "EXECUTION_WALL_BUDGET_EXHAUSTED",
+    ] | None = None
 
     @property
     def passed(self) -> bool:

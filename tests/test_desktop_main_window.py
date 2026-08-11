@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import threading
 
 from PySide6.QtCore import QObject, QSettings, Qt, Signal
@@ -19,13 +21,18 @@ import yaml
 
 from foampilot.artifacts import ArtifactStore
 from foampilot.desktop import application as desktop_application
-from foampilot.desktop.job_controller import DesktopJobError
+from foampilot.desktop.job_controller import DesktopJobController, DesktopJobError
 from foampilot.desktop.main_window import FoamPilotMainWindow
 from foampilot.desktop.repository import RunRepository
 from foampilot.jobs import (
+    JobState,
+    LocalJobStore,
     RecoveryAction,
     RecoveryDecision,
     RecoveryState,
+    build_job_spec,
+    current_process_identity,
+    process_identity,
 )
 from foampilot.workflow import WorkflowEvent, WorkflowStage
 
@@ -910,6 +917,30 @@ def test_desktop_recovery_action_matrix_is_decision_driven(
     window = FoamPilotMainWindow(job_controller=controller)
     qtbot.addWidget(window)
 
+    assert "HTTP" in window.cancel_action.toolTip()
+    assert "超时" in window.cancel_action.toolTip()
+
+    controller.emit_recovery(
+        _recovery_decision(
+            RecoveryState.RUNNING,
+            (RecoveryAction.ATTACH, RecoveryAction.CANCEL),
+        )
+    )
+    assert window.cancel_action.isEnabled() is True
+    assert window.terminate_orphan_action.isEnabled() is False
+    assert window.recover_finalize_action.isEnabled() is False
+
+    controller.emit_recovery(
+        _recovery_decision(
+            RecoveryState.UNRESPONSIVE,
+            (RecoveryAction.ATTACH, RecoveryAction.CANCEL),
+        )
+    )
+    assert window.cancel_action.isEnabled() is True
+    assert window.resume_action.isEnabled() is False
+    assert window.rerun_action.isEnabled() is False
+
+    controller.is_running = True
     controller.emit_recovery(
         _recovery_decision(
             RecoveryState.ORPHANED_ACTIVE,
@@ -922,16 +953,89 @@ def test_desktop_recovery_action_matrix_is_decision_driven(
     assert window.resume_action.isEnabled() is False
     assert window.rerun_action.isEnabled() is False
 
+    controller.is_running = False
     controller.emit_recovery(
         _recovery_decision(
             RecoveryState.ORPHANED_STOPPED,
-            (RecoveryAction.RECOVER_FINALIZE, RecoveryAction.RERUN),
+            (RecoveryAction.RECOVER_FINALIZE,),
         )
     )
     assert window.terminate_orphan_action.isEnabled() is False
     assert window.recover_finalize_action.isEnabled() is True
     assert "OpenFOAM continuation" in window.recovery_hint_label.text()
     assert "JOB_ORPHANED_STOPPED" in window.recovery_hint_label.text()
+
+    controller.emit_recovery(
+        _recovery_decision(
+            RecoveryState.EVIDENCE_DAMAGED,
+            (RecoveryAction.INSPECT,),
+        )
+    )
+    assert window.cancel_action.isEnabled() is False
+    assert window.terminate_orphan_action.isEnabled() is False
+    assert window.recover_finalize_action.isEnabled() is False
+    assert window.resume_action.isEnabled() is False
+    assert window.rerun_action.isEnabled() is False
+
+
+def test_desktop_real_controller_can_terminate_active_orphan(
+    qtbot,
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    job_root = project / "runs/job-orphan-active"
+    job_root.mkdir(parents=True)
+    task = project / "task.yaml"
+    task.write_text("task_id: orphan-ui\n", encoding="utf-8")
+    store = LocalJobStore(job_root)
+    store.create(
+        build_job_spec(
+            job_root=job_root,
+            project_root=project,
+            operation="solve",
+            arguments=("solve", str(task), "--run-root", str(job_root)),
+        )
+    )
+    store.initialize_status()
+    child = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        start_new_session=True,
+    )
+    store.update_status(
+        state=JobState.RUNNING,
+        worker=current_process_identity().model_copy(
+            update={"start_token": 0}
+        ),
+        current_child=process_identity(child.pid),
+    )
+    controller = DesktopJobController(discovery_interval_ms=20)
+    window = FoamPilotMainWindow(job_controller=controller)
+    qtbot.addWidget(window)
+    try:
+        window.set_workspace(project)
+
+        assert controller.recovery_decision is not None
+        assert (
+            controller.recovery_decision.state
+            == RecoveryState.ORPHANED_ACTIVE
+        )
+        assert controller.is_running is True
+        assert window.terminate_orphan_action.isEnabled() is True
+
+        window.terminate_orphan_job()
+        child.wait(timeout=5)
+
+        assert controller.recovery_decision is not None
+        assert (
+            controller.recovery_decision.state
+            == RecoveryState.ORPHANED_STOPPED
+        )
+        assert window.terminate_orphan_action.isEnabled() is False
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=5)
+        controller.job_poll_timer.stop()
 
 
 def test_desktop_complete_rerun_submits_a_new_detached_job(

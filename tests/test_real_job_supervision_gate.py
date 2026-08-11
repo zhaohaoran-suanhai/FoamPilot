@@ -114,3 +114,49 @@ def test_real_detached_job_reuses_verified_plan_and_finalizes(
         if line.strip()
     ]
     assert any(event["kind"] == "command" for event in events)
+
+
+@pytest.mark.skipif(
+    not os.environ.get("FOAMPILOT_OPENFOAM_ROOT"),
+    reason="FOAMPILOT_OPENFOAM_ROOT is required for the real rerun gate",
+)
+def test_real_rerun_executes_cold_solver_and_preserves_parent(
+    tmp_path: Path,
+) -> None:
+    runtime = real_runtime_config().model_copy(
+        update={"isolation": "trusted_host"}
+    )
+    task = load_task_spec(TASK)
+    plan = ExecutionPlan.model_validate_json(
+        FROZEN_PLAN.read_text(encoding="utf-8")
+    )
+    parent_store = ArtifactStore(tmp_path / "parent-job")
+    parent = NativeAgent(
+        gateway=RecordingModel([plan]),
+        runtime_config=runtime,
+        artifact_store=parent_store,
+    ).solve(task)
+    assert parent.status == "PUBLIC_VALIDATION_PASS", parent.summary
+    parent_manifest = (
+        parent.run_dir / ArtifactStore.manifest_name
+    ).read_bytes()
+
+    child_store = ArtifactStore(tmp_path / "rerun-job")
+    child = NativeAgent(
+        gateway=RecordingModel([plan]),
+        runtime_config=runtime,
+        artifact_store=child_store,
+    ).rerun(parent.run_dir)
+
+    assert child.status == "PUBLIC_VALIDATION_PASS", child.summary
+    assert parent_store.verify(parent.run_dir) == []
+    assert child_store.verify(child.run_dir) == []
+    assert (
+        parent.run_dir / ArtifactStore.manifest_name
+    ).read_bytes() == parent_manifest
+    lineage = json.loads(
+        (child.run_dir / "lineage.json").read_text(encoding="utf-8")
+    )
+    assert lineage["relation"] == "rerun_same_input"
+    assert lineage["parent_run_id"] == parent.run_dir.name
+    assert lineage["reused_evidence_paths"] == []

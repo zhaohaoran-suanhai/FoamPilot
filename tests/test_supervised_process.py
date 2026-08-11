@@ -143,6 +143,33 @@ def test_supervised_process_reports_launch_failure() -> None:
     assert seen[-1].detail_code == "PROCESS_LAUNCH_FAILED"
 
 
+def test_critical_started_event_failure_terminates_child() -> None:
+    child_pids: list[int] = []
+
+    def fail_started(event: ActivityEvent) -> None:
+        if event.kind == "command" and event.state == "started":
+            assert event.pid is not None
+            child_pids.append(event.pid)
+            raise OSError("cannot persist child identity")
+
+    reporter = ActivityReporter(
+        operation_id="critical-status",
+        critical_listeners=[fail_started],
+    )
+
+    with pytest.raises(OSError, match="persist child identity"):
+        run_supervised_process(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            timeout_seconds=10,
+            reporter=reporter,
+            source="runner",
+        )
+
+    assert len(child_pids) == 1
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pids[0], 0)
+
+
 def test_cancel_terminates_owned_process_group_and_reports_cancelled() -> None:
     cancel = Event()
     seen: list[ActivityEvent] = []

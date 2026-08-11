@@ -84,6 +84,11 @@ isolation；TaskDraft 不接收 Runtime 参数。
 固化 partial artifacts 后才显示 `CANCELLED`。`UNRESPONSIVE` 仅表示心跳过期，不能等同于
 求解失败或取消完成。
 
+取消能力存在一个明确的后端边界：默认 Codex CLI 后端和 OpenFOAM/MPI 都是本机受监督进程，
+可以执行上述 TERM/KILL 升级；非流式 OpenAI-compatible HTTP 后端只能在请求前后检查取消，
+标准库传输进行中不会主动中止远端请求，因此取消最多延迟到收到响应或达到该请求的有限
+timeout。界面会显示这一差异，不能把“已提交取消请求”解释为所有后端都已立即停止。
+
 若 worker 已消失但受监督的子进程仍存在，界面只允许“终止孤儿进程”，不会接管未知状态继续
 workflow。worker 和子进程都消失后，“固化中断”会把现有 partial run 写成中立的
 `INTERRUPTED` 终态并生成 manifest；完成固化后才能以可信 parent 执行“完整重跑”。
