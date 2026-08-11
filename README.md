@@ -342,6 +342,7 @@ OpenFOAM 求解时间。
 
 ## 文档
 
+- [版本变更记录](CHANGELOG.md)
 - [架构、运行流程与功能边界](docs/system-overview.md)
 - [架构说明](docs/architecture.md)
 - [Desktop IDE 交互式求解工作台](docs/desktop-ide.md)
@@ -355,8 +356,10 @@ OpenFOAM 求解时间。
 - [阶段 A 模型边界/workflow 验收](docs/reports/2026-07-31-stage-a-acceptance.md)
 - [阶段 B routing/semantic 验收](docs/reports/2026-07-31-stage-b-acceptance.md)
 - [交付就绪报告](docs/reports/2026-07-30-delivery-readiness.md)
+- [v0.2.0 发布与验证记录](docs/reports/2026-08-11-v0.2.0-release.md)
 - [独立真实算例 gate](docs/reports/2026-07-29-standalone-real-gate.md)
 - [下一阶段顺序演进规格](docs/design/README.md)
+- [公开与私有资产分发边界](docs/design/distribution-asset-boundary.md)
 - [Agent Harness 演进 v2 规格](docs/design/agent-harness-evolution-v2-design.md)
 - [许可证](LICENSE)
 - [来源与声明](NOTICE.md)

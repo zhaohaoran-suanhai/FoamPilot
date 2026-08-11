@@ -8,9 +8,6 @@ from pathlib import Path
 import subprocess
 import sys
 
-import foampilot
-
-
 SOURCE_ROOT = Path(__file__).parents[1] / "src" / "foampilot"
 PROJECT_ROOT = SOURCE_ROOT.parents[1]
 FORBIDDEN_ROOTS = {
@@ -60,7 +57,6 @@ def test_independent_source_has_no_foam_agent_or_llm_imports() -> None:
 
 
 def test_core_import_does_not_load_forbidden_dependencies() -> None:
-    assert foampilot.__version__ == "0.1.0"
     environment = os.environ.copy()
     environment["PYTHONPATH"] = str(PROJECT_ROOT / "src")
     completed = subprocess.run(

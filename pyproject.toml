@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "foampilot"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A native OpenFOAM case-authoring, execution, repair, and qualification agent"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -28,6 +28,9 @@ Repository = "https://github.com/zhaohaoran-suanhai/FoamPilot"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "foampilot.__version__"}
 
 [tool.setuptools.package-data]
 foampilot = [
