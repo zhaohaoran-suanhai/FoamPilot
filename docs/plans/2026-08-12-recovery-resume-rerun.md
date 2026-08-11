@@ -63,7 +63,17 @@
 
 **Files:** update design/plan status; create `docs/reports/2026-08-12-recovery-resume-rerun.md`; update changelog/user docs.
 
-- [ ] Run the full offscreen deterministic suite, `git diff --check`, wheel/sdist and source-isolated wheel import.
-- [ ] Run real Foundation v10 strict-resume/rerun gates available on this host and verify parent manifests remain unchanged.
-- [ ] Audit every recovery action against the decision table and verify no OpenFOAM continuation claim or implementation exists.
-- [ ] Record exact deterministic, real-solver and unavailable external-model/Desktop-click evidence; commit `docs: report recovery and rerun verification`.
+- [x] Run the final post-review offscreen deterministic suite, `git diff --check`, wheel/sdist and source-isolated wheel import.
+- [x] Run final post-review Foundation v10 strict-resume/rerun gates and verify parent manifests remain unchanged.
+- [x] Audit every recovery action against the decision table and verify no OpenFOAM continuation claim or implementation exists.
+- [x] Record exact deterministic, real-solver and unavailable external-model/Desktop-click evidence; commit `docs: report recovery and rerun verification`.
+
+### Task 6: Post-review reliability closure
+
+- [x] Let Desktop terminate a verified active orphan even while the controller reports the job busy; stop polling terminal/stopped jobs.
+- [x] Do not advertise recover-finalize for an orphan that never produced a partial run.
+- [x] Treat durable job-status persistence as control-plane critical; fail bootstrap and relaunch deterministically and reap a child if activity persistence fails.
+- [x] Enforce cumulative OpenFOAM wall time across strict-resume lineage and report exhaustion as a workflow budget failure.
+- [x] Include runtime/isolation policy and bubblewrap identity in strict-resume compatibility; classify changed runtime as rerun-with-changes.
+- [x] Document the deferred-cancel boundary of the non-streaming OpenAI-compatible HTTP backend in both Desktop and user docs.
+- [x] Reconcile CLI cancellation, sanitize activity metrics, and make malformed manifests a reported integrity problem rather than an exception.

@@ -1,6 +1,6 @@
 # FoamPilot 恢复、Resume 与 Rerun 语义规格
 
-状态：已实现，等待本机综合门禁记录。本文依赖
+状态：已实现，本机综合门禁与最终代码审查通过。本文依赖
 [核心执行可观测性与活性规格](execution-observability-liveness-design.md)和
 [本机任务监督与 Desktop 可靠性规格](local-job-supervision-reliability-design.md)，明确 attach、
 orphan recovery、strict resume、rerun 和未来 OpenFOAM continuation 的边界。
@@ -57,8 +57,10 @@ Desktop 或 CLI 恢复入口必须先执行确定性 reconcile：
 | worker identity 匹配、lock 持有、heartbeat 新鲜 | `RUNNING` | attach、请求取消 |
 | worker identity 匹配、heartbeat 过期 | `UNRESPONSIVE` | 只读 attach、诊断、请求取消 |
 | worker 消失、已记录 child identity 仍匹配且存活 | `ORPHANED_ACTIVE` | 只读观察、受控终止；禁止接管 workflow |
-| worker/child 均消失、无 terminal summary | `ORPHANED_STOPPED` | recover-finalize；固化后再 rerun |
+| worker/child 均消失、有 partial run、无 terminal summary | `ORPHANED_STOPPED` | recover-finalize；固化后再 rerun |
+| worker/child 均消失、尚未产生 run | `ORPHANED_STOPPED` | inspect worker 日志；从规范输入重新提交 |
 | terminal summary 与 manifest 有效 | `FINALIZED` | report；按 eligibility 决定 resume/rerun |
+| 在产生 run 前收到用户取消并正常终止 | `FINALIZED` | inspect；可从规范输入重新提交 |
 | terminal artifact 损坏或 manifest 无效 | `EVIDENCE_DAMAGED` | 安全只读；禁止把它作为 resume/rerun parent |
 
 仅凭 PID 存在不能判断 running；必须同时核对 boot ID、process start token、job ID、writer
@@ -97,8 +99,8 @@ generation/repair；用户先得到 manifest 有效的 interrupted parent，再�
 - `resume.allowed=true`；
 - terminal blocker retryable；
 - `from_stage` 仅为 `MODEL_GENERATION_STARTED` 或 `MODEL_REPAIR_STARTED`；
-- TaskSpec、public asset、backend/model、backend policy、package、plan schema、Knowledge、
-  Skills、OpenFOAM target 和 executable compatibility 通过现有 fingerprint；
+- TaskSpec、public asset、backend/model、backend policy、runtime isolation/policy、package、plan
+  schema、Knowledge、Skills、OpenFOAM target 和 executable compatibility 通过现有 fingerprint；
 - lineage continuation 和 transport attempt 预算未超限。
 
 strict resume 创建不可变 child run，并记录 parent run ID 与 manifest SHA256。它可以复用经过
@@ -137,7 +139,7 @@ OpenFOAM 和 validation。
 
 ```text
 schema_version = 1
-relation = strict_resume | rerun_same_input | rerun_with_changes | openfoam_continuation
+relation = strict_resume | rerun_same_input | rerun_with_changes
 parent_run_id
 parent_manifest_sha256
 created_at
@@ -149,6 +151,8 @@ reused_evidence_paths
 
 `recover-finalize` 在同一未固化 run 内完成，因此不创建 child lineage；其行为记录在
 `interruption.json` 和 workflow event 中。任何引用 parent 的操作必须先验证 parent manifest。
+未来若实现 OpenFOAM continuation，必须升级此契约后再增加新的 relation；当前 schema 不预留
+一个看似可用但没有执行语义的枚举值。
 
 ## 10. OpenFOAM continuation 的延期边界
 
@@ -173,13 +177,16 @@ recover-finalize；固化为 manifest 有效的 interrupted parent 后才提供 
 | running | attach、cancel | resume、rerun 覆盖当前 run |
 | unresponsive | inspect、cancel | 直接判 failed |
 | orphaned active | inspect、terminate orphan | 接管未知 exit status 后继续 workflow |
-| orphaned stopped | recover-finalize | rerun、strict resume，直到固化为有效 parent |
+| orphaned stopped、有 partial run | recover-finalize | rerun、strict resume，直到固化为有效 parent |
+| orphaned stopped、无 run | inspect、重新提交 | recover-finalize、strict resume |
 | cancelled 且 manifest 有效 | rerun | 自动 repair、假装 continuation |
 | interrupted | rerun；条件满足时 strict resume | 修改原 run |
 | finalized retryable generation/repair | strict resume、rerun | OpenFOAM continuation |
 | finalized success/failure | report、rerun | 无证据的 resume |
 
-所有禁用操作都显示稳定 code、中文原因和恢复建议。
+所有禁用操作都显示稳定 code、中文原因和恢复建议。`CANCELLED/USER_CANCELLED` 且尚未产生
+run 是合法的 pre-run 终态，不得标成 artifact 损坏。job 状态写入连续失败时，worker 停止启动
+后续工作，并在主状态文件之外留下 `worker-control-failure.json` 诊断证据。
 
 ## 12. 测试与验收
 
