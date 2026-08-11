@@ -8,7 +8,16 @@ from pathlib import Path
 
 import yaml
 
-from PySide6.QtCore import QSettings, QTimer, Qt
+from PySide6.QtCore import (
+    QObject,
+    QRunnable,
+    QSettings,
+    QThreadPool,
+    QTimer,
+    Qt,
+    Signal,
+    Slot,
+)
 from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtWidgets import (
     QDockWidget,
@@ -86,6 +95,38 @@ def _yaml_value(value: object) -> str:
     return rendered.removesuffix("\n...")
 
 
+class _RunLoadSignals(QObject):
+    succeeded = Signal(int, object, object)
+    failed = Signal(int, object, object)
+
+
+class _RunLoadTask(QRunnable):
+    def __init__(
+        self,
+        generation: int,
+        repository: RunRepository,
+        run_dir: Path,
+    ) -> None:
+        super().__init__()
+        self.generation = generation
+        self.repository = repository
+        self.run_dir = run_dir
+        self.signals = _RunLoadSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            snapshot = self.repository.open(self.run_dir)
+        except Exception as error:
+            self.signals.failed.emit(self.generation, self.run_dir, error)
+            return
+        self.signals.succeeded.emit(
+            self.generation,
+            self.run_dir,
+            snapshot,
+        )
+
+
 class FoamPilotMainWindow(QMainWindow):
     """Create canonical jobs and display immutable public run projections."""
 
@@ -114,6 +155,13 @@ class FoamPilotMainWindow(QMainWindow):
         self._draft_can_compile = False
         self._draft_needs_confirmation = False
         self._question_editors: dict[str, QLineEdit] = {}
+        self._refresh_pool = QThreadPool.globalInstance()
+        self._refresh_generation = 0
+        self._refresh_inflight = False
+        self._refresh_pending = False
+        self._refresh_target: Path | None = None
+        self._refresh_interactive = False
+        self._closing = False
         self.live_refresh_timer = QTimer(self)
         self.live_refresh_timer.setInterval(1000)
         self.live_refresh_timer.timeout.connect(self.refresh_run)
@@ -448,11 +496,54 @@ class FoamPilotMainWindow(QMainWindow):
             self.open_run(Path(selected))
 
     def open_run(self, run_dir: Path) -> None:
-        """Open one run, or offer child selection for a run collection."""
+        """Schedule one run projection without blocking the Qt GUI thread."""
 
-        try:
-            snapshot = self.repository.open(run_dir)
-        except RunCollectionError as error:
+        self._schedule_run_load(Path(run_dir), interactive=True)
+
+    def _schedule_run_load(
+        self,
+        run_dir: Path,
+        *,
+        interactive: bool,
+    ) -> None:
+        self._refresh_generation += 1
+        self._refresh_target = Path(run_dir)
+        self._refresh_interactive = interactive
+        if self._refresh_inflight:
+            self._refresh_pending = True
+            return
+        self._start_scheduled_run_load()
+
+    def _start_scheduled_run_load(self) -> None:
+        if self._refresh_target is None or self._closing:
+            return
+        generation = self._refresh_generation
+        task = _RunLoadTask(
+            generation,
+            self.repository,
+            self._refresh_target,
+        )
+        task.signals.succeeded.connect(self._on_run_load_succeeded)
+        task.signals.failed.connect(self._on_run_load_failed)
+        self._refresh_inflight = True
+        self._refresh_pool.start(task)
+
+    def _finish_run_load(self) -> None:
+        self._refresh_inflight = False
+        if self._refresh_pending and not self._closing:
+            self._refresh_pending = False
+            self._start_scheduled_run_load()
+
+    @Slot(int, object, object)
+    def _on_run_load_failed(
+        self,
+        generation: int,
+        run_dir: Path,
+        error: Exception,
+    ) -> None:
+        current = generation == self._refresh_generation
+        interactive = self._refresh_interactive
+        if current and not self._closing and isinstance(error, RunCollectionError):
             names = [child.name for child in error.children]
             selected, accepted = QInputDialog.getItem(
                 self,
@@ -472,8 +563,7 @@ class FoamPilotMainWindow(QMainWindow):
                     "RUN_COLLECTION_SELECTED：请选择具体的 run-* 子目录。",
                     8000,
                 )
-            return
-        except RunOpenError as error:
+        elif current and not self._closing and interactive:
             QMessageBox.critical(
                 self,
                 "无法打开 Run",
@@ -482,6 +572,21 @@ class FoamPilotMainWindow(QMainWindow):
                 f"路径：{run_dir}\n"
                 f"原因：{error}",
             )
+        elif current and not self._closing:
+            self.recovery_warning = f"DESKTOP_REFRESH_DEGRADED: {error}"
+            self.statusBar().showMessage(self.recovery_warning, 10000)
+        self._finish_run_load()
+
+    @Slot(int, object, object)
+    def _on_run_load_succeeded(
+        self,
+        generation: int,
+        run_dir: Path,
+        snapshot: RunSnapshot,
+    ) -> None:
+        del run_dir
+        if generation != self._refresh_generation or self._closing:
+            self._finish_run_load()
             return
         self.current_snapshot = snapshot
         self.recovery_warning = ""
@@ -489,10 +594,14 @@ class FoamPilotMainWindow(QMainWindow):
             self.settings.setValue("desktop/last_run", str(snapshot.run_dir))
             self.settings.sync()
         self._render_snapshot(snapshot)
+        self._finish_run_load()
 
     def refresh_run(self) -> None:
         if self.current_snapshot is not None:
-            self.open_run(self.current_snapshot.run_dir)
+            self._schedule_run_load(
+                self.current_snapshot.run_dir,
+                interactive=False,
+            )
 
     def restore_last_run(self) -> None:
         if self.settings is None:
@@ -518,6 +627,7 @@ class FoamPilotMainWindow(QMainWindow):
             self.restoreState(state)
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self._closing = True
         self.live_refresh_timer.stop()
         if self.settings is not None:
             self.settings.setValue("desktop/window_geometry", self.saveGeometry())

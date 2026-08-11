@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from functools import lru_cache
 import json
 from pathlib import Path, PurePosixPath
 import re
+import time
 
 from foampilot.artifacts import ArtifactStore
 from foampilot.knowledge import load_knowledge_corpus
 from foampilot.workflow import WorkflowEvent
 
+from .cursors import IncrementalLineCursor, ResidualLogCursor
 from .viewmodels import (
     KnowledgeReference,
     RunFileView,
@@ -18,11 +22,51 @@ from .viewmodels import (
     SkillReference,
     TimelineView,
 )
-from .telemetry import parse_residual_series
 
 
 _TELEMETRY_LOG_BYTES = 8 * 1024 * 1024
 _TELEMETRY_SAMPLE_LIMIT = 5_000
+
+
+@dataclass(slots=True)
+class _RunCache:
+    files: list[RunFileView] = field(default_factory=list)
+    next_file_scan_at: float = 0.0
+    timeline_cursor: IncrementalLineCursor | None = None
+    timeline: list[TimelineView] = field(default_factory=list)
+    timeline_warnings: list[str] = field(default_factory=list)
+    residual_cursors: dict[str, ResidualLogCursor] = field(default_factory=dict)
+    manifest_identity: tuple[int, int, int, int] | None = None
+    manifest_state: str = "pending"
+    manifest_issues: tuple[str, ...] = ()
+    registered: set[str] = field(default_factory=set)
+
+
+def _file_identity(path: Path) -> tuple[int, int, int, int] | None:
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return None
+    return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
+
+
+def _scan_files(directory: Path) -> list[RunFileView]:
+    files: list[RunFileView] = []
+    for path in sorted(directory.rglob("*")):
+        if not path.is_file() or path.is_symlink():
+            continue
+        relative = path.relative_to(directory).as_posix()
+        relative_path = PurePosixPath(relative)
+        if _has_symlink_component(directory, relative_path):
+            continue
+        files.append(
+            RunFileView(
+                path=relative,
+                bytes=path.stat().st_size,
+                category=_category(relative),
+            )
+        )
+    return files
 
 
 class RunOpenError(ValueError):
@@ -162,40 +206,49 @@ def _context_views(
     return references, skills
 
 
-def _residual_views(
+def _residual_views_incremental(
     directory: Path,
     files: list[RunFileView],
     warnings: list[str],
+    cache: _RunCache,
 ):
-    samples = []
+    visible_logs: set[str] = set()
     for item in files:
         if item.category != "log" or not item.path.endswith(".stdout.log"):
             continue
+        visible_logs.add(item.path)
         relative = PurePosixPath(item.path)
         path = directory / Path(*relative.parts)
         match = re.search(r"(?:^|/)attempt-(\d+)(?:/|$)", item.path)
         attempt = int(match.group(1)) if match is not None else None
+        cursor = cache.residual_cursors.get(item.path)
+        if cursor is None:
+            cursor = ResidualLogCursor(
+                path,
+                attempt=attempt,
+                source_log=item.path,
+                sample_limit=_TELEMETRY_SAMPLE_LIMIT,
+                initial_bytes_limit=_TELEMETRY_LOG_BYTES,
+            )
+            cache.residual_cursors[item.path] = cursor
         try:
-            size = path.stat().st_size
-            with path.open("rb") as stream:
-                if size > _TELEMETRY_LOG_BYTES:
-                    stream.seek(size - _TELEMETRY_LOG_BYTES)
-                    stream.readline()
-                    warnings.append(
-                        f"{item.path} residual view uses the latest "
-                        f"{_TELEMETRY_LOG_BYTES} bytes"
-                    )
-                text = stream.read().decode("utf-8", errors="replace")
+            cursor.read()
         except OSError as error:
             warnings.append(f"{item.path} cannot be read for residuals: {error}")
             continue
-        samples.extend(
-            parse_residual_series(
-                text,
-                attempt=attempt,
-                source_log=item.path,
+        if cursor.truncated_initial_read:
+            warnings.append(
+                f"{item.path} residual view uses the latest "
+                f"{_TELEMETRY_LOG_BYTES} bytes"
             )
-        )
+    for relative in tuple(cache.residual_cursors):
+        if relative not in visible_logs:
+            del cache.residual_cursors[relative]
+    samples = []
+    for relative in sorted(visible_logs):
+        cursor = cache.residual_cursors.get(relative)
+        if cursor is not None:
+            samples.extend(cursor.samples)
     return samples[-_TELEMETRY_SAMPLE_LIMIT:]
 
 
@@ -242,6 +295,71 @@ def _latest_attempt_artifact(
 class RunRepository:
     """Build immutable desktop projections without modifying run artifacts."""
 
+    def __init__(
+        self,
+        *,
+        active_rescan_seconds: float = 2.0,
+        monotonic: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if active_rescan_seconds < 0:
+            raise ValueError("active rescan interval cannot be negative")
+        self._active_rescan_seconds = active_rescan_seconds
+        self._monotonic = monotonic
+        self._caches: dict[Path, _RunCache] = {}
+
+    @staticmethod
+    def _refresh_timeline(
+        directory: Path,
+        cache: _RunCache,
+    ) -> None:
+        events_path = directory / "workflow-events.jsonl"
+        if not events_path.is_file() or events_path.is_symlink():
+            cache.timeline_cursor = None
+            cache.timeline.clear()
+            cache.timeline_warnings.clear()
+            return
+        if cache.timeline_cursor is None:
+            cache.timeline_cursor = IncrementalLineCursor(events_path)
+        chunk = cache.timeline_cursor.read()
+        if chunk.reset:
+            cache.timeline.clear()
+            cache.timeline_warnings.clear()
+        for line_number, line in chunk.lines:
+            if not line.strip():
+                continue
+            try:
+                event = WorkflowEvent.model_validate_json(line)
+            except ValueError:
+                cache.timeline_warnings.append(
+                    f"workflow-events.jsonl line {line_number} is invalid"
+                )
+                continue
+            cache.timeline.append(
+                TimelineView(
+                    sequence=event.sequence,
+                    stage=event.stage.value,
+                    state=event.state.value,
+                    attempt=event.attempt,
+                    step_id=event.step_id,
+                    detail=event.detail,
+                )
+            )
+        cache.timeline.sort(key=lambda item: item.sequence)
+
+    @staticmethod
+    def _read_registered_manifest(manifest: Path) -> set[str]:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+        entries = payload["files"]
+        if not isinstance(entries, dict):
+            raise ValueError("manifest files must be a mapping")
+        return {
+            str(relative)
+            for relative, metadata in entries.items()
+            if isinstance(relative, str)
+            and isinstance(metadata, dict)
+            and metadata.get("type") == "file"
+        }
+
     def open(self, run_dir: str | Path) -> RunSnapshot:
         source = Path(run_dir)
         if source.is_symlink():
@@ -249,6 +367,7 @@ class RunRepository:
         directory = source.resolve()
         if not directory.is_dir():
             raise RunOpenError(f"run directory does not exist: {directory}")
+        cache = self._caches.setdefault(directory, _RunCache())
 
         direct_control = any(
             (directory / name).exists()
@@ -290,86 +409,50 @@ class RunRepository:
             except (OSError, ValueError) as error:
                 raise RunOpenError(f"invalid run summary: {error}") from error
 
-        timeline: list[TimelineView] = []
-        events_path = directory / "workflow-events.jsonl"
-        if events_path.is_file() and not events_path.is_symlink():
-            for line_number, line in enumerate(
-                events_path.read_text(encoding="utf-8").splitlines(),
-                start=1,
-            ):
-                if not line.strip():
-                    continue
-                try:
-                    event = WorkflowEvent.model_validate_json(line)
-                except ValueError:
-                    warnings.append(
-                        f"workflow-events.jsonl line {line_number} is invalid"
-                    )
-                    continue
-                timeline.append(
-                    TimelineView(
-                        sequence=event.sequence,
-                        stage=event.stage.value,
-                        state=event.state.value,
-                        attempt=event.attempt,
-                        step_id=event.step_id,
-                        detail=event.detail,
-                    )
-                )
-        timeline.sort(key=lambda item: item.sequence)
-
-        files: list[RunFileView] = []
-        for path in sorted(directory.rglob("*")):
-            if not path.is_file() or path.is_symlink():
-                continue
-            relative = path.relative_to(directory).as_posix()
-            relative_path = PurePosixPath(relative)
-            if _has_symlink_component(directory, relative_path):
-                continue
-            files.append(
-                RunFileView(
-                    path=relative,
-                    bytes=path.stat().st_size,
-                    category=_category(relative),
-                )
-            )
+        self._refresh_timeline(directory, cache)
+        warnings.extend(cache.timeline_warnings)
 
         manifest = directory / ArtifactStore.manifest_name
-        if not manifest.is_file():
-            manifest_state = "pending"
-            manifest_issues: tuple[str, ...] = ()
-            registered = {item.path for item in files}
-        else:
+        manifest_identity = _file_identity(manifest)
+        now = self._monotonic()
+        scan_due = not cache.files or now >= cache.next_file_scan_at
+        if manifest_identity != cache.manifest_identity:
+            scan_due = True
+        if scan_due:
+            cache.files = _scan_files(directory)
+            cache.next_file_scan_at = now + self._active_rescan_seconds
+        files = cache.files
+
+        if manifest_identity is None:
+            cache.manifest_identity = None
+            cache.manifest_state = "pending"
+            cache.manifest_issues = ()
+            cache.registered = {item.path for item in files}
+        elif manifest_identity != cache.manifest_identity:
             try:
                 issues = ArtifactStore(directory.parent).verify(directory)
             except (OSError, ValueError, json.JSONDecodeError) as error:
                 issues = [f"invalid manifest: {error}"]
-            manifest_state = "invalid" if issues else "verified"
-            manifest_issues = tuple(issues)
-            if manifest_state == "verified":
+            cache.manifest_state = "invalid" if issues else "verified"
+            cache.manifest_issues = tuple(issues)
+            cache.manifest_identity = manifest_identity
+            if cache.manifest_state == "verified":
                 try:
-                    payload = json.loads(manifest.read_text(encoding="utf-8"))
-                    entries = payload["files"]
-                    if not isinstance(entries, dict):
-                        raise ValueError("manifest files must be a mapping")
-                    registered = {
-                        str(relative)
-                        for relative, metadata in entries.items()
-                        if isinstance(relative, str)
-                        and isinstance(metadata, dict)
-                        and metadata.get("type") == "file"
-                    }
+                    cache.registered = self._read_registered_manifest(manifest)
                 except (KeyError, OSError, ValueError, json.JSONDecodeError) as error:
-                    manifest_state = "invalid"
-                    manifest_issues = (f"invalid manifest: {error}",)
-                    registered = set()
+                    cache.manifest_state = "invalid"
+                    cache.manifest_issues = (f"invalid manifest: {error}",)
+                    cache.registered = set()
             else:
-                registered = set()
-            if manifest_state == "invalid":
-                warnings.append(
-                    "finalized run manifest is invalid; runtime security "
-                    "projections are untrusted and were hidden"
-                )
+                cache.registered = set()
+        manifest_state = cache.manifest_state
+        manifest_issues = cache.manifest_issues
+        registered = cache.registered
+        if manifest_state == "invalid":
+            warnings.append(
+                "finalized run manifest is invalid; runtime security "
+                "projections are untrusted and were hidden"
+            )
 
         trusted_files = [item for item in files if item.path in registered]
         context_references, skill_references = _context_views(
@@ -377,7 +460,12 @@ class RunRepository:
             trusted_files,
             warnings,
         )
-        residual_samples = _residual_views(directory, trusted_files, warnings)
+        residual_samples = _residual_views_incremental(
+            directory,
+            trusted_files,
+            warnings,
+            cache,
+        )
         runtime_config = _read_json_projection(
             directory,
             registered,
@@ -421,7 +509,7 @@ class RunRepository:
         return RunSnapshot(
             run_dir=directory,
             summary=summary,
-            timeline=tuple(timeline),
+            timeline=tuple(cache.timeline),
             files=tuple(files),
             manifest_state=manifest_state,
             manifest_issues=manifest_issues,

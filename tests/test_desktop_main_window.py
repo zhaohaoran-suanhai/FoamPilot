@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import threading
 
 from PySide6.QtCore import QObject, QSettings, Qt, Signal
 from PySide6.QtWidgets import (
@@ -20,6 +21,7 @@ from foampilot.artifacts import ArtifactStore
 from foampilot.desktop import application as desktop_application
 from foampilot.desktop.job_controller import DesktopJobError
 from foampilot.desktop.main_window import FoamPilotMainWindow
+from foampilot.desktop.repository import RunRepository
 from foampilot.workflow import WorkflowEvent, WorkflowStage
 
 
@@ -232,6 +234,16 @@ def _find_file_item(
     return None
 
 
+def _open_run(qtbot, window: FoamPilotMainWindow, run_dir: Path) -> None:
+    window.open_run(run_dir)
+    expected = run_dir.resolve()
+    qtbot.waitUntil(
+        lambda: window.current_snapshot is not None
+        and window.current_snapshot.run_dir == expected,
+        timeout=5000,
+    )
+
+
 def test_open_verified_run_renders_read_only_snapshot(
     qtbot,
     tmp_path: Path,
@@ -240,7 +252,7 @@ def test_open_verified_run_renders_read_only_snapshot(
     window = FoamPilotMainWindow()
     qtbot.addWidget(window)
 
-    window.open_run(run_dir)
+    _open_run(qtbot, window, run_dir)
 
     assert window.current_snapshot is not None
     assert window.windowTitle().startswith("FoamPilot")
@@ -271,6 +283,60 @@ def test_open_verified_run_renders_read_only_snapshot(
     assert "Time = 0.03" in window.log_viewer.toPlainText()
 
 
+def test_run_projection_is_loaded_outside_qt_main_thread(
+    qtbot,
+    tmp_path: Path,
+) -> None:
+    class RecordingRepository(RunRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.thread_ids: list[int] = []
+
+        def open(self, run_dir: str | Path):
+            self.thread_ids.append(threading.get_ident())
+            return super().open(run_dir)
+
+    repository = RecordingRepository()
+    window = FoamPilotMainWindow(repository=repository)
+    qtbot.addWidget(window)
+
+    _open_run(qtbot, window, _run(tmp_path))
+
+    assert repository.thread_ids
+    assert repository.thread_ids[-1] != threading.get_ident()
+
+
+def test_refresh_failure_preserves_last_snapshot_and_reports_degraded(
+    qtbot,
+    tmp_path: Path,
+) -> None:
+    class FailingRefreshRepository(RunRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+
+        def open(self, run_dir: str | Path):
+            self.calls += 1
+            if self.calls > 1:
+                raise OSError("synthetic read failure")
+            return super().open(run_dir)
+
+    repository = FailingRefreshRepository()
+    window = FoamPilotMainWindow(repository=repository)
+    qtbot.addWidget(window)
+    _open_run(qtbot, window, _run(tmp_path))
+    snapshot = window.current_snapshot
+
+    window.refresh_run()
+
+    qtbot.waitUntil(
+        lambda: "DESKTOP_REFRESH_DEGRADED"
+        in window.statusBar().currentMessage(),
+        timeout=5000,
+    )
+    assert window.current_snapshot is snapshot
+
+
 def test_manifest_invalid_and_active_run_are_distinct(
     qtbot,
     tmp_path: Path,
@@ -284,20 +350,20 @@ def test_manifest_invalid_and_active_run_are_distinct(
     window = FoamPilotMainWindow()
     qtbot.addWidget(window)
 
-    window.open_run(finalized)
+    _open_run(qtbot, window, finalized)
     assert window.manifest_label.text() == "Manifest: invalid"
     assert "hash mismatch" in window.overview_viewer.toPlainText()
 
-    window.open_run(active)
+    _open_run(qtbot, window, active)
     assert window.current_snapshot is not None
     assert window.manifest_label.text() == "Manifest: pending"
 
 
 def test_refresh_reloads_the_opened_run(qtbot, tmp_path: Path) -> None:
-    run_dir = _run(tmp_path)
+    run_dir = _run(tmp_path, finalized=False)
     window = FoamPilotMainWindow()
     qtbot.addWidget(window)
-    window.open_run(run_dir)
+    _open_run(qtbot, window, run_dir)
     (run_dir / "summary.json").write_text(
         json.dumps({**_summary(), "message": "refreshed"}),
         encoding="utf-8",
@@ -305,8 +371,12 @@ def test_refresh_reloads_the_opened_run(qtbot, tmp_path: Path) -> None:
 
     window.refresh_run()
 
+    qtbot.waitUntil(
+        lambda: "refreshed" in window.overview_viewer.toPlainText(),
+        timeout=5000,
+    )
     assert "refreshed" in window.overview_viewer.toPlainText()
-    assert window.manifest_label.text() == "Manifest: invalid"
+    assert window.manifest_label.text() == "Manifest: pending"
 
 
 def test_open_error_has_stable_code_and_rejected_path(
@@ -326,6 +396,7 @@ def test_open_error_has_stable_code_and_rejected_path(
 
     window.open_run(missing)
 
+    qtbot.waitUntil(lambda: bool(shown), timeout=5000)
     assert window.current_snapshot is None
     assert shown
     assert "RUN_OPEN_FAILED" in shown[0][1]
@@ -344,7 +415,7 @@ def test_settings_restore_last_successful_run_outside_artifacts(
     window = FoamPilotMainWindow(settings=settings)
     qtbot.addWidget(window)
 
-    window.open_run(run_dir)
+    _open_run(qtbot, window, run_dir)
     window.close()
     settings.sync()
 
@@ -369,6 +440,7 @@ def test_settings_restore_last_successful_run_outside_artifacts(
 
     restored.restore_last_run()
 
+    qtbot.waitUntil(lambda: restored.current_snapshot is not None, timeout=5000)
     assert restored.current_snapshot is not None
     assert restored.current_snapshot.run_dir == run_dir.resolve()
 
@@ -408,7 +480,7 @@ def test_real_run_inspector_gate(qtbot) -> None:
     window = FoamPilotMainWindow()
     qtbot.addWidget(window)
 
-    window.open_run(Path(str(REAL_RUN)))
+    _open_run(qtbot, window, Path(str(REAL_RUN)))
 
     assert window.current_snapshot is not None
     snapshot = window.current_snapshot
@@ -489,7 +561,7 @@ def test_context_and_residual_tabs_render_public_run_evidence(
     window = FoamPilotMainWindow()
     qtbot.addWidget(window)
 
-    window.open_run(run_dir)
+    _open_run(qtbot, window, run_dir)
 
     assert window.knowledge_tree.topLevelItemCount() == 1
     knowledge = window.knowledge_tree.topLevelItem(0)
@@ -563,7 +635,7 @@ def test_runtime_security_artifacts_render_unisolated_warning(
     window = FoamPilotMainWindow()
     qtbot.addWidget(window)
 
-    window.open_run(run_dir)
+    _open_run(qtbot, window, run_dir)
 
     assert "environment" in window.config_source_label.text()
     assert "OpenFOAM-10" in window.openfoam_runtime_label.text()
@@ -593,6 +665,7 @@ def test_batch_root_offers_concrete_child_selection(
     qtbot.addWidget(window)
 
     window.open_run(batch)
+    qtbot.waitUntil(lambda: window.current_snapshot is not None, timeout=5000)
 
     assert window.current_snapshot is not None
     assert window.current_snapshot.run_dir == run_b.resolve()
@@ -604,7 +677,10 @@ def test_task_actions_build_fixed_cli_arguments(
     tmp_path: Path,
 ) -> None:
     controller = RecordingJobController()
-    window = FoamPilotMainWindow(job_controller=controller)
+    window = FoamPilotMainWindow(
+        job_controller=controller,
+        repository=RunRepository(active_rescan_seconds=0.0),
+    )
     qtbot.addWidget(window)
     assert window.generate_draft_button.isEnabled() is False
     assert window.solve_button.isEnabled() is False
@@ -757,6 +833,7 @@ def test_discovered_run_starts_live_refresh_and_updates_residuals(
     controller.is_running = True
     controller.run_discovered.emit(run_dir)
 
+    qtbot.waitUntil(lambda: window.current_snapshot is not None, timeout=5000)
     assert window.current_snapshot is not None
     assert window.live_refresh_timer.isActive() is True
     log = run_dir / "attempt-01/case/.foampilot/logs/solve.stdout.log"
@@ -768,6 +845,10 @@ def test_discovered_run_starts_live_refresh_and_updates_residuals(
     )
     window.live_refresh_timer.timeout.emit()
 
+    qtbot.waitUntil(
+        lambda: window.residual_plot.sample_count == 1,
+        timeout=5000,
+    )
     assert window.residual_plot.sample_count == 1
 
 

@@ -251,6 +251,118 @@ def test_open_projects_residual_samples_from_attempt_logs(
     )
 
 
+def test_active_repository_appends_workflow_and_residuals_incrementally(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run-active"
+    events = run_dir / "workflow-events.jsonl"
+    events.parent.mkdir()
+    events.write_text(
+        _event(1, WorkflowStage.TASK_VALIDATED).model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    log = run_dir / "attempt-01/case/.foampilot/logs/solve.stdout.log"
+    log.parent.mkdir(parents=True)
+    log.write_text(
+        "Time = 1\n"
+        "Solving for Ux, Initial residual = 0.1, Final residual = 0.01, "
+        "No Iterations 1\n",
+        encoding="utf-8",
+    )
+    repository = RunRepository(active_rescan_seconds=0.0)
+
+    first = repository.open(run_dir)
+    with events.open("a", encoding="utf-8") as stream:
+        stream.write(_event(2, WorkflowStage.CASE_MATERIALIZED).model_dump_json())
+        stream.flush()
+    partial = repository.open(run_dir)
+    with events.open("a", encoding="utf-8") as stream:
+        stream.write("\n")
+    with log.open("a", encoding="utf-8") as stream:
+        stream.write(
+            "Time = 2\n"
+            "Solving for p, Initial residual = 0.2, Final residual = 0.02, "
+            "No Iterations 2\n"
+        )
+    final = repository.open(run_dir)
+
+    assert [item.sequence for item in first.timeline] == [1]
+    assert [item.sequence for item in partial.timeline] == [1]
+    assert [item.sequence for item in final.timeline] == [1, 2]
+    assert [item.field for item in final.residual_samples] == ["Ux", "p"]
+
+
+def test_active_repository_throttles_recursive_file_scans(
+    tmp_path: Path,
+) -> None:
+    now = [10.0]
+    run_dir = tmp_path / "run-active"
+    run_dir.mkdir()
+    (run_dir / "task.yaml").write_text("task_id: active\n", encoding="utf-8")
+    repository = RunRepository(
+        active_rescan_seconds=2.0,
+        monotonic=lambda: now[0],
+    )
+
+    first = repository.open(run_dir)
+    added = run_dir / "later.txt"
+    added.write_text("later\n", encoding="utf-8")
+    before_deadline = repository.open(run_dir)
+    now[0] = 12.1
+    after_deadline = repository.open(run_dir)
+
+    assert "task.yaml" in {item.path for item in first.files}
+    assert "later.txt" not in {item.path for item in before_deadline.files}
+    assert "later.txt" in {item.path for item in after_deadline.files}
+
+
+def test_repository_verifies_unchanged_finalized_manifest_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_dir = _finalized_run(tmp_path)
+    calls = 0
+    original = ArtifactStore.verify
+
+    def counted_verify(store: ArtifactStore, directory: str | Path) -> list[str]:
+        nonlocal calls
+        calls += 1
+        return original(store, directory)
+
+    monkeypatch.setattr(ArtifactStore, "verify", counted_verify)
+    repository = RunRepository()
+
+    first = repository.open(run_dir)
+    second = repository.open(run_dir)
+
+    assert first == second
+    assert calls == 1
+
+
+def test_incremental_snapshot_matches_fresh_full_projection(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run-active"
+    events = run_dir / "workflow-events.jsonl"
+    events.parent.mkdir()
+    events.write_text(
+        _event(1, WorkflowStage.TASK_VALIDATED).model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    repository = RunRepository(active_rescan_seconds=0.0)
+    repository.open(run_dir)
+    with events.open("a", encoding="utf-8") as stream:
+        stream.write(
+            _event(2, WorkflowStage.CASE_MATERIALIZED).model_dump_json() + "\n"
+        )
+    (run_dir / "new-report.json").write_text("{}\n", encoding="utf-8")
+
+    incremental = repository.open(run_dir)
+    rebuilt = RunRepository(active_rescan_seconds=0.0).open(run_dir)
+
+    assert incremental == rebuilt
+
+
 def test_desktop_projects_latest_runtime_security_artifacts(
     tmp_path: Path,
 ) -> None:
