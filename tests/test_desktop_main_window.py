@@ -18,6 +18,7 @@ import yaml
 
 from foampilot.artifacts import ArtifactStore
 from foampilot.desktop import application as desktop_application
+from foampilot.desktop.job_controller import DesktopJobError
 from foampilot.desktop.main_window import FoamPilotMainWindow
 from foampilot.workflow import WorkflowEvent, WorkflowStage
 
@@ -32,21 +33,38 @@ class RecordingJobController(QObject):
     run_discovered = Signal(object)
     job_finished = Signal(int, str)
     job_error = Signal(str, str)
+    activity_received = Signal(object)
+    job_status_changed = Signal(object)
+    job_health_changed = Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
         self.is_running = False
         self.calls: list[tuple[list[str], Path | None]] = []
 
+    @property
+    def current_arguments(self) -> tuple[str, ...]:
+        return tuple(self.calls[-1][0]) if self.calls else ()
+
     def start_cli(
         self,
         arguments: list[str] | tuple[str, ...],
         *,
         run_root: Path | None = None,
+        project_root: Path | None = None,
     ) -> None:
+        del project_root
         self.calls.append((list(arguments), run_root))
         self.is_running = True
         self.job_started.emit(str(arguments[0]))
+
+    def attach_latest(self, runs_root: Path) -> None:
+        del runs_root
+
+    def request_cancel(self) -> None:
+        if not self.is_running:
+            raise DesktopJobError("DESKTOP_JOB_NOT_RUNNING")
+        self.is_running = True
 
     def finish(self, exit_code: int = 0) -> None:
         self.is_running = False
@@ -605,7 +623,8 @@ def test_task_actions_build_fixed_cli_arguments(
         "jsonl",
         "--json",
     ]
-    assert run_root is None
+    assert run_root is not None
+    assert run_root.parent.name == "runs"
 
 
 def test_runtime_options_reach_preflight_and_solve_but_not_task_draft(
@@ -752,7 +771,7 @@ def test_discovered_run_starts_live_refresh_and_updates_residuals(
     assert window.residual_plot.sample_count == 1
 
 
-def test_close_is_blocked_while_canonical_job_is_running(qtbot) -> None:
+def test_close_leaves_detached_canonical_job_running(qtbot) -> None:
     controller = RecordingJobController()
     window = FoamPilotMainWindow(job_controller=controller)
     qtbot.addWidget(window)
@@ -761,6 +780,6 @@ def test_close_is_blocked_while_canonical_job_is_running(qtbot) -> None:
 
     closed = window.close()
 
-    assert closed is False
-    assert window.isVisible() is True
-    assert "求解仍在运行" in window.statusBar().currentMessage()
+    assert closed is True
+    assert window.isVisible() is False
+    assert controller.is_running is True

@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from foampilot.taskbuilder import TaskDraft, validate_task_draft
+from foampilot.jobs import JobStatus
 
 from .job_controller import DesktopJobController, DesktopJobError
 from .repository import (
@@ -129,6 +130,9 @@ class FoamPilotMainWindow(QMainWindow):
         self.job_controller.run_discovered.connect(self._on_run_discovered)
         self.job_controller.job_finished.connect(self._on_job_finished)
         self.job_controller.job_error.connect(self._on_job_error)
+        self.job_controller.activity_received.connect(self._on_activity)
+        self.job_controller.job_status_changed.connect(self._on_job_status)
+        self.job_controller.job_health_changed.connect(self._on_job_health)
 
     def _build_interface(self) -> None:
         toolbar = QToolBar("FoamPilot")
@@ -152,6 +156,9 @@ class FoamPilotMainWindow(QMainWindow):
         self.solve_action = QAction("开始求解", self)
         self.solve_action.triggered.connect(self.start_solve)
         toolbar.addAction(self.solve_action)
+        self.cancel_action = QAction("取消任务", self)
+        self.cancel_action.triggered.connect(self.cancel_job)
+        toolbar.addAction(self.cancel_action)
         toolbar.addSeparator()
         self.open_action = QAction("打开 Run", self)
         self.open_action.triggered.connect(self.choose_run)
@@ -425,6 +432,10 @@ class FoamPilotMainWindow(QMainWindow):
         self.workspace = workspace
         self.workspace_line.setText(str(workspace.root))
         self.statusBar().showMessage(f"工程目录：{workspace.root}", 5000)
+        try:
+            self.job_controller.attach_latest(workspace.runs_dir)
+        except DesktopJobError as error:
+            self._desktop_error("DESKTOP_ATTACH_FAILED", str(error))
         self._update_action_states()
 
     def choose_run(self) -> None:
@@ -507,19 +518,21 @@ class FoamPilotMainWindow(QMainWindow):
             self.restoreState(state)
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        if self.job_controller.is_running:
-            event.ignore()
-            self.statusBar().showMessage(
-                "求解仍在运行；为避免中断规范工作流，完成后再关闭 IDE。",
-                10000,
-            )
-            return
         self.live_refresh_timer.stop()
         if self.settings is not None:
             self.settings.setValue("desktop/window_geometry", self.saveGeometry())
             self.settings.setValue("desktop/window_state", self.saveState())
             self.settings.sync()
         super().closeEvent(event)
+
+    def cancel_job(self) -> None:
+        try:
+            self.job_controller.request_cancel()
+        except DesktopJobError as error:
+            self._desktop_error("DESKTOP_CANCEL_FAILED", str(error))
+            return
+        self.job_status_label.setText("IDE Job: CANCEL_REQUESTED")
+        self.statusBar().showMessage("已请求取消；正在等待受控进程组退出。", 8000)
 
     def check_environment(self) -> None:
         self._start_cli("environment_preflight", ["preflight", "--json"])
@@ -535,6 +548,7 @@ class FoamPilotMainWindow(QMainWindow):
                 self.request_editor.toPlainText()
             )
             output_path = self.workspace.reserve_draft_path()
+            job_root = self.workspace.create_job_root()
         except DesktopWorkspaceError as error:
             self._desktop_error("DESKTOP_WORKSPACE_INVALID", str(error))
             return
@@ -554,6 +568,7 @@ class FoamPilotMainWindow(QMainWindow):
                 "jsonl",
                 "--json",
             ],
+            run_root=job_root,
         )
 
     def load_draft_text(self, text: str) -> None:
@@ -741,6 +756,11 @@ class FoamPilotMainWindow(QMainWindow):
             self.job_controller.start_cli(
                 effective_arguments,
                 run_root=run_root,
+                project_root=(
+                    self.workspace.root
+                    if run_root is not None and self.workspace is not None
+                    else None
+                ),
             )
         except DesktopJobError as error:
             self._job_purpose = None
@@ -748,6 +768,24 @@ class FoamPilotMainWindow(QMainWindow):
         self._update_action_states()
 
     def _on_job_started(self, command: str) -> None:
+        if self._job_purpose is None and command in {
+            "draft",
+            "plan",
+            "solve",
+            "resume",
+        }:
+            self._job_purpose = command
+            arguments = self.job_controller.current_arguments
+            if command == "draft" and "--output" in arguments:
+                self._expected_draft_path = Path(
+                    arguments[arguments.index("--output") + 1]
+                )
+            elif command == "solve" and len(arguments) > 1:
+                self._solve_task_path = Path(arguments[1])
+                if "--run-root" in arguments:
+                    self._solve_run_root = Path(
+                        arguments[arguments.index("--run-root") + 1]
+                    )
         self.job_status_label.setText(f"IDE Job: running ({command})")
         self._update_action_states()
 
@@ -755,6 +793,33 @@ class FoamPilotMainWindow(QMainWindow):
         if text:
             self.process_log_viewer.appendPlainText(
                 f"[{channel}] {text.rstrip()}"
+            )
+
+    def _on_activity(self, event) -> None:
+        stage = event.stage or event.source.value
+        self.current_stage_label.setText(
+            f"Current activity: {stage} / {event.state.value}"
+        )
+
+    def _on_job_status(self, status: JobStatus) -> None:
+        suffix = (
+            f" · {status.current_stage}"
+            if status.current_stage is not None
+            else ""
+        )
+        self.job_status_label.setText(
+            f"IDE Job: {status.state.value}{suffix}"
+        )
+        if status.run_dir is not None and self.job_controller.is_running:
+            self.live_refresh_timer.start()
+        self._update_action_states()
+
+    def _on_job_health(self, health: str) -> None:
+        if health == "UNRESPONSIVE":
+            self.job_status_label.setText("IDE Job: UNRESPONSIVE")
+            self.statusBar().showMessage(
+                "后台 worker 心跳已过期；可检查日志或请求取消。",
+                8000,
             )
 
     def _on_run_discovered(self, run_dir: Path) -> None:
@@ -772,6 +837,12 @@ class FoamPilotMainWindow(QMainWindow):
         self.process_log_viewer.appendPlainText(
             f"[{purpose or 'job'}] exit={exit_code} status={exit_status}"
         )
+        if exit_status == "cancelled":
+            self.live_refresh_timer.stop()
+            self.job_status_label.setText("IDE Job: CANCELLED")
+            self.refresh_run()
+            self._update_action_states()
+            return
         if purpose == "environment_preflight":
             if exit_code == 0:
                 self._start_cli(
@@ -887,6 +958,7 @@ class FoamPilotMainWindow(QMainWindow):
         self.generate_action.setEnabled(can_generate)
         self.compile_action.setEnabled(can_compile)
         self.solve_action.setEnabled(can_solve)
+        self.cancel_action.setEnabled(busy)
         self.environment_action.setEnabled(not busy)
         self.workspace_action.setEnabled(not busy)
         self.workspace_button.setEnabled(not busy)

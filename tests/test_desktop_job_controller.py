@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import sys
 
 import pytest
+from PySide6.QtCore import QProcess
 
 from foampilot.activity import ActivityEvent
+from foampilot.jobs import (
+    JobState,
+    LocalJobStore,
+    current_process_identity,
+)
 from foampilot.desktop.job_controller import (
     DesktopJobController,
     DesktopJobError,
@@ -128,3 +134,100 @@ def test_controller_decodes_activity_and_preserves_invalid_stderr(qtbot) -> None
     assert activities == [event]
     assert "legacy diagnostic" in "".join(stderr)
     assert event.operation_id not in "".join(stderr)
+
+
+def test_controller_submits_detached_job_discovers_run_and_finishes(
+    qtbot,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project = tmp_path / "project"
+    job_root = project / "runs/job-detached"
+    job_root.mkdir(parents=True)
+    task = project / "task.yaml"
+    task.write_text("task_id: desktop\n", encoding="utf-8")
+    launched: list[Path] = []
+    monkeypatch.setattr(
+        "foampilot.desktop.job_controller.launch_local_job",
+        lambda root, **kwargs: launched.append(Path(root)) or 123,
+    )
+    controller = DesktopJobController(discovery_interval_ms=20)
+    statuses = []
+    health = []
+    runs = []
+    controller.job_status_changed.connect(statuses.append)
+    controller.job_health_changed.connect(health.append)
+    controller.run_discovered.connect(runs.append)
+
+    controller.start_cli(
+        ["solve", str(task), "--run-root", str(job_root), "--json"],
+        run_root=job_root,
+        project_root=project,
+    )
+    store = LocalJobStore(job_root)
+    run = job_root / "run-test"
+    run.mkdir()
+    store.update_status(
+        state=JobState.RUNNING,
+        worker=current_process_identity(),
+        run_dir=run.name,
+        last_heartbeat_at=datetime.now(timezone.utc),
+    )
+    controller._poll_job()
+
+    assert launched == [job_root.resolve()]
+    assert controller.process.state() == QProcess.ProcessState.NotRunning
+    assert controller.is_running is True
+    assert runs == [run.resolve()]
+    assert statuses[-1].state == JobState.RUNNING
+    assert health[-1] == "RUNNING"
+
+    store.update_status(
+        last_heartbeat_at=datetime.now(timezone.utc) - timedelta(seconds=30)
+    )
+    controller._poll_job()
+    assert health[-1] == "UNRESPONSIVE"
+
+    with qtbot.waitSignal(controller.job_finished, timeout=1000):
+        store.update_status(
+            state=JobState.COMPLETED,
+            terminal_code="CLI_EXIT_4",
+        )
+        controller._poll_job()
+    assert controller.is_running is False
+
+
+def test_controller_attaches_existing_job_and_requests_cancel(
+    qtbot,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project = tmp_path / "project"
+    job_root = project / "runs/job-existing"
+    job_root.mkdir(parents=True)
+    task = project / "task.yaml"
+    task.write_text("task_id: desktop\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "foampilot.desktop.job_controller.launch_local_job",
+        lambda *args, **kwargs: 123,
+    )
+    submitter = DesktopJobController(discovery_interval_ms=20)
+    submitter.start_cli(
+        ["solve", str(task), "--run-root", str(job_root), "--json"],
+        run_root=job_root,
+        project_root=project,
+    )
+    submitter.job_poll_timer.stop()
+    store = LocalJobStore(job_root)
+    store.update_status(
+        state=JobState.RUNNING,
+        worker=current_process_identity(),
+    )
+
+    controller = DesktopJobController(discovery_interval_ms=20)
+    controller.attach_job(job_root)
+    controller.request_cancel()
+
+    assert controller.current_job_dir == job_root.resolve()
+    assert store.cancel_requested is True
+    controller.job_poll_timer.stop()
