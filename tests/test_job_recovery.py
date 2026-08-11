@@ -199,10 +199,7 @@ def test_reconcile_dead_worker_and_child_is_orphaned_stopped(
     decision = reconcile_job(store.root, now=lambda: NOW)
 
     assert decision.state == RecoveryState.ORPHANED_STOPPED
-    assert decision.allowed_actions == (
-        RecoveryAction.RECOVER_FINALIZE,
-        RecoveryAction.RERUN,
-    )
+    assert decision.allowed_actions == (RecoveryAction.RECOVER_FINALIZE,)
 
 
 def test_reconcile_valid_terminal_artifacts_is_finalized(tmp_path: Path) -> None:
@@ -220,6 +217,38 @@ def test_reconcile_valid_terminal_artifacts_is_finalized(tmp_path: Path) -> None
     )
 
 
+def test_reconcile_terminal_solve_without_run_is_evidence_damaged(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path)
+    store.update_status(
+        state=JobState.FAILED,
+        finished_at=NOW,
+        terminal_code="CLI_EXIT_5",
+    )
+
+    decision = reconcile_job(store.root, now=lambda: NOW)
+
+    assert decision.state == RecoveryState.EVIDENCE_DAMAGED
+    assert decision.code == "JOB_TERMINAL_RUN_MISSING"
+    assert decision.allowed_actions == (RecoveryAction.INSPECT,)
+
+
+def test_reconcile_terminal_plan_without_run_is_finalized(tmp_path: Path) -> None:
+    store = _store(tmp_path, operation=JobOperation.PLAN)
+    store.update_status(
+        state=JobState.COMPLETED,
+        finished_at=NOW,
+        terminal_code="CLI_EXIT_0",
+    )
+
+    decision = reconcile_job(store.root, now=lambda: NOW)
+
+    assert decision.state == RecoveryState.FINALIZED
+    assert decision.code == "JOB_FINALIZED_WITHOUT_RUN"
+    assert decision.allowed_actions == (RecoveryAction.REPORT,)
+
+
 def test_reconcile_invalid_terminal_artifacts_is_evidence_damaged(
     tmp_path: Path,
 ) -> None:
@@ -232,10 +261,7 @@ def test_reconcile_invalid_terminal_artifacts_is_evidence_damaged(
     assert decision.state == RecoveryState.EVIDENCE_DAMAGED
     assert decision.manifest_issues
     assert RecoveryAction.STRICT_RESUME not in decision.allowed_actions
-    assert decision.allowed_actions == (
-        RecoveryAction.INSPECT,
-        RecoveryAction.RERUN,
-    )
+    assert decision.allowed_actions == (RecoveryAction.INSPECT,)
 
 
 def test_reconcile_rejects_symbolic_run_binding(tmp_path: Path) -> None:
@@ -330,6 +356,38 @@ def test_recover_finalize_is_idempotent(tmp_path: Path) -> None:
     assert first == second
     assert manifest.read_bytes() == original
     assert store.read_status().revision == revision
+
+
+def test_recover_finalize_completes_after_manifest_write_interruption(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    store = _store(tmp_path)
+    run_dir = _partial_run(store)
+    original_finalize = ArtifactStore.finalize
+    calls = 0
+
+    def interrupt_once(self, selected_run):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("simulated crash before manifest")
+        return original_finalize(self, selected_run)
+
+    monkeypatch.setattr(ArtifactStore, "finalize", interrupt_once)
+
+    try:
+        recover_finalize(store.root, recorded_at=lambda: NOW)
+    except OSError as error:
+        assert "simulated crash" in str(error)
+    else:
+        raise AssertionError("simulated recovery interruption was ignored")
+
+    decision = recover_finalize(store.root, recorded_at=lambda: NOW)
+
+    assert decision.state == RecoveryState.FINALIZED
+    assert ArtifactStore(store.root).verify(run_dir) == []
+    assert store.read_status().state == JobState.INTERRUPTED
 
 
 def test_recover_finalize_refuses_held_writer_lock(tmp_path: Path) -> None:

@@ -1,6 +1,6 @@
 # FoamPilot 恢复、Resume 与 Rerun 语义规格
 
-状态：已确认，按三项串行任务中的第三项实施。本文依赖
+状态：已实现，等待本机综合门禁记录。本文依赖
 [核心执行可观测性与活性规格](execution-observability-liveness-design.md)和
 [本机任务监督与 Desktop 可靠性规格](local-job-supervision-reliability-design.md)，明确 attach、
 orphan recovery、strict resume、rerun 和未来 OpenFOAM continuation 的边界。
@@ -57,9 +57,9 @@ Desktop 或 CLI 恢复入口必须先执行确定性 reconcile：
 | worker identity 匹配、lock 持有、heartbeat 新鲜 | `RUNNING` | attach、请求取消 |
 | worker identity 匹配、heartbeat 过期 | `UNRESPONSIVE` | 只读 attach、诊断、请求取消 |
 | worker 消失、已记录 child identity 仍匹配且存活 | `ORPHANED_ACTIVE` | 只读观察、受控终止；禁止接管 workflow |
-| worker/child 均消失、无 terminal summary | `ORPHANED_STOPPED` | recover-finalize、rerun |
+| worker/child 均消失、无 terminal summary | `ORPHANED_STOPPED` | recover-finalize；固化后再 rerun |
 | terminal summary 与 manifest 有效 | `FINALIZED` | report；按 eligibility 决定 resume/rerun |
-| terminal artifact 损坏或 manifest 无效 | `EVIDENCE_DAMAGED` | 安全只读、rerun；禁止 resume |
+| terminal artifact 损坏或 manifest 无效 | `EVIDENCE_DAMAGED` | 安全只读；禁止把它作为 resume/rerun parent |
 
 仅凭 PID 存在不能判断 running；必须同时核对 boot ID、process start token、job ID、writer
 lock 和路径边界。reconcile 不向未知进程发送信号。
@@ -86,8 +86,8 @@ lock 和路径边界。reconcile 不向未知进程发送信号。
 也不等同于 `FAILED` 或 `CANCELLED`。
 
 recover-finalize 一律写入 `resume.allowed=false`。硬 kill、断电或未知退出不能转换为可重试
-generation/repair；用户可以从已保存的规范输入执行 rerun。现有 strict resume 仍只接受已经
-由正常终止路径写出 eligibility 的 finalized parent。
+generation/repair；用户先得到 manifest 有效的 interrupted parent，再从该规范输入执行 rerun。
+现有 strict resume 仍只接受已经由正常终止路径写出 eligibility 的 finalized parent。
 
 ## 7. Strict resume
 
@@ -162,8 +162,9 @@ reused_evidence_paths
 - 续算前后的 residual、守恒和 public validation 可以正确拼接；
 - continuation 生成新 run/attempt，不修改原 finalized evidence。
 
-在上述 solver-specific gate 建立前，Desktop 对求解阶段中断只提供 attach、取消、
-recover-finalize 和 rerun，不显示“从最后时间步继续”。
+在上述 solver-specific gate 建立前，Desktop 对求解阶段中断只提供 attach、取消和
+recover-finalize；固化为 manifest 有效的 interrupted parent 后才提供 rerun，不显示
+“从最后时间步继续”。
 
 ## 11. Desktop 操作矩阵
 
@@ -172,8 +173,8 @@ recover-finalize 和 rerun，不显示“从最后时间步继续”。
 | running | attach、cancel | resume、rerun 覆盖当前 run |
 | unresponsive | inspect、cancel | 直接判 failed |
 | orphaned active | inspect、terminate orphan | 接管未知 exit status 后继续 workflow |
-| orphaned stopped | recover-finalize、rerun | strict resume，除非随后正式 eligibility 通过 |
-| cancelled | rerun | 自动 repair、假装 continuation |
+| orphaned stopped | recover-finalize | rerun、strict resume，直到固化为有效 parent |
+| cancelled 且 manifest 有效 | rerun | 自动 repair、假装 continuation |
 | interrupted | rerun；条件满足时 strict resume | 修改原 run |
 | finalized retryable generation/repair | strict resume、rerun | OpenFOAM continuation |
 | finalized success/failure | report、rerun | 无证据的 resume |

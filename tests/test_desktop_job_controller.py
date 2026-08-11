@@ -8,15 +8,19 @@ import pytest
 from PySide6.QtCore import QProcess
 
 from foampilot.activity import ActivityEvent
+from foampilot.artifacts import ArtifactStore, RunSummary
 from foampilot.jobs import (
     JobState,
     LocalJobStore,
+    RecoveryState,
+    build_job_spec,
     current_process_identity,
 )
 from foampilot.desktop.job_controller import (
     DesktopJobController,
     DesktopJobError,
 )
+from foampilot.workflow import ResumeMetadata, WorkflowState
 
 
 def _python_controller() -> DesktopJobController:
@@ -230,4 +234,98 @@ def test_controller_attaches_existing_job_and_requests_cancel(
 
     assert controller.current_job_dir == job_root.resolve()
     assert store.cancel_requested is True
+    controller.job_poll_timer.stop()
+
+
+def test_attach_latest_exposes_orphaned_stopped_job(
+    qtbot,
+    tmp_path: Path,
+) -> None:
+    del qtbot
+    project = tmp_path / "project"
+    job_root = project / "runs/job-orphan"
+    job_root.mkdir(parents=True)
+    task = project / "task.yaml"
+    task.write_text("task_id: desktop\n", encoding="utf-8")
+    store = LocalJobStore(job_root)
+    store.create(
+        build_job_spec(
+            job_root=job_root,
+            project_root=project,
+            operation="solve",
+            arguments=("solve", str(task), "--run-root", str(job_root)),
+        )
+    )
+    store.initialize_status()
+    dead = current_process_identity().model_copy(update={"start_token": 0})
+    store.update_status(
+        state=JobState.RUNNING,
+        worker=dead,
+        current_child=dead,
+    )
+    controller = DesktopJobController(discovery_interval_ms=20)
+    decisions = []
+    controller.recovery_decision_changed.connect(decisions.append)
+
+    attached = controller.attach_latest(project / "runs")
+
+    assert attached == job_root.resolve()
+    assert controller.current_job_dir == job_root.resolve()
+    assert decisions[-1].state == RecoveryState.ORPHANED_STOPPED
+    assert controller.is_running is False
+    controller.job_poll_timer.stop()
+
+
+def test_attach_latest_falls_back_to_most_recent_finalized_job(
+    qtbot,
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    job_root = project / "runs/job-final"
+    job_root.mkdir(parents=True)
+    task = project / "task.yaml"
+    task.write_text("task_id: desktop\n", encoding="utf-8")
+    store = LocalJobStore(job_root)
+    store.create(
+        build_job_spec(
+            job_root=job_root,
+            project_root=project,
+            operation="solve",
+            arguments=("solve", str(task), "--run-root", str(job_root)),
+        )
+    )
+    store.initialize_status()
+    run_dir = job_root / "run-final"
+    run_dir.mkdir()
+    summary = RunSummary(
+        task_id="desktop",
+        workflow_state=WorkflowState.COMPLETED,
+        native_status="PUBLIC_VALIDATION_PASS",
+        resume=ResumeMetadata(allowed=False, reason="completed"),
+        message="completed",
+    )
+    (run_dir / "summary.json").write_text(
+        summary.model_dump_json(indent=2) + "\n",
+        encoding="utf-8",
+    )
+    ArtifactStore(job_root).finalize(run_dir)
+    store.update_status(
+        state=JobState.COMPLETED,
+        run_dir=run_dir.name,
+        terminal_code="CLI_EXIT_0",
+    )
+    controller = DesktopJobController(discovery_interval_ms=20)
+    decisions = []
+    finished = []
+    controller.recovery_decision_changed.connect(decisions.append)
+    controller.job_finished.connect(lambda *args: finished.append(args))
+
+    attached = controller.attach_latest(project / "runs")
+    qtbot.wait(20)
+
+    assert attached == job_root.resolve()
+    assert controller.current_run_dir == run_dir.resolve()
+    assert decisions[-1].state == RecoveryState.FINALIZED
+    assert finished == []
+    assert controller.is_running is False
     controller.job_poll_timer.stop()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 import time
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -91,11 +92,26 @@ class ArtifactStore:
             "build_seconds": max(time.monotonic() - started, 0.0),
             "files": entries,
         }
-        with manifest.open("x", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2, sort_keys=True)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
+        descriptor, temporary_name = tempfile.mkstemp(
+            dir=directory,
+            prefix=f".{self.manifest_name}.",
+            suffix=".tmp",
+        )
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2, sort_keys=True)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.link(temporary, manifest)
+            directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        finally:
+            temporary.unlink(missing_ok=True)
         return manifest
 
     def verify(self, run_dir: str | Path) -> list[str]:

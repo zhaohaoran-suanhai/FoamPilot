@@ -75,13 +75,23 @@ isolation；TaskDraft 不接收 Runtime 参数。
 ## 取消、关闭和重新连接
 
 长任务不再由窗口进程持有。生成草稿或求解开始后，可以正常关闭 Desktop，worker 会继续写入
-工程内的 `runs/job-*`。再次打开同一个工程时，Desktop 会发现最新的活动 job，校验 worker
-进程身份并重新连接事件、日志和 run。关闭窗口不会隐式取消任务。
+工程内的 `runs/job-*`。再次打开同一个工程时，Desktop 会优先发现最新的活动或异常中断 job，
+校验 worker 进程身份并重新连接事件、日志和 run；没有待处理任务时回到最近的已固化 job。
+关闭窗口不会隐式取消任务。
 
 点击“取消任务”只会创建幂等的控制请求。worker 在安全点停止启动新阶段，并对自己拥有且身份
 匹配的模型/OpenFOAM/MPI 进程组先发送 `SIGTERM`、超时后发送 `SIGKILL`；确认进程组退出并
 固化 partial artifacts 后才显示 `CANCELLED`。`UNRESPONSIVE` 仅表示心跳过期，不能等同于
 求解失败或取消完成。
+
+若 worker 已消失但受监督的子进程仍存在，界面只允许“终止孤儿进程”，不会接管未知状态继续
+workflow。worker 和子进程都消失后，“固化中断”会把现有 partial run 写成中立的
+`INTERRUPTED` 终态并生成 manifest；完成固化后才能以可信 parent 执行“完整重跑”。
+
+已固化 run 只有在 summary 明确声明可重试、manifest 与兼容性指纹有效，而且恢复点是模型生成
+或模型修复时，才启用“恢复模型生成”或“恢复模型修复”。“完整重跑”始终创建新 run，并记录
+parent manifest 与 `rerun_same_input`/`rerun_with_changes` lineage。两者都不会原地修改 parent。
+界面持续显示“OpenFOAM continuation 当前不支持”，因此这些按钮不表示从任意时间目录断点续算。
 
 ## 状态解释
 
@@ -114,7 +124,7 @@ isolation；TaskDraft 不接收 Runtime 参数。
 - 活跃 run 的 workflow/log 通过 byte cursor 增量读取；文件树扫描节流，manifest 验证缓存，
   重型 projection 在 Qt 后台线程执行。刷新失败保留上一次画面并显示
   `DESKTOP_REFRESH_DEGRADED`；
-- 当前 Desktop 尚未提供恢复固化、严格 resume/rerun 决策、人工 repair、case revision、三维
+- 当前 Desktop 尚未提供人工 repair、case revision、OpenFOAM 时间目录 continuation、三维
   VTK/PyVista 视图、ParaView 启动、远程 HPC、多用户和权限管理。
 
 ## Linux xcb 启动故障

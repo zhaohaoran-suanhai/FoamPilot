@@ -13,9 +13,14 @@ from foampilot.jobs import (
     JobOperation,
     JobState,
     LocalJobStore,
+    RecoveryDecision,
+    RecoveryState,
     build_job_spec,
     launch_local_job,
     process_identity_matches,
+    reconcile_job,
+    recover_finalize,
+    terminate_orphan,
 )
 
 
@@ -28,7 +33,10 @@ _DEFAULT_COMMANDS = (
     "model",
     "task",
     "validate",
+    "plan",
     "solve",
+    "resume",
+    "rerun",
     "report",
 )
 
@@ -41,6 +49,7 @@ class DesktopJobController(QObject):
     activity_received = Signal(object)
     job_status_changed = Signal(object)
     job_health_changed = Signal(str)
+    recovery_decision_changed = Signal(object)
     run_discovered = Signal(object)
     job_finished = Signal(int, str)
     job_error = Signal(str, str)
@@ -90,6 +99,7 @@ class DesktopJobController(QObject):
         self._last_job_revision = 0
         self._terminal_emitted = False
         self._last_job_health = ""
+        self._recovery_decision = None
 
     @property
     def is_running(self) -> bool:
@@ -97,6 +107,12 @@ class DesktopJobController(QObject):
             return True
         if self._active_store is None:
             return False
+        if self._recovery_decision is not None:
+            return self._recovery_decision.state.value in {
+                "RUNNING",
+                "UNRESPONSIVE",
+                "ORPHANED_ACTIVE",
+            }
         try:
             return self._active_store.read_status().state in {
                 JobState.SUBMITTED,
@@ -119,6 +135,10 @@ class DesktopJobController(QObject):
     @property
     def current_arguments(self) -> tuple[str, ...]:
         return self._arguments
+
+    @property
+    def recovery_decision(self):
+        return self._recovery_decision
 
     def start_cli(
         self,
@@ -157,6 +177,7 @@ class DesktopJobController(QObject):
         self._run_root = resolved_root
         self._discovered_run = None
         self._stderr_buffer = ""
+        self._recovery_decision = None
         operation = self._job_operation(normalized)
         if resolved_root is not None and operation is not None:
             project = (
@@ -193,6 +214,8 @@ class DesktopJobController(QObject):
             return JobOperation.SOLVE
         if arguments and arguments[0] == "resume":
             return JobOperation.RESUME
+        if arguments and arguments[0] == "rerun":
+            return JobOperation.RERUN
         return None
 
     def _bind_store(self, store: LocalJobStore) -> None:
@@ -239,21 +262,101 @@ class DesktopJobController(QObject):
             and (path / "job.json").is_file()
             and (path / "job-status.json").is_file()
         ]
+        finalized: tuple[Path, RecoveryDecision] | None = None
         for path in candidates:
             try:
-                status = LocalJobStore(path).read_status()
+                decision = reconcile_job(
+                    path,
+                    heartbeat_stale_seconds=self.heartbeat_stale_seconds,
+                )
             except (OSError, ValueError):
                 continue
-            if status.state in {
-                JobState.SUBMITTED,
-                JobState.STARTING,
-                JobState.RUNNING,
-                JobState.CANCEL_REQUESTED,
-                JobState.CANCELLING,
+            if decision.state in {
+                RecoveryState.RUNNING,
+                RecoveryState.UNRESPONSIVE,
             }:
                 self.attach_job(path)
+                self._set_recovery_decision(decision)
                 return path.resolve()
+            if decision.state in {
+                RecoveryState.ORPHANED_ACTIVE,
+                RecoveryState.ORPHANED_STOPPED,
+                RecoveryState.EVIDENCE_DAMAGED,
+            }:
+                self._observe_job(path)
+                self._set_recovery_decision(decision)
+                return path.resolve()
+            if decision.state == RecoveryState.FINALIZED and finalized is None:
+                finalized = (path, decision)
+        if finalized is not None:
+            path, decision = finalized
+            self._observe_job(path)
+            self._set_recovery_decision(decision)
+            return path.resolve()
         return None
+
+    def _observe_job(self, job_root: str | Path) -> None:
+        store = LocalJobStore(job_root)
+        spec = store.read_spec()
+        self._arguments = spec.arguments
+        self._run_root = store.root
+        self._discovered_run = None
+        self._bind_store(store)
+        if store.read_status().state in {
+            JobState.CANCELLED,
+            JobState.COMPLETED,
+            JobState.FAILED,
+            JobState.INTERRUPTED,
+        }:
+            # Startup observation of an already terminal job is not a new
+            # completion event. It must not replay Desktop completion UI.
+            self._terminal_emitted = True
+        self.job_poll_timer.start()
+        self._poll_job()
+
+    def _set_recovery_decision(self, decision) -> None:
+        if decision != self._recovery_decision:
+            self._recovery_decision = decision
+            self.recovery_decision_changed.emit(decision)
+
+    def reconcile_current_job(self):
+        if self._active_store is None:
+            raise DesktopJobError("DESKTOP_JOB_NOT_SELECTED: no durable job")
+        try:
+            decision = reconcile_job(
+                self._active_store.root,
+                heartbeat_stale_seconds=self.heartbeat_stale_seconds,
+            )
+        except (OSError, ValueError) as error:
+            raise DesktopJobError(f"DESKTOP_RECONCILE_FAILED: {error}") from error
+        self._set_recovery_decision(decision)
+        return decision
+
+    def request_terminate_orphan(self):
+        if self._active_store is None:
+            raise DesktopJobError("DESKTOP_JOB_NOT_SELECTED: no durable job")
+        try:
+            decision = terminate_orphan(self._active_store.root)
+        except (OSError, RuntimeError, ValueError) as error:
+            raise DesktopJobError(
+                f"DESKTOP_ORPHAN_TERMINATION_FAILED: {error}"
+            ) from error
+        self._set_recovery_decision(decision)
+        self._poll_job()
+        return decision
+
+    def request_recover_finalize(self):
+        if self._active_store is None:
+            raise DesktopJobError("DESKTOP_JOB_NOT_SELECTED: no durable job")
+        try:
+            decision = recover_finalize(self._active_store.root)
+        except (OSError, RuntimeError, ValueError) as error:
+            raise DesktopJobError(
+                f"DESKTOP_RECOVER_FINALIZE_FAILED: {error}"
+            ) from error
+        self._set_recovery_decision(decision)
+        self._poll_job()
+        return decision
 
     def request_cancel(self) -> None:
         if self._active_store is None or not self.is_running:
@@ -378,6 +481,21 @@ class DesktopJobController(QObject):
         except (OSError, ValueError) as error:
             self.job_error.emit("DESKTOP_JOB_STATUS_INVALID", str(error))
             return
+        if self._recovery_decision is not None or status.state in {
+            JobState.CANCELLED,
+            JobState.COMPLETED,
+            JobState.FAILED,
+            JobState.INTERRUPTED,
+        }:
+            try:
+                self._set_recovery_decision(
+                    reconcile_job(
+                        store.root,
+                        heartbeat_stale_seconds=self.heartbeat_stale_seconds,
+                    )
+                )
+            except (OSError, ValueError):
+                pass
         if status.revision > self._last_job_revision:
             self._last_job_revision = status.revision
             self.job_status_changed.emit(status)

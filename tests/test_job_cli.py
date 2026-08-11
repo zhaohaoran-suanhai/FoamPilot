@@ -57,7 +57,7 @@ def test_job_reconcile_cli_reports_allowed_actions(
 
     assert payload["state"] == "ORPHANED_STOPPED"
     assert payload["code"] == "JOB_ORPHANED_STOPPED"
-    assert payload["allowed_actions"] == ["recover_finalize", "rerun"]
+    assert payload["allowed_actions"] == ["recover_finalize"]
 
 
 def test_job_recover_finalize_cli_freezes_partial_run(

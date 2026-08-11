@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import signal
+import tempfile
 import time
 import yaml
 
@@ -24,6 +25,7 @@ from foampilot.workflow import (
 
 from .identity import process_identity_matches
 from .models import (
+    JobOperation,
     JobState,
     RecoveryAction,
     RecoveryDecision,
@@ -44,6 +46,11 @@ _TERMINAL_STATES = {
     JobState.COMPLETED,
     JobState.FAILED,
     JobState.INTERRUPTED,
+}
+_RUN_PRODUCING_OPERATIONS = {
+    JobOperation.SOLVE,
+    JobOperation.RESUME,
+    JobOperation.RERUN,
 }
 
 
@@ -131,49 +138,6 @@ def reconcile_job(
     )
     issues = (*path_issues, *artifact_issues)
 
-    if artifact_valid:
-        actions = [RecoveryAction.REPORT]
-        if strict_resume:
-            actions.append(RecoveryAction.STRICT_RESUME)
-        actions.append(RecoveryAction.RERUN)
-        return RecoveryDecision(
-            job_id=spec.job_id,
-            state=RecoveryState.FINALIZED,
-            code="JOB_FINALIZED",
-            reason_zh="任务已有可验证的终态 summary 与 manifest。",
-            recovery_zh="可查看报告；仅在明确满足资格时恢复模型阶段，或完整重跑。",
-            allowed_actions=tuple(actions),
-            worker_alive=worker_alive,
-            child_alive=child_alive,
-            writer_lock_held=lock_held,
-            run_dir=run_dir,
-        )
-    if issues or (status.state in _TERMINAL_STATES and run_dir is not None):
-        return RecoveryDecision(
-            job_id=spec.job_id,
-            state=RecoveryState.EVIDENCE_DAMAGED,
-            code="JOB_EVIDENCE_DAMAGED",
-            reason_zh="终态产物缺失、损坏或无法通过 manifest 校验。",
-            recovery_zh="只读检查现有证据；禁止严格恢复，可从规范输入完整重跑。",
-            allowed_actions=(RecoveryAction.INSPECT, RecoveryAction.RERUN),
-            worker_alive=worker_alive,
-            child_alive=child_alive,
-            writer_lock_held=lock_held,
-            run_dir=run_dir,
-            manifest_issues=tuple(issues) or ("terminal run is invalid",),
-        )
-    if status.state in _TERMINAL_STATES and run_dir is None:
-        return RecoveryDecision(
-            job_id=spec.job_id,
-            state=RecoveryState.FINALIZED,
-            code="JOB_FINALIZED_WITHOUT_RUN",
-            reason_zh="非求解任务已有持久化 job 终态。",
-            recovery_zh="可检查 worker 输出或重新提交新任务。",
-            allowed_actions=(RecoveryAction.REPORT, RecoveryAction.RERUN),
-            worker_alive=worker_alive,
-            child_alive=child_alive,
-            writer_lock_held=lock_held,
-        )
     if worker_alive and lock_held and status.state in _ACTIVE_STATES:
         heartbeat = status.last_heartbeat_at
         stale = heartbeat is None or (
@@ -219,6 +183,62 @@ def reconcile_job(
             writer_lock_held=False,
             run_dir=run_dir,
         )
+    if artifact_valid:
+        actions = [RecoveryAction.REPORT]
+        if strict_resume:
+            actions.append(RecoveryAction.STRICT_RESUME)
+        actions.append(RecoveryAction.RERUN)
+        return RecoveryDecision(
+            job_id=spec.job_id,
+            state=RecoveryState.FINALIZED,
+            code="JOB_FINALIZED",
+            reason_zh="任务已有可验证的终态 summary 与 manifest。",
+            recovery_zh="可查看报告；仅在明确满足资格时恢复模型阶段，或完整重跑。",
+            allowed_actions=tuple(actions),
+            worker_alive=worker_alive,
+            child_alive=child_alive,
+            writer_lock_held=lock_held,
+            run_dir=run_dir,
+        )
+    if issues or (status.state in _TERMINAL_STATES and run_dir is not None):
+        return RecoveryDecision(
+            job_id=spec.job_id,
+            state=RecoveryState.EVIDENCE_DAMAGED,
+            code="JOB_EVIDENCE_DAMAGED",
+            reason_zh="终态产物缺失、损坏或无法通过 manifest 校验。",
+            recovery_zh="只读检查现有证据；禁止严格恢复，可从规范输入完整重跑。",
+            allowed_actions=(RecoveryAction.INSPECT,),
+            worker_alive=worker_alive,
+            child_alive=child_alive,
+            writer_lock_held=lock_held,
+            run_dir=run_dir,
+            manifest_issues=tuple(issues) or ("terminal run is invalid",),
+        )
+    if status.state in _TERMINAL_STATES and run_dir is None:
+        if spec.operation in _RUN_PRODUCING_OPERATIONS:
+            return RecoveryDecision(
+                job_id=spec.job_id,
+                state=RecoveryState.EVIDENCE_DAMAGED,
+                code="JOB_TERMINAL_RUN_MISSING",
+                reason_zh="求解类任务已记录终态，但没有可验证的 run 目录。",
+                recovery_zh="检查 worker 日志；禁止严格恢复，可从规范输入完整重跑。",
+                allowed_actions=(RecoveryAction.INSPECT,),
+                worker_alive=worker_alive,
+                child_alive=child_alive,
+                writer_lock_held=lock_held,
+                manifest_issues=("terminal solve-like job has no run",),
+            )
+        return RecoveryDecision(
+            job_id=spec.job_id,
+            state=RecoveryState.FINALIZED,
+            code="JOB_FINALIZED_WITHOUT_RUN",
+            reason_zh="非求解任务已有持久化 job 终态。",
+            recovery_zh="可检查 worker 输出或重新提交新任务。",
+            allowed_actions=(RecoveryAction.REPORT,),
+            worker_alive=worker_alive,
+            child_alive=child_alive,
+            writer_lock_held=lock_held,
+        )
     if not worker_alive and not child_alive and not lock_held:
         return RecoveryDecision(
             job_id=spec.job_id,
@@ -228,7 +248,6 @@ def reconcile_job(
             recovery_zh="可安全固化为中断，或从规范输入完整重跑。",
             allowed_actions=(
                 RecoveryAction.RECOVER_FINALIZE,
-                RecoveryAction.RERUN,
             ),
             worker_alive=False,
             child_alive=False,
@@ -325,11 +344,32 @@ def terminate_orphan(
 
 
 def _write_json_exclusive(path: Path, payload: object) -> None:
-    with path.open("x", encoding="utf-8") as stream:
-        json.dump(payload, stream, ensure_ascii=False, indent=2, sort_keys=True)
-        stream.write("\n")
-        stream.flush()
-        os.fsync(stream.fileno())
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(
+                payload,
+                stream,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, path)
+        directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _workflow_evidence(run_dir: Path) -> tuple[int, str | None]:
@@ -347,6 +387,51 @@ def _workflow_evidence(run_dir: Path) -> tuple[int, str | None]:
         if event.state == WorkflowEventState.COMPLETED:
             last_completed = event.stage.value
     return sequence, last_completed
+
+
+def _has_interrupted_final_event(run_dir: Path) -> bool:
+    path = run_dir / "workflow-events.jsonl"
+    if not path.is_file() or path.is_symlink():
+        return False
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            event = WorkflowEvent.model_validate_json(line)
+        except ValueError:
+            continue
+        if (
+            event.stage == WorkflowStage.RUN_FINALIZED
+            and event.state == WorkflowEventState.INTERRUPTED
+        ):
+            return True
+    return False
+
+
+def _partial_recovery_payload(run_dir: Path) -> dict[str, object] | None:
+    """Recognize only our own incomplete recover-finalize transaction."""
+
+    path = run_dir / "interruption.json"
+    manifest = run_dir / ArtifactStore.manifest_name
+    if not path.is_file() or path.is_symlink() or manifest.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+        return None
+    if payload.get("code") not in {"HOST_RESTARTED", "WORKER_INTERRUPTED"}:
+        return None
+    summary_path = run_dir / "summary.json"
+    if summary_path.exists():
+        if not summary_path.is_file() or summary_path.is_symlink():
+            return None
+        try:
+            summary = ArtifactStore.read_summary(run_dir)
+        except (OSError, ValueError):
+            return None
+        if summary.workflow_state != WorkflowState.INTERRUPTED:
+            return None
+    return payload
 
 
 def _append_interrupted_event(
@@ -403,11 +488,44 @@ def recover_finalize(
     if decision.state == RecoveryState.FINALIZED and decision.run_dir is not None:
         summary = ArtifactStore.read_summary(decision.run_dir)
         if summary.workflow_state == WorkflowState.INTERRUPTED:
+            status = store.read_status()
+            if status.state != JobState.INTERRUPTED:
+                if (
+                    status.worker is not None
+                    and process_identity_matches(status.worker)
+                ) or (
+                    status.current_child is not None
+                    and process_identity_matches(status.current_child)
+                ):
+                    raise ValueError(
+                        "JOB_RECOVERY_NOT_ALLOWED: an owned process is alive"
+                    )
+                with store.writer_lock():
+                    store.update_status(
+                        state=JobState.INTERRUPTED,
+                        current_child=None,
+                        finished_at=recorded_at(),
+                        last_heartbeat_at=recorded_at(),
+                        terminal_code=(
+                            summary.terminal_blocker.code
+                            if summary.terminal_blocker is not None
+                            else "WORKER_INTERRUPTED"
+                        ),
+                    )
+                return reconcile_job(store.root, now=recorded_at)
             return decision
         raise ValueError("JOB_RECOVERY_NOT_ALLOWED: run already has another terminal state")
-    if decision.state != RecoveryState.ORPHANED_STOPPED:
-        raise ValueError(f"JOB_RECOVERY_NOT_ALLOWED: {decision.state.value}")
     run_dir = decision.run_dir
+    partial_recovery = (
+        _partial_recovery_payload(run_dir)
+        if run_dir is not None
+        else None
+    )
+    if (
+        decision.state != RecoveryState.ORPHANED_STOPPED
+        and partial_recovery is None
+    ):
+        raise ValueError(f"JOB_RECOVERY_NOT_ALLOWED: {decision.state.value}")
     if run_dir is None:
         raise ValueError("JOB_RUN_UNAVAILABLE: no partial run can be finalized")
 
@@ -421,20 +539,36 @@ def recover_finalize(
             and process_identity_matches(status.current_child)
         ):
             raise ValueError("JOB_RECOVERY_NOT_ALLOWED: an owned process is alive")
-        if (run_dir / "summary.json").exists() or (
-            run_dir / ArtifactStore.manifest_name
-        ).exists():
+        partial_recovery = _partial_recovery_payload(run_dir)
+        if partial_recovery is None and (
+            (run_dir / "summary.json").exists()
+            or (run_dir / ArtifactStore.manifest_name).exists()
+            or (run_dir / "interruption.json").exists()
+        ):
             raise ValueError("JOB_RECOVERY_NOT_ALLOWED: terminal evidence already exists")
-        timestamp = recorded_at()
+        if partial_recovery is not None:
+            try:
+                timestamp = datetime.fromisoformat(
+                    str(partial_recovery["recorded_at"])
+                )
+            except (KeyError, ValueError) as error:
+                raise ValueError(
+                    "JOB_RECOVERY_NOT_ALLOWED: invalid recovery timestamp"
+                ) from error
+            code = str(partial_recovery["code"])
+        else:
+            timestamp = recorded_at()
+            code = ""
         current_boot = Path("/proc/sys/kernel/random/boot_id").read_text(
             encoding="utf-8"
         ).strip()
-        code = (
-            "HOST_RESTARTED"
-            if status.worker is not None
-            and status.worker.boot_id != current_boot
-            else "WORKER_INTERRUPTED"
-        )
+        if not code:
+            code = (
+                "HOST_RESTARTED"
+                if status.worker is not None
+                and status.worker.boot_id != current_boot
+                else "WORKER_INTERRUPTED"
+            )
         log_offsets: dict[str, int] = {}
         for path in (
             store.root / "worker.stdout.log",
@@ -474,12 +608,14 @@ def recover_finalize(
             },
             "log_offsets": log_offsets,
         }
-        _write_json_exclusive(run_dir / "interruption.json", interruption)
-        _append_interrupted_event(
-            run_dir,
-            sequence=sequence + 1,
-            occurred_at=timestamp,
-        )
+        if partial_recovery is None:
+            _write_json_exclusive(run_dir / "interruption.json", interruption)
+        if not _has_interrupted_final_event(run_dir):
+            _append_interrupted_event(
+                run_dir,
+                sequence=sequence + 1,
+                occurred_at=timestamp,
+            )
         blocker = FailureRecord(
             domain=FailureDomain.WORKFLOW,
             code=code,
@@ -501,10 +637,12 @@ def recover_finalize(
             ),
             message="The interrupted local job was finalized without claiming CFD success.",
         )
-        _write_json_exclusive(
-            run_dir / "summary.json",
-            summary.model_dump(mode="json"),
-        )
+        summary_path = run_dir / "summary.json"
+        if not summary_path.exists():
+            _write_json_exclusive(
+                summary_path,
+                summary.model_dump(mode="json"),
+            )
         ArtifactStore(store.root).finalize(run_dir)
         store.update_status(
             state=JobState.INTERRUPTED,

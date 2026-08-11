@@ -22,6 +22,11 @@ from foampilot.desktop import application as desktop_application
 from foampilot.desktop.job_controller import DesktopJobError
 from foampilot.desktop.main_window import FoamPilotMainWindow
 from foampilot.desktop.repository import RunRepository
+from foampilot.jobs import (
+    RecoveryAction,
+    RecoveryDecision,
+    RecoveryState,
+)
 from foampilot.workflow import WorkflowEvent, WorkflowStage
 
 
@@ -38,11 +43,13 @@ class RecordingJobController(QObject):
     activity_received = Signal(object)
     job_status_changed = Signal(object)
     job_health_changed = Signal(str)
+    recovery_decision_changed = Signal(object)
 
     def __init__(self) -> None:
         super().__init__()
         self.is_running = False
         self.calls: list[tuple[list[str], Path | None]] = []
+        self.recovery_decision = None
 
     @property
     def current_arguments(self) -> tuple[str, ...]:
@@ -67,6 +74,16 @@ class RecordingJobController(QObject):
         if not self.is_running:
             raise DesktopJobError("DESKTOP_JOB_NOT_RUNNING")
         self.is_running = True
+
+    def request_terminate_orphan(self):
+        return self.recovery_decision
+
+    def request_recover_finalize(self):
+        return self.recovery_decision
+
+    def emit_recovery(self, decision: RecoveryDecision) -> None:
+        self.recovery_decision = decision
+        self.recovery_decision_changed.emit(decision)
 
     def finish(self, exit_code: int = 0) -> None:
         self.is_running = False
@@ -864,3 +881,142 @@ def test_close_leaves_detached_canonical_job_running(qtbot) -> None:
     assert closed is True
     assert window.isVisible() is False
     assert controller.is_running is True
+
+
+def _recovery_decision(
+    state: RecoveryState,
+    actions: tuple[RecoveryAction, ...],
+    *,
+    run_dir: Path | None = None,
+) -> RecoveryDecision:
+    return RecoveryDecision(
+        job_id="job-desktop-recovery",
+        state=state,
+        code=f"JOB_{state.value}",
+        reason_zh="确定性恢复诊断。",
+        recovery_zh="只允许证据支持的操作。",
+        allowed_actions=actions,
+        worker_alive=state in {RecoveryState.RUNNING, RecoveryState.UNRESPONSIVE},
+        child_alive=state == RecoveryState.ORPHANED_ACTIVE,
+        writer_lock_held=state in {RecoveryState.RUNNING, RecoveryState.UNRESPONSIVE},
+        run_dir=run_dir,
+    )
+
+
+def test_desktop_recovery_action_matrix_is_decision_driven(
+    qtbot,
+) -> None:
+    controller = RecordingJobController()
+    window = FoamPilotMainWindow(job_controller=controller)
+    qtbot.addWidget(window)
+
+    controller.emit_recovery(
+        _recovery_decision(
+            RecoveryState.ORPHANED_ACTIVE,
+            (RecoveryAction.INSPECT, RecoveryAction.TERMINATE_ORPHAN),
+        )
+    )
+    assert window.terminate_orphan_action.isEnabled() is True
+    assert window.cancel_action.isEnabled() is False
+    assert window.recover_finalize_action.isEnabled() is False
+    assert window.resume_action.isEnabled() is False
+    assert window.rerun_action.isEnabled() is False
+
+    controller.emit_recovery(
+        _recovery_decision(
+            RecoveryState.ORPHANED_STOPPED,
+            (RecoveryAction.RECOVER_FINALIZE, RecoveryAction.RERUN),
+        )
+    )
+    assert window.terminate_orphan_action.isEnabled() is False
+    assert window.recover_finalize_action.isEnabled() is True
+    assert "OpenFOAM continuation" in window.recovery_hint_label.text()
+    assert "JOB_ORPHANED_STOPPED" in window.recovery_hint_label.text()
+
+
+def test_desktop_complete_rerun_submits_a_new_detached_job(
+    qtbot,
+    tmp_path: Path,
+) -> None:
+    controller = RecordingJobController()
+    window = FoamPilotMainWindow(job_controller=controller)
+    qtbot.addWidget(window)
+    window.set_workspace(tmp_path)
+    run_dir = _run(tmp_path)
+    _open_run(qtbot, window, run_dir)
+    controller.emit_recovery(
+        _recovery_decision(
+            RecoveryState.FINALIZED,
+            (RecoveryAction.REPORT, RecoveryAction.RERUN),
+            run_dir=run_dir,
+        )
+    )
+
+    window.start_rerun()
+
+    arguments, job_root = controller.calls[-1]
+    assert arguments[:2] == ["rerun", str(run_dir)]
+    assert "--run-root" in arguments
+    assert "--progress" in arguments
+    assert job_root is not None
+    assert job_root != run_dir.parent
+    assert window.rerun_action.isEnabled() is False
+    assert window.resume_action.isEnabled() is False
+
+
+def test_desktop_labels_and_submits_strict_model_repair_resume(
+    qtbot,
+    tmp_path: Path,
+) -> None:
+    controller = RecordingJobController()
+    window = FoamPilotMainWindow(job_controller=controller)
+    qtbot.addWidget(window)
+    window.set_workspace(tmp_path)
+    store = ArtifactStore(tmp_path / "runs")
+    run_dir = store.create_run()
+    summary = {
+        **_summary(),
+        "workflow_state": "DEFERRED",
+        "native_status": "SOLVER_FAILED",
+        "terminal_blocker": {
+            "domain": "backend",
+            "code": "OVERLOADED",
+            "retryable": True,
+            "detail": "backend overloaded",
+            "step_id": None,
+            "message": None,
+            "recovery": None,
+            "evidence_paths": [],
+        },
+        "resume": {
+            "allowed": True,
+            "from_stage": "MODEL_REPAIR_STARTED",
+            "reason": "retryable repair request",
+        },
+    }
+    (run_dir / "summary.json").write_text(
+        json.dumps(summary),
+        encoding="utf-8",
+    )
+    store.finalize(run_dir)
+    _open_run(qtbot, window, run_dir)
+    controller.emit_recovery(
+        _recovery_decision(
+            RecoveryState.FINALIZED,
+            (
+                RecoveryAction.REPORT,
+                RecoveryAction.STRICT_RESUME,
+                RecoveryAction.RERUN,
+            ),
+            run_dir=run_dir,
+        )
+    )
+
+    assert window.resume_action.text() == "恢复模型修复"
+    assert window.resume_action.isEnabled() is True
+    window.start_strict_resume()
+
+    arguments, job_root = controller.calls[-1]
+    assert arguments[:2] == ["resume", str(run_dir)]
+    assert job_root is not None
+    assert "continuation" not in " ".join(arguments).lower()

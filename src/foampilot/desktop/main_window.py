@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (
 )
 
 from foampilot.taskbuilder import TaskDraft, validate_task_draft
-from foampilot.jobs import JobStatus
+from foampilot.jobs import JobStatus, RecoveryAction
 
 from .job_controller import DesktopJobController, DesktopJobError
 from .repository import (
@@ -154,6 +154,7 @@ class FoamPilotMainWindow(QMainWindow):
         self._solve_run_root: Path | None = None
         self._draft_can_compile = False
         self._draft_needs_confirmation = False
+        self._recovery_decision = None
         self._question_editors: dict[str, QLineEdit] = {}
         self._refresh_pool = QThreadPool.globalInstance()
         self._refresh_generation = 0
@@ -181,6 +182,10 @@ class FoamPilotMainWindow(QMainWindow):
         self.job_controller.activity_received.connect(self._on_activity)
         self.job_controller.job_status_changed.connect(self._on_job_status)
         self.job_controller.job_health_changed.connect(self._on_job_health)
+        if hasattr(self.job_controller, "recovery_decision_changed"):
+            self.job_controller.recovery_decision_changed.connect(
+                self._on_recovery_decision
+            )
 
     def _build_interface(self) -> None:
         toolbar = QToolBar("FoamPilot")
@@ -207,6 +212,22 @@ class FoamPilotMainWindow(QMainWindow):
         self.cancel_action = QAction("取消任务", self)
         self.cancel_action.triggered.connect(self.cancel_job)
         toolbar.addAction(self.cancel_action)
+        self.terminate_orphan_action = QAction("终止孤儿进程", self)
+        self.terminate_orphan_action.triggered.connect(
+            self.terminate_orphan_job
+        )
+        toolbar.addAction(self.terminate_orphan_action)
+        self.recover_finalize_action = QAction("固化中断", self)
+        self.recover_finalize_action.triggered.connect(
+            self.recover_finalize_job
+        )
+        toolbar.addAction(self.recover_finalize_action)
+        self.resume_action = QAction("恢复模型阶段", self)
+        self.resume_action.triggered.connect(self.start_strict_resume)
+        toolbar.addAction(self.resume_action)
+        self.rerun_action = QAction("完整重跑", self)
+        self.rerun_action.triggered.connect(self.start_rerun)
+        toolbar.addAction(self.rerun_action)
         toolbar.addSeparator()
         self.open_action = QAction("打开 Run", self)
         self.open_action.triggered.connect(self.choose_run)
@@ -249,6 +270,12 @@ class FoamPilotMainWindow(QMainWindow):
         self.workspace_button.clicked.connect(self.choose_workspace)
         workspace_row.addWidget(self.workspace_button)
         layout.addLayout(workspace_row)
+
+        self.recovery_hint_label = QLabel(
+            "OpenFOAM continuation：当前不支持从任意时间目录断点续算。"
+        )
+        self.recovery_hint_label.setWordWrap(True)
+        layout.addWidget(self.recovery_hint_label)
 
         layout.addWidget(QLabel("自然语言任务描述"))
         self.request_editor = QPlainTextEdit()
@@ -644,6 +671,100 @@ class FoamPilotMainWindow(QMainWindow):
         self.job_status_label.setText("IDE Job: CANCEL_REQUESTED")
         self.statusBar().showMessage("已请求取消；正在等待受控进程组退出。", 8000)
 
+    def terminate_orphan_job(self) -> None:
+        try:
+            decision = self.job_controller.request_terminate_orphan()
+        except DesktopJobError as error:
+            self._desktop_error("DESKTOP_ORPHAN_TERMINATION_FAILED", str(error))
+            return
+        self._on_recovery_decision(decision)
+
+    def recover_finalize_job(self) -> None:
+        try:
+            decision = self.job_controller.request_recover_finalize()
+        except DesktopJobError as error:
+            self._desktop_error("DESKTOP_RECOVER_FINALIZE_FAILED", str(error))
+            return
+        self._on_recovery_decision(decision)
+        if decision.run_dir is not None:
+            self.open_run(decision.run_dir)
+
+    def _new_recovery_job_root(self) -> Path | None:
+        if self.workspace is None:
+            self._desktop_error(
+                "DESKTOP_WORKSPACE_INVALID",
+                "恢复或重跑前必须先打开包含 parent run 的工程目录。",
+            )
+            return None
+        try:
+            return self.workspace.create_job_root()
+        except DesktopWorkspaceError as error:
+            self._desktop_error("DESKTOP_WORKSPACE_INVALID", str(error))
+            return None
+
+    def start_strict_resume(self) -> None:
+        snapshot = self.current_snapshot
+        if snapshot is None or snapshot.summary is None:
+            self._desktop_error(
+                "STRICT_RESUME_INELIGIBLE",
+                "当前没有可验证的 parent run summary。",
+            )
+            return
+        stage = snapshot.summary.resume.from_stage
+        if not snapshot.summary.resume.allowed or stage is None:
+            self._desktop_error(
+                "STRICT_RESUME_INELIGIBLE",
+                snapshot.summary.resume.reason,
+            )
+            return
+        job_root = self._new_recovery_job_root()
+        if job_root is None:
+            return
+        self._solve_run_root = job_root
+        self._start_cli(
+            "resume",
+            [
+                "resume",
+                str(snapshot.run_dir),
+                "--run-root",
+                str(job_root),
+                "--backend",
+                "auto",
+                "--progress",
+                "jsonl",
+                "--json",
+            ],
+            run_root=job_root,
+        )
+
+    def start_rerun(self) -> None:
+        snapshot = self.current_snapshot
+        if snapshot is None or snapshot.manifest_state != "verified":
+            self._desktop_error(
+                "RERUN_PARENT_INVALID",
+                "完整重跑需要 manifest 有效的 parent run。",
+            )
+            return
+        job_root = self._new_recovery_job_root()
+        if job_root is None:
+            return
+        self._solve_run_root = job_root
+        self._start_cli(
+            "rerun",
+            [
+                "rerun",
+                str(snapshot.run_dir),
+                "--run-root",
+                str(job_root),
+                "--backend",
+                "auto",
+                "--progress",
+                "jsonl",
+                "--json",
+            ],
+            run_root=job_root,
+        )
+
     def check_environment(self) -> None:
         self._start_cli("environment_preflight", ["preflight", "--json"])
 
@@ -848,7 +969,8 @@ class FoamPilotMainWindow(QMainWindow):
         effective_arguments = list(arguments)
         if (
             effective_arguments
-            and effective_arguments[0] in {"preflight", "solve"}
+            and effective_arguments[0]
+            in {"preflight", "solve", "resume", "rerun"}
             and self.runtime_cli_args
         ):
             insertion = (
@@ -878,11 +1000,16 @@ class FoamPilotMainWindow(QMainWindow):
         self._update_action_states()
 
     def _on_job_started(self, command: str) -> None:
+        # A newly submitted/bound job must not inherit actions from the
+        # previously selected terminal job. Startup reconciliation will emit
+        # a fresh decision after attachment when one exists.
+        self._recovery_decision = None
         if self._job_purpose is None and command in {
             "draft",
             "plan",
             "solve",
             "resume",
+            "rerun",
         }:
             self._job_purpose = command
             arguments = self.job_controller.current_arguments
@@ -931,6 +1058,17 @@ class FoamPilotMainWindow(QMainWindow):
                 "后台 worker 心跳已过期；可检查日志或请求取消。",
                 8000,
             )
+
+    def _on_recovery_decision(self, decision) -> None:
+        self._recovery_decision = decision
+        self.recovery_hint_label.setText(
+            f"{decision.code}: {decision.reason_zh} {decision.recovery_zh}\n"
+            "OpenFOAM continuation：当前不支持从任意时间目录断点续算。"
+        )
+        self.job_status_label.setText(
+            f"IDE Recovery: {decision.state.value}"
+        )
+        self._update_action_states()
 
     def _on_run_discovered(self, run_dir: Path) -> None:
         self.open_run(Path(run_dir))
@@ -1026,10 +1164,15 @@ class FoamPilotMainWindow(QMainWindow):
                     run_root=self._solve_run_root,
                 )
                 return
-        elif purpose == "solve":
+        elif purpose in {"solve", "resume", "rerun"}:
             self.live_refresh_timer.stop()
             self.refresh_run()
-        if exit_code != 0 and purpose not in {"draft", "solve"}:
+        if exit_code != 0 and purpose not in {
+            "draft",
+            "solve",
+            "resume",
+            "rerun",
+        }:
             self.diagnostics_viewer.setPlainText(
                 f"DESKTOP_PROCESS_FAILED: {purpose} exited with {exit_code}.\n"
                 "请查看任务/进程日志中的 core 错误 code、message 和 recovery。"
@@ -1069,6 +1212,54 @@ class FoamPilotMainWindow(QMainWindow):
         self.compile_action.setEnabled(can_compile)
         self.solve_action.setEnabled(can_solve)
         self.cancel_action.setEnabled(busy)
+        allowed = set(
+            self._recovery_decision.allowed_actions
+            if self._recovery_decision is not None
+            else ()
+        )
+        if self._recovery_decision is not None:
+            self.cancel_action.setEnabled(RecoveryAction.CANCEL in allowed)
+        self.terminate_orphan_action.setEnabled(
+            RecoveryAction.TERMINATE_ORPHAN in allowed and not busy
+        )
+        self.recover_finalize_action.setEnabled(
+            RecoveryAction.RECOVER_FINALIZE in allowed and not busy
+        )
+        self.resume_action.setEnabled(
+            RecoveryAction.STRICT_RESUME in allowed
+            and self.current_snapshot is not None
+            and not busy
+        )
+        self.rerun_action.setEnabled(
+            RecoveryAction.RERUN in allowed
+            and self.current_snapshot is not None
+            and not busy
+        )
+        self.resume_action.setText("恢复模型阶段")
+        if (
+            self.current_snapshot is not None
+            and self.current_snapshot.summary is not None
+        ):
+            stage = self.current_snapshot.summary.resume.from_stage
+            if stage is not None:
+                label = (
+                    "恢复模型生成"
+                    if stage.value == "MODEL_GENERATION_STARTED"
+                    else "恢复模型修复"
+                )
+                self.resume_action.setText(label)
+        if self._recovery_decision is not None:
+            tooltip = (
+                f"{self._recovery_decision.code}: "
+                f"{self._recovery_decision.recovery_zh}"
+            )
+            for action in (
+                self.terminate_orphan_action,
+                self.recover_finalize_action,
+                self.resume_action,
+                self.rerun_action,
+            ):
+                action.setToolTip(tooltip)
         self.environment_action.setEnabled(not busy)
         self.workspace_action.setEnabled(not busy)
         self.workspace_button.setEnabled(not busy)

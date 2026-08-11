@@ -37,3 +37,25 @@ def test_artifact_store_rejects_run_outside_root(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="outside artifact store"):
         store.finalize(outside)
+
+
+def test_finalize_never_leaves_a_partial_manifest(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    store = ArtifactStore(tmp_path / "runs")
+    run_dir = store.create_run()
+    (run_dir / "evidence.txt").write_text("frozen\n", encoding="utf-8")
+
+    def fail_mid_write(payload, handle, **kwargs):
+        del payload, kwargs
+        handle.write("{")
+        raise OSError("simulated manifest write interruption")
+
+    monkeypatch.setattr("foampilot.artifacts.store.json.dump", fail_mid_write)
+
+    with pytest.raises(OSError, match="simulated manifest"):
+        store.finalize(run_dir)
+
+    assert not (run_dir / ArtifactStore.manifest_name).exists()
+    assert tuple(run_dir.glob(".artifact-manifest.json.*.tmp")) == ()

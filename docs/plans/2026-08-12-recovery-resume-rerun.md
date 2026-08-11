@@ -53,11 +53,11 @@
 
 **Files:** modify `desktop/job_controller.py`, `main_window.py`, user docs and Desktop tests.
 
-- [ ] Write RED Qt tests for each recovery state and allowed/forbidden operation set.
-- [ ] Make startup discovery retain orphaned jobs instead of silently ignoring them and emit the deterministic reconcile decision.
-- [ ] Add explicit actions for attach/cancel, terminate orphan, recover-finalize, strict model resume and complete rerun; disable each action with stable diagnostic text when ineligible.
-- [ ] Label strict resume by the exact model stage and keep OpenFOAM continuation visibly unsupported.
-- [ ] Run Desktop tests and commit `feat: expose truthful desktop recovery actions`.
+- [x] Write RED Qt tests for each recovery state and allowed/forbidden operation set.
+- [x] Make startup discovery retain orphaned jobs instead of silently ignoring them and emit the deterministic reconcile decision.
+- [x] Add explicit actions for attach/cancel, terminate orphan, recover-finalize, strict model resume and complete rerun; disable each action with stable diagnostic text when ineligible.
+- [x] Label strict resume by the exact model stage and keep OpenFOAM continuation visibly unsupported.
+- [x] Run Desktop tests and commit `feat: expose truthful desktop recovery actions`.
 
 ### Task 5: Combined verification and report
 
