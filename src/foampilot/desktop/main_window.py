@@ -550,6 +550,8 @@ class FoamPilotMainWindow(QMainWindow):
                 str(output_path),
                 "--backend",
                 "auto",
+                "--progress",
+                "jsonl",
                 "--json",
             ],
         )
@@ -836,6 +838,8 @@ class FoamPilotMainWindow(QMainWindow):
                         str(self.workspace.root),
                         "--backend",
                         "auto",
+                        "--progress",
+                        "jsonl",
                         "--json",
                     ],
                     run_root=self._solve_run_root,

@@ -300,7 +300,7 @@ def test_resume_command_returns_zero_for_success(
     monkeypatch.setattr("foampilot.cli.main.NativeAgent", FakeAgent)
     monkeypatch.setattr(
         "foampilot.cli.main._native_gateway",
-        lambda arguments: object(),
+        lambda arguments, **kwargs: object(),
     )
     monkeypatch.setattr(
         "foampilot.cli.main._resolve_runtime",

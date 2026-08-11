@@ -598,7 +598,13 @@ def test_task_actions_build_fixed_cli_arguments(
 
     arguments, run_root = controller.calls[-1]
     assert arguments[:3] == ["task", "draft", "--request-file"]
-    assert arguments[-3:] == ["--backend", "auto", "--json"]
+    assert arguments[-5:] == [
+        "--backend",
+        "auto",
+        "--progress",
+        "jsonl",
+        "--json",
+    ]
     assert run_root is None
 
 
@@ -668,7 +674,13 @@ def test_direct_taskspec_validates_then_starts_unique_solve(
         "--public-asset-root",
         str(window.workspace.root),
     ]
-    assert solve_arguments[-3:] == ["--backend", "auto", "--json"]
+    assert solve_arguments[-5:] == [
+        "--backend",
+        "auto",
+        "--progress",
+        "jsonl",
+        "--json",
+    ]
     assert solve_root is not None
     assert solve_root.parent.name == "runs"
     assert solve_root.is_dir()

@@ -49,4 +49,19 @@ class PlainActivitySink:
         self.stream.flush()
 
 
-__all__ = ["JsonlActivitySink", "PlainActivitySink"]
+class JsonlStreamActivitySink:
+    """Write structured activity to a text stream without touching stdout."""
+
+    def __init__(self, stream: TextIO) -> None:
+        self.stream = stream
+
+    def __call__(self, event: ActivityEvent) -> None:
+        self.stream.write(event.model_dump_json() + "\n")
+        self.stream.flush()
+
+
+__all__ = [
+    "JsonlActivitySink",
+    "JsonlStreamActivitySink",
+    "PlainActivitySink",
+]

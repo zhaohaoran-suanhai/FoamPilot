@@ -327,6 +327,22 @@ def test_native_agent_uses_live_runner_events_without_replaying(
     assert sum(
         event.stage == WorkflowStage.OPENFOAM_STEP_COMPLETE for event in events
     ) == 1
+    activity_path = outcome.run_dir / "activity-events.jsonl"
+    assert activity_path.is_file()
+    activity = [
+        json.loads(line)
+        for line in activity_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert activity[0]["state"] == "started"
+    assert activity[-1]["state"] == "completed"
+    observability = json.loads(
+        (outcome.run_dir / "observability.json").read_text(encoding="utf-8")
+    )
+    assert observability == {
+        "schema_version": 1,
+        "state": "ok",
+        "diagnostics": [],
+    }
 
 
 def test_native_agent_freezes_runtime_and_execution_evidence(

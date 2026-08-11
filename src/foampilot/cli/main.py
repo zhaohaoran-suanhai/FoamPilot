@@ -8,10 +8,16 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
+from uuid import uuid4
 
 import yaml
 
+from foampilot.activity import (
+    ActivityReporter,
+    JsonlStreamActivitySink,
+    PlainActivitySink,
+)
 from foampilot.agent import (
     NativeAgent,
     author_case_bundle,
@@ -125,6 +131,14 @@ KNOWLEDGE_TYPES = (
 MAX_TASK_ASSET_BYTES = 256 * 1024 * 1024
 
 
+def _add_progress_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--progress",
+        choices=("auto", "plain", "jsonl", "none"),
+        default="auto",
+    )
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="foampilot",
@@ -142,6 +156,7 @@ def _parser() -> argparse.ArgumentParser:
     _add_backend_options(native_plan)
     _add_runtime_options(native_plan)
     native_plan.add_argument("--json", action="store_true")
+    _add_progress_option(native_plan)
 
     native_solve = subparsers.add_parser("solve")
     native_solve.add_argument("path", type=Path)
@@ -152,6 +167,7 @@ def _parser() -> argparse.ArgumentParser:
     _add_backend_options(native_solve)
     _add_runtime_options(native_solve)
     native_solve.add_argument("--json", action="store_true")
+    _add_progress_option(native_solve)
 
     native_resume = subparsers.add_parser("resume")
     native_resume.add_argument("parent_run", type=Path)
@@ -159,6 +175,7 @@ def _parser() -> argparse.ArgumentParser:
     _add_backend_options(native_resume)
     _add_runtime_options(native_resume)
     native_resume.add_argument("--json", action="store_true")
+    _add_progress_option(native_resume)
 
     native_inspect = subparsers.add_parser("inspect")
     native_inspect.add_argument("task", type=Path)
@@ -200,6 +217,7 @@ def _parser() -> argparse.ArgumentParser:
     task_draft.add_argument("--output", required=True, type=Path)
     _add_backend_options(task_draft)
     task_draft.add_argument("--json", action="store_true")
+    _add_progress_option(task_draft)
 
     task_validate = task_commands.add_parser("validate-draft")
     task_validate.add_argument("path", type=Path)
@@ -405,10 +423,31 @@ def _emit(payload: object, *, as_json: bool, human: str) -> None:
         print(human)
 
 
+def _activity_reporter(
+    arguments: argparse.Namespace,
+    *,
+    stderr: TextIO | None = None,
+) -> ActivityReporter:
+    stream = stderr or sys.stderr
+    mode = str(getattr(arguments, "progress", "auto"))
+    listeners = []
+    if mode == "jsonl":
+        listeners.append(JsonlStreamActivitySink(stream))
+    elif mode == "plain" or (
+        mode == "auto" and bool(getattr(stream, "isatty", lambda: False)())
+    ):
+        listeners.append(PlainActivitySink(stream))
+    return ActivityReporter(
+        operation_id=uuid4().hex,
+        listeners=listeners,
+    )
+
+
 def _native_gateway(
     arguments: argparse.Namespace,
     *,
     qualification: bool = False,
+    activity_reporter: ActivityReporter | None = None,
 ) -> ModelGateway:
     default_model = arguments.model_name or "gpt-5.6-sol"
     registry = load_backend_registry(
@@ -425,7 +464,11 @@ def _native_gateway(
             "qualification requires an explicit --backend and --model-name"
         )
     if backend_id == "auto":
-        return ModelGateway(registry=registry, mode=BackendMode.NORMAL)
+        return ModelGateway(
+            registry=registry,
+            mode=BackendMode.NORMAL,
+            activity_reporter=activity_reporter,
+        )
 
     selected = BackendRegistry()
     for priority, backend in registry.registrations():
@@ -447,8 +490,13 @@ def _native_gateway(
             mode=BackendMode.QUALIFICATION,
             pinned_backend_id=backend_id,
             pinned_model=arguments.model_name,
+            activity_reporter=activity_reporter,
         )
-    return ModelGateway(registry=selected, mode=BackendMode.NORMAL)
+    return ModelGateway(
+        registry=selected,
+        mode=BackendMode.NORMAL,
+        activity_reporter=activity_reporter,
+    )
 
 
 def _model(arguments: argparse.Namespace) -> int:
@@ -554,11 +602,15 @@ def _task_builder(arguments: argparse.Namespace) -> int:
             )
         )
         trace = InMemoryModelTraceSink()
+        activity_reporter = _activity_reporter(arguments)
         extraction_started = time.monotonic()
         draft = extract_task_draft(
             request,
             assets,
-            _native_gateway(arguments),
+            _native_gateway(
+                arguments,
+                activity_reporter=activity_reporter,
+            ),
             budget=ModelBudgetLedger.start(
                 total_model_deadline_seconds=420,
                 lineage_transport_attempt_limit=2,
@@ -704,7 +756,11 @@ def _native_plan(arguments: argparse.Namespace) -> int:
             ]
         }
     )
-    gateway = _native_gateway(arguments)
+    activity_reporter = _activity_reporter(arguments)
+    gateway = _native_gateway(
+        arguments,
+        activity_reporter=activity_reporter,
+    )
     ledger = ModelBudgetLedger.start()
     trace = JsonlModelTraceSink(
         arguments.output.with_suffix(
@@ -777,15 +833,20 @@ def _native_plan(arguments: argparse.Namespace) -> int:
 def _native_solve(arguments: argparse.Namespace) -> int:
     task = load_task_spec(arguments.path)
     resolution = _resolve_runtime(arguments)
+    activity_reporter = _activity_reporter(arguments)
     outcome = NativeAgent(
         gateway=(
             None
             if arguments.reuse_verified_plan is not None
-            else _native_gateway(arguments)
+            else _native_gateway(
+                arguments,
+                activity_reporter=activity_reporter,
+            )
         ),
         runtime_config=resolution.config,
         runtime_provenance=resolution.provenance,
         artifact_store=ArtifactStore(arguments.run_root),
+        activity_reporter=activity_reporter,
     ).solve(
         task,
         public_asset_root=arguments.public_asset_root,
@@ -814,11 +875,16 @@ def _native_outcome_exit_code(outcome) -> int:
 
 def _native_resume(arguments: argparse.Namespace) -> int:
     resolution = _resolve_runtime(arguments)
+    activity_reporter = _activity_reporter(arguments)
     outcome = NativeAgent(
-        gateway=_native_gateway(arguments),
+        gateway=_native_gateway(
+            arguments,
+            activity_reporter=activity_reporter,
+        ),
         runtime_config=resolution.config,
         runtime_provenance=resolution.provenance,
         artifact_store=ArtifactStore(arguments.run_root),
+        activity_reporter=activity_reporter,
     ).resume(arguments.parent_run)
     payload = outcome.model_dump(mode="json")
     _emit(

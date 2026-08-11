@@ -7,6 +7,8 @@ import sys
 
 from PySide6.QtCore import QObject, QProcess, QTimer, Signal
 
+from foampilot.activity import ActivityEvent
+
 
 class DesktopJobError(RuntimeError):
     """The desktop cannot safely start or bind a requested CLI job."""
@@ -27,6 +29,7 @@ class DesktopJobController(QObject):
 
     job_started = Signal(str)
     output_received = Signal(str, str)
+    activity_received = Signal(object)
     run_discovered = Signal(object)
     job_finished = Signal(int, str)
     job_error = Signal(str, str)
@@ -61,6 +64,7 @@ class DesktopJobController(QObject):
         self._arguments: tuple[str, ...] = ()
         self._run_root: Path | None = None
         self._discovered_run: Path | None = None
+        self._stderr_buffer = ""
 
     @property
     def is_running(self) -> bool:
@@ -105,6 +109,7 @@ class DesktopJobController(QObject):
         self._arguments = normalized
         self._run_root = resolved_root
         self._discovered_run = None
+        self._stderr_buffer = ""
         self.process.setProgram(self.program)
         self.process.setArguments([*self.prefix_args, *normalized])
         self.process.start()
@@ -125,9 +130,21 @@ class DesktopJobController(QObject):
     def _read_stderr(self) -> None:
         data = bytes(self.process.readAllStandardError())
         if data:
-            self.output_received.emit(
-                "stderr", data.decode("utf-8", errors="replace")
-            )
+            self._consume_stderr(data.decode("utf-8", errors="replace"))
+
+    def _consume_stderr(self, text: str) -> None:
+        self._stderr_buffer += text
+        while "\n" in self._stderr_buffer:
+            line, self._stderr_buffer = self._stderr_buffer.split("\n", 1)
+            self._consume_stderr_line(line.rstrip("\r"))
+
+    def _consume_stderr_line(self, line: str) -> None:
+        try:
+            event = ActivityEvent.model_validate_json(line)
+        except (ValueError, TypeError):
+            self.output_received.emit("stderr", line + "\n")
+            return
+        self.activity_received.emit(event)
 
     def _discover_run(self) -> None:
         if self._run_root is None or self._discovered_run is not None:
@@ -165,6 +182,9 @@ class DesktopJobController(QObject):
     ) -> None:
         self._read_stdout()
         self._read_stderr()
+        if self._stderr_buffer:
+            self.output_received.emit("stderr", self._stderr_buffer)
+            self._stderr_buffer = ""
         self._discover_run()
         self.discovery_timer.stop()
         status = (

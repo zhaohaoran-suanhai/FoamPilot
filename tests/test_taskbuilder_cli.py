@@ -72,7 +72,7 @@ def test_task_draft_writes_model_output_without_calling_solver(
 
     monkeypatch.setattr(
         "foampilot.cli.main._native_gateway",
-        lambda arguments: object(),
+        lambda arguments, **kwargs: object(),
     )
 
     def fake_extract(request_text, assets, gateway, **kwargs):
@@ -184,7 +184,7 @@ def test_task_draft_rejects_existing_output_before_model_call(
     output.write_text("user-owned\n", encoding="utf-8")
     monkeypatch.setattr(
         "foampilot.cli.main._native_gateway",
-        lambda arguments: (_ for _ in ()).throw(
+        lambda arguments, **kwargs: (_ for _ in ()).throw(
             AssertionError("model gateway must not be created")
         ),
     )
@@ -263,7 +263,7 @@ def test_task_draft_reports_gateway_failure_in_chinese(
     monkeypatch.setattr("foampilot.cli.main.extract_task_draft", fail_extract)
     monkeypatch.setattr(
         "foampilot.cli.main._native_gateway",
-        lambda arguments: object(),
+        lambda arguments, **kwargs: object(),
     )
 
     assert main(

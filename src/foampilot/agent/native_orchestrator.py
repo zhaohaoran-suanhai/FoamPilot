@@ -9,10 +9,12 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from pydantic import BaseModel
 import yaml
 
+from foampilot.activity import ActivityReporter
 from foampilot.artifacts import (
     ArtifactStore,
     AttemptSummary,
@@ -642,6 +644,7 @@ class NativeAgent:
         knowledge_text: str | None = None,
         skills_text: str | None = None,
         workflow_event_listener: Any | None = None,
+        activity_reporter: ActivityReporter | None = None,
     ) -> None:
         self.gateway = gateway
         self.runtime_config = runtime_config
@@ -663,6 +666,7 @@ class NativeAgent:
         self.knowledge_text = knowledge_text
         self.skills_text = skills_text
         self.workflow_event_listener = workflow_event_listener
+        self.activity_reporter = activity_reporter
 
     def _finish(
         self,
@@ -711,6 +715,37 @@ class NativeAgent:
             state=final_event_state,
             detail=message,
         )
+        if self.activity_reporter is not None:
+            self.activity_reporter.emit(
+                kind="stage",
+                state=(
+                    "completed"
+                    if active_workflow_state == WorkflowState.COMPLETED
+                    else "failed"
+                ),
+                source="workflow",
+                stage="solve",
+                detail_code=(
+                    None
+                    if active_workflow_state == WorkflowState.COMPLETED
+                    else active_workflow_state.value
+                ),
+                message="FoamPilot run finalized",
+            )
+            _write_json(
+                run_dir / "observability.json",
+                {
+                    "schema_version": 1,
+                    "state": (
+                        "degraded"
+                        if self.activity_reporter.degraded
+                        else "ok"
+                    ),
+                    "diagnostics": list(
+                        self.activity_reporter.degradation_messages
+                    ),
+                },
+            )
         if final_event_state == WorkflowEventState.COMPLETED:
             last_completed_stage = WorkflowStage.RUN_FINALIZED.value
         trace_path = run_dir / "model-attempts.jsonl"
@@ -944,6 +979,23 @@ class NativeAgent:
                 "verified plan reuse and strict continuation are mutually exclusive"
             )
         run_dir = self.artifact_store.create_run()
+        activity_reporter = self.activity_reporter or ActivityReporter(
+            operation_id=uuid4().hex
+        )
+        activity_reporter.bind_run(
+            run_dir.name,
+            run_dir / "activity-events.jsonl",
+        )
+        self.activity_reporter = activity_reporter
+        if isinstance(self.gateway, ModelGateway):
+            self.gateway.activity_reporter = activity_reporter
+        activity_reporter.emit(
+            kind="stage",
+            state="started",
+            source="workflow",
+            stage="solve",
+            message="FoamPilot run started",
+        )
         _write_json(run_dir / "runtime-config.json", self.runtime_config)
         _write_json(
             run_dir / "runtime-config-provenance.json",
@@ -2241,7 +2293,10 @@ class NativeAgent:
                         environment.available_executable_names,
                         environment=environment,
                         workspace_root=run_dir,
+                        activity_reporter=activity_reporter,
                     )
+                elif isinstance(runner, PlanRunner):
+                    runner.activity_reporter = activity_reporter
                 protected_paths = runtime_protected_paths(
                     execution_task.protected_paths,
                     environment,

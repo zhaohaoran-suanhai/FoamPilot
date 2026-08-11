@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime, timezone
 import sys
 
 import pytest
 
+from foampilot.activity import ActivityEvent
 from foampilot.desktop.job_controller import (
     DesktopJobController,
     DesktopJobError,
@@ -90,3 +92,39 @@ def test_controller_rejects_unregistered_command() -> None:
 
     with pytest.raises(DesktopJobError, match="DESKTOP_COMMAND_REJECTED"):
         controller.start_cli(["solve", "task.yaml"])
+
+
+def test_controller_decodes_activity_and_preserves_invalid_stderr(qtbot) -> None:
+    controller = _python_controller()
+    event = ActivityEvent(
+        sequence=1,
+        operation_id="desktop-test",
+        kind="heartbeat",
+        state="alive",
+        source="model",
+        occurred_at=datetime.now(timezone.utc),
+        stage="generation",
+        message="model request is active",
+    )
+    activities: list[ActivityEvent] = []
+    stderr: list[str] = []
+    controller.activity_received.connect(activities.append)
+    controller.output_received.connect(
+        lambda channel, text: stderr.append(text)
+        if channel == "stderr"
+        else None
+    )
+
+    with qtbot.waitSignal(controller.job_finished, timeout=3000):
+        controller.start_cli(
+            [
+                "-c",
+                "import sys; "
+                "sys.stderr.write(sys.argv[1] + '\\nlegacy diagnostic\\n')",
+                event.model_dump_json(),
+            ]
+        )
+
+    assert activities == [event]
+    assert "legacy diagnostic" in "".join(stderr)
+    assert event.operation_id not in "".join(stderr)

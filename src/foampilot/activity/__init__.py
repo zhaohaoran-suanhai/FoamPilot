@@ -8,7 +8,7 @@ from .models import (
 )
 from .process import SupervisedProcessResult, run_supervised_process
 from .reporter import ActivityListener, ActivityReporter
-from .sinks import JsonlActivitySink, PlainActivitySink
+from .sinks import JsonlActivitySink, JsonlStreamActivitySink, PlainActivitySink
 
 __all__ = [
     "ActivityEvent",
@@ -18,6 +18,7 @@ __all__ = [
     "ActivitySource",
     "ActivityState",
     "JsonlActivitySink",
+    "JsonlStreamActivitySink",
     "PlainActivitySink",
     "SupervisedProcessResult",
     "run_supervised_process",

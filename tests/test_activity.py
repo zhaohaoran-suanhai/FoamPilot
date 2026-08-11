@@ -12,6 +12,7 @@ from foampilot.activity import (
     ActivityEvent,
     ActivityReporter,
     JsonlActivitySink,
+    JsonlStreamActivitySink,
     PlainActivitySink,
 )
 
@@ -94,6 +95,22 @@ def test_jsonl_sink_appends_complete_lines(tmp_path) -> None:
         1,
         2,
     ]
+
+
+def test_jsonl_stream_sink_writes_one_event_per_line() -> None:
+    stream = io.StringIO()
+    reporter = ActivityReporter(
+        operation_id="op-1",
+        listeners=[JsonlStreamActivitySink(stream)],
+    )
+
+    event = reporter.emit(
+        kind="heartbeat",
+        state="alive",
+        source="model",
+    )
+
+    assert ActivityEvent.model_validate_json(stream.getvalue().strip()) == event
 
 
 def test_plain_sink_does_not_render_metrics_as_model_content() -> None:
