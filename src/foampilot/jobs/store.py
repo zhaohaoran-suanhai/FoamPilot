@@ -160,6 +160,18 @@ class LocalJobStore:
             self.job_path.read_text(encoding="utf-8")
         )
 
+    def verify_inputs(self) -> None:
+        spec = self.read_spec()
+        for relative, expected in spec.input_sha256.items():
+            path = spec.project_root / relative
+            if path.is_symlink() or not path.is_file():
+                raise ValueError(f"job input is unavailable: {relative}")
+            resolved = path.resolve()
+            if not resolved.is_relative_to(spec.project_root):
+                raise ValueError(f"job input escaped project: {relative}")
+            if _sha256(resolved) != expected:
+                raise ValueError(f"job input changed after submission: {relative}")
+
     def initialize_status(self) -> JobStatus:
         status = JobStatus(
             job_id=self.read_spec().job_id,

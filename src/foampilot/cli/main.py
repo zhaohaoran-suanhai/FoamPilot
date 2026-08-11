@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from contextvars import ContextVar
 from hashlib import sha256
 import json
 import sys
@@ -116,6 +117,8 @@ COMMANDS = (
     "qualify",
     "improve",
     "task",
+    "worker",
+    "job",
 )
 
 KNOWLEDGE_TYPES = (
@@ -130,6 +133,10 @@ KNOWLEDGE_TYPES = (
 )
 
 MAX_TASK_ASSET_BYTES = 256 * 1024 * 1024
+_CLI_ACTIVITY_REPORTER: ContextVar[ActivityReporter | None] = ContextVar(
+    "foampilot_cli_activity_reporter",
+    default=None,
+)
 
 
 def _add_progress_option(parser: argparse.ArgumentParser) -> None:
@@ -356,6 +363,20 @@ def _parser() -> argparse.ArgumentParser:
     _add_backend_options(qualify)
     _add_runtime_options(qualify)
     qualify.add_argument("--json", action="store_true")
+
+    worker = subparsers.add_parser("worker")
+    worker_commands = worker.add_subparsers(dest="worker_command")
+    worker_run = worker_commands.add_parser("run")
+    worker_run.add_argument("job_root", type=Path)
+
+    job = subparsers.add_parser("job")
+    job_commands = job.add_subparsers(dest="job_command")
+    job_status = job_commands.add_parser("status")
+    job_status.add_argument("job_root", type=Path)
+    job_status.add_argument("--json", action="store_true")
+    job_cancel = job_commands.add_parser("cancel")
+    job_cancel.add_argument("job_root", type=Path)
+    job_cancel.add_argument("--json", action="store_true")
     return parser
 
 
@@ -429,6 +450,9 @@ def _activity_reporter(
     *,
     stderr: TextIO | None = None,
 ) -> ActivityReporter:
+    injected = _CLI_ACTIVITY_REPORTER.get()
+    if injected is not None:
+        return injected
     stream = stderr or sys.stderr
     mode = str(getattr(arguments, "progress", "auto"))
     listeners = []
@@ -442,6 +466,43 @@ def _activity_reporter(
         operation_id=uuid4().hex,
         listeners=listeners,
     )
+
+
+def _worker(arguments: argparse.Namespace) -> int:
+    if arguments.worker_command != "run":
+        raise ValueError("a worker subcommand is required")
+    from foampilot.jobs import run_local_job
+
+    return run_local_job(arguments.job_root)
+
+
+def _job(arguments: argparse.Namespace) -> int:
+    from foampilot.jobs import LocalJobStore
+
+    store = LocalJobStore(arguments.job_root)
+    if arguments.job_command == "status":
+        status = store.read_status()
+        _emit(
+            status.model_dump(mode="json"),
+            as_json=arguments.json,
+            human=(
+                f"{status.state.value}: {status.job_id} "
+                f"revision={status.revision}"
+            ),
+        )
+        return 0
+    if arguments.job_command == "cancel":
+        request = store.request_cancel(requested_by="cli")
+        _emit(
+            {
+                "status": "CANCEL_REQUESTED",
+                "request": request.model_dump(mode="json"),
+            },
+            as_json=arguments.json,
+            human=f"CANCEL_REQUESTED: {request.job_id}",
+        )
+        return 0
+    raise ValueError("a job subcommand is required")
 
 
 def _native_gateway(
@@ -1359,7 +1420,7 @@ def _improve(arguments: argparse.Namespace) -> int:
     raise ValueError("an improve subcommand is required")
 
 
-def main(argv: list[str] | None = None) -> int:
+def _run_main(argv: list[str] | None = None) -> int:
     """Run the CLI and return a stable process exit code."""
 
     parser = _parser()
@@ -1389,6 +1450,8 @@ def main(argv: list[str] | None = None) -> int:
             "qualify": _qualify,
             "improve": _improve,
             "task": _task_builder,
+            "worker": _worker,
+            "job": _job,
         }
         return handlers[arguments.command](arguments)
     except OperationCancelled:
@@ -1490,6 +1553,20 @@ def main(argv: list[str] | None = None) -> int:
             human=f"INTERNAL_ERROR: {error}",
         )
         return 5
+
+
+def main(
+    argv: list[str] | None = None,
+    *,
+    activity_reporter: ActivityReporter | None = None,
+) -> int:
+    """Run one CLI request with an optional worker-owned activity reporter."""
+
+    token = _CLI_ACTIVITY_REPORTER.set(activity_reporter)
+    try:
+        return _run_main(argv)
+    finally:
+        _CLI_ACTIVITY_REPORTER.reset(token)
 
 
 def entrypoint() -> None:
