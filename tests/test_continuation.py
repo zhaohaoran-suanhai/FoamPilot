@@ -92,6 +92,110 @@ def test_resume_repair_creates_child_and_preserves_parent(
     assert child.summary.native_status == "PUBLIC_VALIDATION_PASS"
 
 
+def test_strict_resume_supports_an_external_job_artifact_root(
+    tmp_path: Path,
+) -> None:
+    parent_root = tmp_path / "job-parent"
+    child_root = tmp_path / "job-child"
+    parent = _deferred_parent(parent_root)
+    parent_manifest = (parent.run_dir / "artifact-manifest.json").read_bytes()
+
+    child = _agent(
+        root=child_root,
+        replies=[_repair()],
+        runner=SequencePlanRunner([(0, "Time = 1\nEnd\n", "")]),
+    ).resume(parent.run_dir)
+
+    assert child.run_dir.parent == child_root.resolve()
+    assert ArtifactStore(child_root).verify(child.run_dir) == []
+    assert (parent.run_dir / "artifact-manifest.json").read_bytes() == parent_manifest
+    lineage = json.loads(
+        (child.run_dir / "lineage.json").read_text(encoding="utf-8")
+    )
+    assert lineage["relation"] == "strict_resume"
+    assert lineage["parent_run_id"] == parent.run_dir.name
+    assert lineage["input_hash_before"] == lineage["input_hash_after"]
+    assert "continuation-evidence/execution-plan.json" in lineage[
+        "reused_evidence_paths"
+    ]
+
+
+def test_cross_job_resume_keeps_cumulative_continuation_budget(
+    tmp_path: Path,
+) -> None:
+    parent = _deferred_parent(tmp_path / "job-parent")
+    child_one = _agent(
+        root=tmp_path / "job-child-one",
+        replies=[_transport_failure()],
+        runner=SequencePlanRunner([]),
+    ).resume(parent.run_dir)
+    child_two = _agent(
+        root=tmp_path / "job-child-two",
+        replies=[_transport_failure()],
+        runner=SequencePlanRunner([]),
+    ).resume(child_one.run_dir)
+
+    first = json.loads(
+        (child_one.run_dir / "continuation.json").read_text(encoding="utf-8")
+    )
+    second = json.loads(
+        (child_two.run_dir / "continuation.json").read_text(encoding="utf-8")
+    )
+    assert first["continuation_counts"]["MODEL_REPAIR_STARTED"] == 1
+    assert second["continuation_counts"]["MODEL_REPAIR_STARTED"] == 2
+    assert second["transport_attempts_used_before_child"] >= first[
+        "transport_attempts_used_before_child"
+    ]
+    assert child_two.summary.resume.allowed is False
+
+
+def test_rerun_same_input_is_a_cold_child_with_lineage(tmp_path: Path) -> None:
+    parent = _agent(
+        root=tmp_path / "job-parent",
+        replies=[_plan()],
+        runner=SequencePlanRunner([(0, "Time = 1\nEnd\n", "")]),
+    ).solve(_task())
+    parent_manifest = (parent.run_dir / "artifact-manifest.json").read_bytes()
+
+    child = _agent(
+        root=tmp_path / "job-rerun",
+        replies=[_plan()],
+        runner=SequencePlanRunner([(0, "Time = 1\nEnd\n", "")]),
+    ).rerun(parent.run_dir)
+
+    lineage = json.loads(
+        (child.run_dir / "lineage.json").read_text(encoding="utf-8")
+    )
+    assert lineage["relation"] == "rerun_same_input"
+    assert lineage["change_categories"] == []
+    assert lineage["reused_evidence_paths"] == []
+    assert lineage["input_hash_before"] == lineage["input_hash_after"]
+    assert child.summary.parent_run is None
+    assert (parent.run_dir / "artifact-manifest.json").read_bytes() == parent_manifest
+
+
+def test_rerun_changed_task_is_explicitly_classified(tmp_path: Path) -> None:
+    parent = _agent(
+        root=tmp_path / "job-parent",
+        replies=[_plan()],
+        runner=SequencePlanRunner([(0, "Time = 1\nEnd\n", "")]),
+    ).solve(_task())
+    changed = _task().model_copy(update={"task_id": "changed-task"})
+
+    child = _agent(
+        root=tmp_path / "job-rerun",
+        replies=[_plan()],
+        runner=SequencePlanRunner([(0, "Time = 1\nEnd\n", "")]),
+    ).rerun(parent.run_dir, task=changed)
+
+    lineage = json.loads(
+        (child.run_dir / "lineage.json").read_text(encoding="utf-8")
+    )
+    assert lineage["relation"] == "rerun_with_changes"
+    assert lineage["change_categories"] == ["task"]
+    assert lineage["input_hash_before"] != lineage["input_hash_after"]
+
+
 def test_resume_rejects_changed_knowledge(tmp_path: Path) -> None:
     root = tmp_path / "runs"
     parent = _deferred_parent(root)

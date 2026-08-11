@@ -106,6 +106,7 @@ COMMANDS = (
     "plan",
     "solve",
     "resume",
+    "rerun",
     "inspect",
     "report",
     "preflight",
@@ -184,6 +185,17 @@ def _parser() -> argparse.ArgumentParser:
     _add_runtime_options(native_resume)
     native_resume.add_argument("--json", action="store_true")
     _add_progress_option(native_resume)
+
+    native_rerun = subparsers.add_parser("rerun")
+    native_rerun.add_argument("parent_run", type=Path)
+    native_rerun.add_argument("--run-root", required=True, type=Path)
+    native_rerun.add_argument("--task", type=Path)
+    native_rerun.add_argument("--public-asset-root", type=Path)
+    native_rerun.add_argument("--change-category", action="append", default=[])
+    _add_backend_options(native_rerun)
+    _add_runtime_options(native_rerun)
+    native_rerun.add_argument("--json", action="store_true")
+    _add_progress_option(native_rerun)
 
     native_inspect = subparsers.add_parser("inspect")
     native_inspect.add_argument("task", type=Path)
@@ -1005,6 +1017,34 @@ def _native_resume(arguments: argparse.Namespace) -> int:
     return _native_outcome_exit_code(outcome)
 
 
+def _native_rerun(arguments: argparse.Namespace) -> int:
+    resolution = _resolve_runtime(arguments)
+    activity_reporter = _activity_reporter(arguments)
+    task = load_task_spec(arguments.task) if arguments.task is not None else None
+    outcome = NativeAgent(
+        gateway=_native_gateway(
+            arguments,
+            activity_reporter=activity_reporter,
+        ),
+        runtime_config=resolution.config,
+        runtime_provenance=resolution.provenance,
+        artifact_store=ArtifactStore(arguments.run_root),
+        activity_reporter=activity_reporter,
+    ).rerun(
+        arguments.parent_run,
+        task=task,
+        public_asset_root=arguments.public_asset_root,
+        change_categories=arguments.change_category,
+    )
+    payload = outcome.model_dump(mode="json")
+    _emit(
+        payload,
+        as_json=arguments.json,
+        human=f"{outcome.status}: rerun artifacts at {outcome.run_dir}.",
+    )
+    return _native_outcome_exit_code(outcome)
+
+
 def _native_inspect(arguments: argparse.Namespace) -> int:
     task = load_task_spec(arguments.task)
     plan = ExecutionPlan.model_validate_json(
@@ -1485,6 +1525,7 @@ def _run_main(argv: list[str] | None = None) -> int:
             "plan": _native_plan,
             "solve": _native_solve,
             "resume": _native_resume,
+            "rerun": _native_rerun,
             "inspect": _native_inspect,
             "preflight": _preflight,
             "desktop": _desktop,

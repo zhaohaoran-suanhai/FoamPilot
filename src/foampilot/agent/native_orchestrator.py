@@ -103,10 +103,14 @@ from foampilot.workflow import (
 )
 from foampilot.workflow.lineage import (
     ContinuationInput,
+    LineageRecord,
+    RerunInput,
+    build_lineage_record,
     build_resume_fingerprint,
     load_parent_plan,
     load_parent_task,
     prepare_continuation,
+    prepare_rerun,
 )
 
 from .context import AgentContext, load_agent_context
@@ -251,36 +255,27 @@ def _recorded_execution_seconds(run_dir: Path) -> float:
 
 
 def _lineage_logical_requests(run_dir: Path, store_root: Path) -> int:
+    del store_root
     total = 0
-    current: Path | None = run_dir
-    seen: set[Path] = set()
-    while current is not None and current not in seen:
-        seen.add(current)
-        model_path = current / "model-configuration.json"
-        if model_path.is_file():
-            try:
-                total += int(
-                    _read_json(model_path).get("logical_model_requests", 0)
-                )
-            except (OSError, ValueError, TypeError):
-                pass
-        continuation_path = current / "continuation.json"
-        if not continuation_path.is_file():
-            break
+    continuation_path = run_dir / "continuation.json"
+    if continuation_path.is_file():
         try:
-            payload = _read_json(continuation_path)
-            parent = payload.get("parent_run")
-            parent_id = (
-                str(parent.get("run_id"))
-                if isinstance(parent, dict)
-                else ""
+            total += int(
+                _read_json(continuation_path).get(
+                    "logical_requests_used_before_child",
+                    0,
+                )
             )
-        except (OSError, ValueError):
-            break
-        candidate = (store_root / parent_id).resolve()
-        if not parent_id or not candidate.is_relative_to(store_root):
-            break
-        current = candidate
+        except (OSError, ValueError, TypeError):
+            pass
+    model_path = run_dir / "model-configuration.json"
+    if model_path.is_file():
+        try:
+            total += int(
+                _read_json(model_path).get("logical_model_requests", 0)
+            )
+        except (OSError, ValueError, TypeError):
+            pass
     return total
 
 
@@ -1003,6 +998,32 @@ class NativeAgent:
             _continuation=continuation,
         )
 
+    def rerun(
+        self,
+        parent_run: str | Path,
+        *,
+        task: TaskSpec | None = None,
+        public_asset_root: str | Path | None = None,
+        change_categories: list[str] | tuple[str, ...] = (),
+    ) -> NativeAgentOutcome:
+        """Start a complete new solve with explicit immutable lineage."""
+
+        parent = Path(parent_run).resolve()
+        rerun = prepare_rerun(
+            parent,
+            declared_change_categories=change_categories,
+        )
+        selected_task = task or load_parent_task(parent)
+        effective_asset_root = public_asset_root
+        parent_assets = parent / "public-assets"
+        if effective_asset_root is None and parent_assets.is_dir():
+            effective_asset_root = parent_assets
+        return self.solve(
+            selected_task,
+            public_asset_root=effective_asset_root,
+            _rerun=rerun,
+        )
+
     def solve(
         self,
         task: TaskSpec,
@@ -1011,10 +1032,15 @@ class NativeAgent:
         reuse_verified_plan: str | Path | None = None,
         derived_cache: str | Path | None = None,
         _continuation: ContinuationInput | None = None,
+        _rerun: RerunInput | None = None,
     ) -> NativeAgentOutcome:
-        if reuse_verified_plan is not None and _continuation is not None:
+        selected_lineage_inputs = sum(
+            item is not None
+            for item in (_continuation, _rerun, reuse_verified_plan)
+        )
+        if selected_lineage_inputs > 1:
             raise ValueError(
-                "verified plan reuse and strict continuation are mutually exclusive"
+                "verified plan reuse, strict resume, and rerun are mutually exclusive"
             )
         run_dir = self.artifact_store.create_run()
         activity_reporter = self.activity_reporter or ActivityReporter(
@@ -1108,7 +1134,7 @@ class NativeAgent:
             else 0
         )
         execution_seconds_used = (
-            _recorded_execution_seconds(_continuation.parent_run)
+            _continuation.execution_seconds_used_before_child
             if _continuation is not None
             else 0.0
         )
@@ -1125,6 +1151,32 @@ class NativeAgent:
             encoding="utf-8",
         )
         if _continuation is not None:
+            reused_evidence_paths: list[str] = []
+            if _continuation.active_plan_path is not None:
+                evidence_root = run_dir / "continuation-evidence"
+                evidence_root.mkdir()
+                plan_copy = evidence_root / "execution-plan.json"
+                plan_copy.write_bytes(_continuation.active_plan_path.read_bytes())
+                reused_evidence_paths.append(
+                    "continuation-evidence/execution-plan.json"
+                )
+                if _continuation.public_validation_path is not None:
+                    validation_copy = evidence_root / "public-validation.json"
+                    validation_copy.write_bytes(
+                        _continuation.public_validation_path.read_bytes()
+                    )
+                    reused_evidence_paths.append(
+                        "continuation-evidence/public-validation.json"
+                    )
+                for index, source in enumerate(
+                    _continuation.failed_log_paths,
+                    start=1,
+                ):
+                    target = evidence_root / f"failed-log-{index:02d}.log"
+                    target.write_bytes(source.read_bytes())
+                    reused_evidence_paths.append(
+                        target.relative_to(run_dir).as_posix()
+                    )
             _write_json(
                 run_dir / "continuation.json",
                 {
@@ -1139,13 +1191,46 @@ class NativeAgent:
                     "continuation_index_for_stage": (
                         _continuation.continuation_index_for_stage
                     ),
+                    "continuation_counts": (
+                        _continuation.continuation_counts
+                    ),
                     "transport_attempts_used_before_child": (
                         _continuation.transport_attempts_used
+                    ),
+                    "logical_requests_used_before_child": (
+                        _continuation.logical_requests_used_before_child
+                    ),
+                    "execution_seconds_used_before_child": (
+                        _continuation.execution_seconds_used_before_child
                     ),
                     "environment_warnings": (
                         _continuation.environment_warnings
                     ),
                 },
+            )
+            _write_json(
+                run_dir / "lineage.json",
+                LineageRecord(
+                    relation="strict_resume",
+                    parent_run_id=_continuation.parent_run.name,
+                    parent_manifest_sha256=(
+                        _continuation.parent_manifest_sha256
+                    ),
+                    created_at=datetime.now(timezone.utc),
+                    input_hash_before=_continuation.input_sha256,
+                    input_hash_after=_continuation.input_sha256,
+                    change_categories=[],
+                    reused_evidence_paths=reused_evidence_paths,
+                ),
+            )
+        elif _rerun is not None:
+            _write_json(
+                run_dir / "lineage.json",
+                build_lineage_record(
+                    rerun=_rerun,
+                    task=task,
+                    current_fingerprint=None,
+                ),
             )
         _record_event(
             workflow,
@@ -1540,6 +1625,15 @@ class NativeAgent:
                 run_dir / "resume-compatibility.json",
                 fingerprint,
             )
+            if _rerun is not None:
+                _write_json(
+                    run_dir / "lineage.json",
+                    build_lineage_record(
+                        rerun=_rerun,
+                        task=task,
+                        current_fingerprint=fingerprint,
+                    ),
+                )
 
         continuation_index = (
             _continuation.continuation_index_for_stage

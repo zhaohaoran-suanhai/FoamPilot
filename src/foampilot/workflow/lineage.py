@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -189,7 +190,36 @@ class ContinuationInput(StrictModel):
     failed_log_paths: list[Path] = Field(default_factory=list)
     transport_attempts_used: int = Field(ge=0, le=7)
     continuation_index_for_stage: int = Field(ge=1, le=2)
+    continuation_counts: dict[str, int] = Field(default_factory=dict)
+    logical_requests_used_before_child: int = Field(ge=0)
+    execution_seconds_used_before_child: float = Field(ge=0)
+    input_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     environment_warnings: list[str] = Field(default_factory=list)
+
+
+class LineageRecord(StrictModel):
+    schema_version: Literal[1] = 1
+    relation: Literal[
+        "strict_resume",
+        "rerun_same_input",
+        "rerun_with_changes",
+        "openfoam_continuation",
+    ]
+    parent_run_id: str
+    parent_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    created_at: datetime
+    input_hash_before: str = Field(pattern=r"^[0-9a-f]{64}$")
+    input_hash_after: str = Field(pattern=r"^[0-9a-f]{64}$")
+    change_categories: list[str] = Field(default_factory=list)
+    reused_evidence_paths: list[str] = Field(default_factory=list)
+
+
+class RerunInput(StrictModel):
+    parent_run: Path
+    parent_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    parent_task_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    parent_fingerprint: ResumeCompatibility | None = None
+    declared_change_categories: list[str] = Field(default_factory=list)
 
 
 def _read_json(path: Path) -> dict[str, object]:
@@ -232,39 +262,83 @@ def _parent_path(
     return candidate
 
 
+def _continuation_payload(run_dir: Path) -> dict[str, object]:
+    path = run_dir / "continuation.json"
+    return _read_json(path) if path.is_file() else {}
+
+
+def _parent_link_is_consistent(parent: Path, summary: RunSummary) -> None:
+    if summary.parent_run is None:
+        return
+    continuation = _continuation_payload(parent)
+    raw_parent = continuation.get("parent_run")
+    if not isinstance(raw_parent, dict):
+        raise ResumeCompatibilityError("parent_run")
+    if (
+        raw_parent.get("run_id") != summary.parent_run.run_id
+        or raw_parent.get("manifest_sha256")
+        != summary.parent_run.manifest_sha256
+    ):
+        raise ResumeCompatibilityError("parent_run")
+
+
 def _lineage_usage(
     *,
     parent_run: Path,
     from_stage: WorkflowStage,
     store: ArtifactStore,
-) -> tuple[int, int]:
-    stage_continuations = 0
-    transport_attempts = 0
-    seen: set[Path] = set()
-    current: Path | None = parent_run
-    while current is not None:
-        if current in seen:
-            raise ResumeCompatibilityError("parent_run_cycle")
-        seen.add(current)
-        if store.verify(current):
-            raise ResumeCompatibilityError("parent_manifest")
-        summary = store.read_summary(current)
-        transport_attempts += _model_transport_attempts(current)
-        continuation_path = current / "continuation.json"
-        if continuation_path.is_file():
-            continuation = _read_json(continuation_path)
-            if continuation.get("from_stage") == from_stage.value:
-                stage_continuations += 1
-        current = _parent_path(
-            summary,
-            store=store,
+) -> tuple[int, int, dict[str, int]]:
+    del store
+    continuation = _continuation_payload(parent_run)
+    raw_counts = continuation.get("continuation_counts", {})
+    counts = (
+        {str(key): int(value) for key, value in raw_counts.items()}
+        if isinstance(raw_counts, dict)
+        else {}
+    )
+    if not counts and continuation.get("from_stage") is not None:
+        counts[str(continuation["from_stage"])] = int(
+            continuation.get("continuation_index_for_stage", 1)
         )
-    next_index = stage_continuations + 1
+    next_index = counts.get(from_stage.value, 0) + 1
     if next_index > 2:
         raise ResumeCompatibilityError("continuation_budget")
+    counts[from_stage.value] = next_index
+    transport_attempts = int(
+        continuation.get("transport_attempts_used_before_child", 0)
+    ) + _model_transport_attempts(parent_run)
     if transport_attempts >= 7:
         raise ResumeCompatibilityError("lineage_transport_attempt_limit")
-    return transport_attempts, next_index
+    return transport_attempts, next_index, counts
+
+
+def fingerprint_sha256(value: ResumeCompatibility) -> str:
+    return _hash_json(value.model_dump(mode="json"))
+
+
+def task_sha256(task: TaskSpec) -> str:
+    return _hash_json(task.model_dump(mode="json"))
+
+
+def _run_result_seconds(path: Path) -> float:
+    try:
+        payload = _read_json(path)
+    except (OSError, ValueError):
+        return 0.0
+    steps = payload.get("steps", [])
+    if not isinstance(steps, list):
+        return 0.0
+    total = 0.0
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        try:
+            started = datetime.fromisoformat(str(step["started_at"]))
+            finished = datetime.fromisoformat(str(step["finished_at"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        total += max((finished - started).total_seconds(), 0.0)
+    return total
 
 
 def prepare_continuation(
@@ -276,11 +350,11 @@ def prepare_continuation(
     """Validate immutable evidence and build a bounded child-run input."""
 
     parent = Path(parent_run).resolve()
-    if not parent.is_relative_to(artifact_store.root):
-        raise ResumeCompatibilityError("parent_run")
-    if artifact_store.verify(parent):
+    parent_store = ArtifactStore(parent.parent)
+    if parent_store.verify(parent):
         raise ResumeCompatibilityError("parent_manifest")
-    summary = artifact_store.read_summary(parent)
+    summary = parent_store.read_summary(parent)
+    _parent_link_is_consistent(parent, summary)
     if (
         not summary.resume.allowed
         or summary.resume.from_stage not in _RESUMABLE_STAGES
@@ -291,7 +365,7 @@ def prepare_continuation(
     from_stage = summary.resume.from_stage
     assert from_stage is not None
 
-    manifest_sha256 = artifact_store.manifest_sha256(parent)
+    manifest_sha256 = parent_store.manifest_sha256(parent)
     fingerprint_path = parent / "resume-compatibility.json"
     if not fingerprint_path.is_file():
         raise ResumeCompatibilityError("resume_compatibility")
@@ -317,10 +391,25 @@ def prepare_continuation(
             + ", ".join(extra_executables)
         )
 
-    transport_attempts, continuation_index = _lineage_usage(
+    transport_attempts, continuation_index, continuation_counts = _lineage_usage(
         parent_run=parent,
         from_stage=from_stage,
-        store=artifact_store,
+        store=parent_store,
+    )
+    prior_continuation = _continuation_payload(parent)
+    model_configuration = parent / "model-configuration.json"
+    logical_requests = int(
+        prior_continuation.get("logical_requests_used_before_child", 0)
+    )
+    if model_configuration.is_file():
+        logical_requests += int(
+            _read_json(model_configuration).get("logical_model_requests", 0)
+        )
+    execution_seconds = float(
+        prior_continuation.get("execution_seconds_used_before_child", 0.0)
+    ) + sum(
+        _run_result_seconds(path)
+        for path in sorted(parent.glob("attempt-*/run-result.json"))
     )
 
     active_plan_path: Path | None = None
@@ -330,34 +419,41 @@ def prepare_continuation(
         if not summary.attempts:
             raise ResumeCompatibilityError("repair_evidence")
         attempt = summary.attempts[-1].attempt
-        evidence_run = parent
-        evidence_summary = summary
-        visited: set[Path] = set()
-        while not (
-            evidence_run / f"attempt-{attempt:02d}"
-        ).is_dir():
-            if evidence_run in visited:
-                raise ResumeCompatibilityError("parent_run_cycle")
-            visited.add(evidence_run)
-            ancestor = _parent_path(
-                evidence_summary,
-                store=artifact_store,
+        copied_evidence = parent / "continuation-evidence"
+        if copied_evidence.is_dir():
+            active_plan_path = copied_evidence / "execution-plan.json"
+            validation_path = copied_evidence / "public-validation.json"
+            log_paths = sorted(copied_evidence.glob("failed-log-*.log"))
+            evidence_path = copied_evidence / "repair-evidence.json"
+        else:
+            evidence_run = parent
+            evidence_summary = summary
+            visited: set[Path] = set()
+            while not (
+                evidence_run / f"attempt-{attempt:02d}"
+            ).is_dir():
+                if evidence_run in visited:
+                    raise ResumeCompatibilityError("parent_run_cycle")
+                visited.add(evidence_run)
+                ancestor = _parent_path(
+                    evidence_summary,
+                    store=parent_store,
+                )
+                if ancestor is None:
+                    raise ResumeCompatibilityError("repair_evidence")
+                evidence_run = ancestor
+                evidence_summary = parent_store.read_summary(evidence_run)
+            attempt_root = evidence_run / f"attempt-{attempt:02d}"
+            active_plan_path = attempt_root / "execution-plan.json"
+            validation_path = attempt_root / "public-validation.json"
+            evidence_path = (
+                evidence_run
+                / "checkpoints"
+                / f"repair-evidence-attempt-{attempt:02d}.json"
             )
-            if ancestor is None:
-                raise ResumeCompatibilityError("repair_evidence")
-            evidence_run = ancestor
-            evidence_summary = artifact_store.read_summary(evidence_run)
-        attempt_root = evidence_run / f"attempt-{attempt:02d}"
-        active_plan_path = attempt_root / "execution-plan.json"
-        validation_path = attempt_root / "public-validation.json"
-        evidence_path = (
-            evidence_run
-            / "checkpoints"
-            / f"repair-evidence-attempt-{attempt:02d}.json"
-        )
         if not active_plan_path.is_file() or not validation_path.is_file():
             raise ResumeCompatibilityError("repair_evidence")
-        if evidence_path.is_file():
+        if evidence_path.is_file() and not log_paths:
             evidence = _checkpoint_payload(evidence_path)
             raw_paths = evidence.get("log_paths", [])
             if isinstance(raw_paths, list):
@@ -379,7 +475,100 @@ def prepare_continuation(
         failed_log_paths=log_paths,
         transport_attempts_used=transport_attempts,
         continuation_index_for_stage=continuation_index,
+        continuation_counts=continuation_counts,
+        logical_requests_used_before_child=logical_requests,
+        execution_seconds_used_before_child=execution_seconds,
+        input_sha256=fingerprint_sha256(previous),
         environment_warnings=warnings,
+    )
+
+
+def prepare_rerun(
+    parent_run: str | Path,
+    *,
+    declared_change_categories: list[str] | tuple[str, ...] = (),
+) -> RerunInput:
+    """Verify one immutable parent and capture its normative input evidence."""
+
+    parent = Path(parent_run).resolve()
+    store = ArtifactStore(parent.parent)
+    if store.verify(parent):
+        raise ResumeCompatibilityError("parent_manifest")
+    store.read_summary(parent)
+    parent_task = load_parent_task(parent)
+    fingerprint_path = parent / "resume-compatibility.json"
+    fingerprint = (
+        ResumeCompatibility.model_validate(_read_json(fingerprint_path))
+        if fingerprint_path.is_file()
+        else None
+    )
+    return RerunInput(
+        parent_run=parent,
+        parent_manifest_sha256=store.manifest_sha256(parent),
+        parent_task_sha256=task_sha256(parent_task),
+        parent_fingerprint=fingerprint,
+        declared_change_categories=sorted(set(declared_change_categories)),
+    )
+
+
+def build_lineage_record(
+    *,
+    rerun: RerunInput,
+    task: TaskSpec,
+    current_fingerprint: ResumeCompatibility | None,
+) -> LineageRecord:
+    """Classify rerun relationship from manifested compatibility evidence."""
+
+    categories = set(rerun.declared_change_categories)
+    current_task_hash = task_sha256(task)
+    if current_task_hash != rerun.parent_task_sha256:
+        categories.add("task")
+    before = (
+        fingerprint_sha256(rerun.parent_fingerprint)
+        if rerun.parent_fingerprint is not None
+        else rerun.parent_task_sha256
+    )
+    if current_fingerprint is None:
+        categories.add("compatibility_not_verified")
+        after = current_task_hash
+    else:
+        after = fingerprint_sha256(current_fingerprint)
+        if rerun.parent_fingerprint is None:
+            categories.add("parent_fingerprint_unavailable")
+        else:
+            mapping = {
+                "task_sha256": "task",
+                "public_assets_sha256": "public_assets",
+                "model": "model",
+                "backend_id": "backend",
+                "backend_policy_sha256": "backend_policy",
+                "package_version": "package",
+                "package_artifact_sha256": "package",
+                "git_revision": "package",
+                "knowledge_ids": "knowledge",
+                "knowledge_hash": "knowledge",
+                "skill_ids": "skills",
+                "skill_hash": "skills",
+                "openfoam_target": "openfoam_target",
+                "executable_names": "runtime_executables",
+            }
+            for field, category in mapping.items():
+                if getattr(rerun.parent_fingerprint, field) != getattr(
+                    current_fingerprint,
+                    field,
+                ):
+                    categories.add(category)
+    return LineageRecord(
+        relation=(
+            "rerun_with_changes" if categories else "rerun_same_input"
+        ),
+        parent_run_id=rerun.parent_run.name,
+        parent_manifest_sha256=rerun.parent_manifest_sha256,
+        created_at=datetime.now(timezone.utc),
+        input_hash_before=before,
+        input_hash_after=after,
+        change_categories=sorted(categories),
+        reused_evidence_paths=[],
     )
 
 

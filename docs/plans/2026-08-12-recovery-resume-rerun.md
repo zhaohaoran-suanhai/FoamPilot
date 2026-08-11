@@ -43,11 +43,11 @@
 
 **Files:** extend `workflow/lineage.py`; modify `NativeAgent` and CLI; modify continuation tests; create rerun tests.
 
-- [ ] Write RED tests proving external immutable parent roots work, cumulative transport/logical/execution budgets remain bounded, and existing compatibility rejection is unchanged.
-- [ ] Replace same-artifact-root ancestry assumptions with manifested cumulative continuation evidence while validating the explicit parent with its own `ArtifactStore`.
-- [ ] Add strict `LineageRecord` for `strict_resume`, `rerun_same_input` and `rerun_with_changes`; write it before child finalization.
-- [ ] Add `foampilot rerun PARENT --run-root ... [--task ...]`; unchanged normative input is `rerun_same_input`, any proven/declared change is `rerun_with_changes` with categories and before/after hashes.
-- [ ] Add `JobOperation.RERUN`, detached worker support and CLI/agent regression tests; commit `feat: add explicit rerun lineage`.
+- [x] Write RED tests proving external immutable parent roots work, cumulative transport/logical/execution budgets remain bounded, and existing compatibility rejection is unchanged.
+- [x] Replace same-artifact-root ancestry assumptions with manifested cumulative continuation evidence while validating the explicit parent with its own `ArtifactStore`.
+- [x] Add strict `LineageRecord` for `strict_resume`, `rerun_same_input` and `rerun_with_changes`; write it before child finalization.
+- [x] Add `foampilot rerun PARENT --run-root ... [--task ...]`; unchanged normative input is `rerun_same_input`, any proven/declared change is `rerun_with_changes` with categories and before/after hashes.
+- [x] Add `JobOperation.RERUN`, detached worker support and CLI/agent regression tests; commit `feat: add explicit rerun lineage`.
 
 ### Task 4: Desktop recovery action matrix
 

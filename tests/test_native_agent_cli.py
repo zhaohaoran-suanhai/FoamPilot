@@ -48,7 +48,7 @@ protected_paths: []
 def test_cli_exposes_native_validate_plan_and_solve_commands() -> None:
     help_text = build_parser().format_help()
 
-    assert "{validate,plan,solve,resume,inspect,report" in help_text
+    assert "{validate,plan,solve,resume,rerun,inspect,report" in help_text
 
 
 @pytest.mark.parametrize(
@@ -58,6 +58,7 @@ def test_cli_exposes_native_validate_plan_and_solve_commands() -> None:
         ["plan", "task.yaml", "--output", "plan.json"],
         ["solve", "task.yaml", "--run-root", "runs"],
         ["resume", "parent", "--run-root", "runs"],
+        ["rerun", "parent", "--run-root", "runs"],
         ["inspect", "task.yaml", "plan.json", "case"],
         [
             "qualify",
@@ -115,6 +116,26 @@ def test_resume_command_parses_strict_parent_and_run_root() -> None:
     assert arguments.parent_run == Path("/tmp/runs/parent")
     assert arguments.run_root == Path("/tmp/runs")
     assert arguments.max_mpi_ranks == 4
+
+
+def test_rerun_command_parses_explicit_changed_input() -> None:
+    arguments = build_parser().parse_args(
+        [
+            "rerun",
+            "/tmp/runs/parent",
+            "--run-root",
+            "/tmp/runs/new-job",
+            "--task",
+            "/tmp/changed-task.yaml",
+            "--change-category",
+            "runtime_policy",
+            "--json",
+        ]
+    )
+
+    assert arguments.command == "rerun"
+    assert arguments.task == Path("/tmp/changed-task.yaml")
+    assert arguments.change_category == ["runtime_policy"]
 
 
 def test_solve_uses_auto_backend_without_auth_argument() -> None:
@@ -322,6 +343,65 @@ def test_resume_command_returns_zero_for_success(
         )
         == 0
     )
+    assert json.loads(capsys.readouterr().out)["summary"][
+        "native_status"
+    ] == "PUBLIC_VALIDATION_PASS"
+
+
+def test_rerun_command_calls_canonical_agent_with_change_categories(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    parent = tmp_path / "runs/parent"
+    changed_task = tmp_path / "changed.yaml"
+    _write_task(changed_task)
+    outcome = NativeAgentOutcome(
+        run_dir=tmp_path / "runs/new-job/run-child",
+        summary=RunSummary(
+            task_id="cli-native",
+            workflow_state=WorkflowState.COMPLETED,
+            native_status="PUBLIC_VALIDATION_PASS",
+            resume=ResumeMetadata(allowed=False, reason="completed"),
+            message="passed",
+        ),
+    )
+    observed: dict[str, object] = {}
+
+    class FakeAgent:
+        def __init__(self, **kwargs) -> None:
+            del kwargs
+
+        def rerun(self, parent_run, **kwargs):
+            observed["parent"] = parent_run
+            observed.update(kwargs)
+            return outcome
+
+    monkeypatch.setattr("foampilot.cli.main.NativeAgent", FakeAgent)
+    monkeypatch.setattr(
+        "foampilot.cli.main._native_gateway",
+        lambda arguments, **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "foampilot.cli.main._resolve_runtime",
+        lambda arguments: SimpleNamespace(config=object(), provenance=object()),
+    )
+
+    assert main(
+        [
+            "rerun",
+            str(parent),
+            "--run-root",
+            str(tmp_path / "runs/new-job"),
+            "--task",
+            str(changed_task),
+            "--change-category",
+            "runtime_policy",
+            "--json",
+        ]
+    ) == 0
+    assert observed["parent"] == parent
+    assert observed["change_categories"] == ["runtime_policy"]
     assert json.loads(capsys.readouterr().out)["summary"][
         "native_status"
     ] == "PUBLIC_VALIDATION_PASS"

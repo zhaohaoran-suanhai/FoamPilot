@@ -11,6 +11,7 @@ SUPPORTED_COMMANDS = (
     "plan",
     "solve",
     "resume",
+    "rerun",
     "inspect",
     "report",
     "preflight",

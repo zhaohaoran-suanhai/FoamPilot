@@ -32,6 +32,7 @@ _COMMAND_PREFIX = {
     JobOperation.PLAN: ("plan",),
     JobOperation.SOLVE: ("solve",),
     JobOperation.RESUME: ("resume",),
+    JobOperation.RERUN: ("rerun",),
 }
 
 
@@ -112,7 +113,13 @@ def build_job_spec(
     inputs: dict[str, str] = {}
     for argument in normalized:
         candidate = Path(argument)
-        if not candidate.is_absolute() or not candidate.is_file():
+        if not candidate.is_absolute():
+            continue
+        if candidate.is_symlink():
+            raise ValueError("job input must not be a symbolic link")
+        if candidate.is_dir():
+            candidate = candidate / "artifact-manifest.json"
+        if not candidate.is_file():
             continue
         if candidate.is_symlink():
             raise ValueError("job input must not be a symbolic link")

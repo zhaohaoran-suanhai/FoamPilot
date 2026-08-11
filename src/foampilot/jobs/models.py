@@ -19,6 +19,7 @@ class JobOperation(StrEnum):
     PLAN = "plan"
     SOLVE = "solve"
     RESUME = "resume"
+    RERUN = "rerun"
 
 
 class JobState(StrEnum):

@@ -51,6 +51,33 @@ def test_job_store_creates_strict_receipt_and_monotonic_status(tmp_path: Path) -
     assert store.read_status() == second
 
 
+def test_job_receipt_hashes_manifested_parent_directory(tmp_path: Path) -> None:
+    project, job_root, task = _workspace(tmp_path)
+    parent = project / "runs/run-parent"
+    parent.mkdir()
+    manifest = parent / "artifact-manifest.json"
+    manifest.write_text('{"schema_version":1,"files":{}}\n', encoding="utf-8")
+
+    spec = build_job_spec(
+        job_root=job_root,
+        project_root=project,
+        operation="rerun",
+        arguments=(
+            "rerun",
+            str(parent),
+            "--run-root",
+            str(job_root),
+            "--task",
+            str(task),
+        ),
+    )
+
+    assert spec.input_paths == (
+        "runs/run-parent/artifact-manifest.json",
+        "tasks/task.yaml",
+    )
+
+
 def test_job_store_rejects_symlink_root_and_project_escape(tmp_path: Path) -> None:
     project, job_root, task = _workspace(tmp_path)
     link = project / "runs/job-link"
