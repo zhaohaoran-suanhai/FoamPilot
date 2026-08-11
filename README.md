@@ -64,6 +64,21 @@ namespace 可用时使用无网络 bubblewrap，不可用时选择有 executable
 完整日志的 audited host 后端。host 后端不提供 network namespace 隔离，`preflight` 会明确
 报告所选后端与 fallback 原因，而不会因 bubblewrap 权限不足无限等待。
 
+## 交互式桌面 IDE
+
+可选的 PySide6 工作台可以从自然语言 TaskDraft 或完整 TaskSpec 启动规范求解，
+并在同一界面实时显示 workflow、模型实际收到的公开 Knowledge/Skill 引用、
+OpenFOAM 残差、case、日志、公开验证和 artifact manifest：
+
+```bash
+python -m pip install -e '.[desktop]'
+foampilot desktop
+foampilot desktop --open-run /path/to/run-...
+```
+
+未安装 desktop extra 时，核心 CLI 与 Python API 不受影响。安装、首次求解、状态解释、
+安全边界和 xcb 故障处理见 [Desktop IDE 使用说明](docs/desktop-ide.md)。
+
 ## 求解任务
 
 从完整自然语言请求生成规范 TaskSpec：
@@ -284,6 +299,7 @@ OpenFOAM 求解时间。
 
 - [架构、运行流程与功能边界](docs/system-overview.md)
 - [架构说明](docs/architecture.md)
+- [Desktop IDE 交互式求解工作台](docs/desktop-ide.md)
 - [快速开始](docs/independent-agent-quickstart.md)
 - [Agent 集成](docs/agent-integration.md)
 - [知识治理](docs/knowledge-governance.md)

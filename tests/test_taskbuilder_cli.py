@@ -105,6 +105,9 @@ def test_task_draft_writes_model_output_without_calling_solver(
     assert performance["logical_requests"] == 0
     assert performance["transport_attempts"] == 0
     assert calls and calls[0][0] == "Solve a complete channel."
+    budget = calls[0][3]["budget"]
+    assert budget.request_timeout_seconds == 180
+    assert budget.max_transport_attempts == 2
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "PASS"
     assert payload["draft_status"] == "confirmed"

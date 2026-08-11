@@ -118,6 +118,31 @@ def test_missing_geometry_unit_is_blocking() -> None:
     assert not review.can_compile
 
 
+def test_geometry_and_mesh_must_match_compiler_contract_before_compile() -> None:
+    payload = _complete_draft().model_dump(mode="json")
+    geometry = next(
+        item for item in payload["facts"] if item["path"] == "geometry"
+    )
+    geometry["value"]["patch_roles"] = {"top": "wall"}
+    payload["facts"].append(
+        _fact(
+            "mesh",
+            {
+                "strategy": "blockMesh",
+                "quality": {"distribution": "uniform"},
+            },
+        )
+    )
+
+    review = validate_task_draft(TaskDraft.model_validate(payload))
+
+    blocking_paths = {
+        item.field_path for item in review.issues if item.severity == "blocking"
+    }
+    assert {"geometry", "mesh"} <= blocking_paths
+    assert not review.can_compile
+
+
 def test_missing_fluid_material_and_boundaries_are_blocking() -> None:
     draft = _without(
         _complete_draft(),

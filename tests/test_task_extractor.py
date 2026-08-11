@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from foampilot.models import (
     InMemoryModelTraceSink,
     ModelBudgetLedger,
@@ -7,7 +9,9 @@ from foampilot.models import (
     ModelStage,
 )
 from foampilot.taskbuilder import extract_task_draft
+from foampilot.taskbuilder.extraction import _ExtractedTaskDraft
 from foampilot.tasks import PublicAsset
+from foampilot.models.schema import strict_response_schema
 
 
 class RecordingExtractionGateway:
@@ -50,7 +54,7 @@ def _payload(*, source="user_text", confirmed=True):
         "facts": [
             {
                 "path": "physics.regime",
-                "value": "steady",
+                "value": '"steady"',
                 "source": source,
                 "evidence": "稳态层流",
                 "impact": "high",
@@ -60,6 +64,41 @@ def _payload(*, source="user_text", confirmed=True):
         "assumptions": [],
         "unresolved_questions": [],
     }
+
+
+def test_extraction_response_schema_encodes_arbitrary_fact_values_as_json_text() -> None:
+    schema = strict_response_schema(_ExtractedTaskDraft.model_json_schema())
+
+    fact_schema = schema["$defs"]["_ExtractedFact"]
+    assert fact_schema["properties"]["value"] == {"type": "string"}
+
+    def empty_schemas(value):
+        if isinstance(value, dict):
+            if not value:
+                yield value
+            for item in value.values():
+                yield from empty_schemas(item)
+        elif isinstance(value, list):
+            for item in value:
+                yield from empty_schemas(item)
+
+    assert list(empty_schemas(schema)) == []
+
+
+def test_extraction_transport_model_rejects_invalid_domain_path_early() -> None:
+    payload = _payload()
+    payload["facts"][0]["path"] = "initial_conditions.U"
+
+    with pytest.raises(ValueError, match="string_pattern_mismatch"):
+        _ExtractedTaskDraft.model_validate(payload)
+
+
+def test_extraction_transport_model_rejects_duplicate_fact_paths_early() -> None:
+    payload = _payload()
+    payload["facts"].append(dict(payload["facts"][0]))
+
+    with pytest.raises(ValueError, match="duplicate fact paths"):
+        _ExtractedTaskDraft.model_validate(payload)
 
 
 def test_extractor_uses_structured_stage_for_chinese_request() -> None:
@@ -78,6 +117,17 @@ def test_extractor_uses_structured_stage_for_chinese_request() -> None:
     assert draft.facts[0].source == "user_text"
     assert gateway.requests[0].purpose == "extract-cfd-task-draft"
     assert "不得虚构" in gateway.requests[0].system_prompt
+    assert "initial.conditions" in gateway.requests[0].system_prompt
+    assert 'physics.regime 只能是 "steady" 或 "transient"' in (
+        gateway.requests[0].system_prompt
+    )
+    assert "reference cell" in gateway.requests[0].system_prompt
+    assert 'dimensionality="two_d"' in gateway.requests[0].system_prompt
+    assert "target_cell_count" in gateway.requests[0].system_prompt
+    assert '{"name":"top","role":"wall"}' in gateway.requests[0].system_prompt
+    assert "patch name 不得使用中文" in gateway.requests[0].system_prompt
+    assert "require_check_mesh_pass" in gateway.requests[0].system_prompt
+    assert "layer_count=null" in gateway.requests[0].system_prompt
     assert "/private/target" not in gateway.requests[0].user_prompt
 
 
@@ -108,7 +158,7 @@ def test_extractor_downgrades_invented_high_impact_property() -> None:
     payload = _payload(source="model_inference", confirmed=True)
     payload["facts"][0].update(
         path="materials.fluid.nu",
-        value={"value": 1e-6, "unit": "m2/s"},
+        value='{"value": 1e-6, "unit": "m2/s"}',
         evidence="typical water value",
     )
     gateway = RecordingExtractionGateway(payload)
@@ -130,7 +180,7 @@ def test_extractor_downgrades_user_fact_without_verbatim_evidence() -> None:
     payload = _payload(source="user_text", confirmed=True)
     payload["facts"][0].update(
         path="materials.fluid.nu",
-        value={"value": 1e-6, "unit": "m2/s"},
+        value='{"value": 1e-6, "unit": "m2/s"}',
         evidence="typical water viscosity",
     )
     gateway = RecordingExtractionGateway(payload)

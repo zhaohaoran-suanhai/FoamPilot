@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import time
 
 import pytest
 
@@ -192,3 +193,37 @@ raise SystemExit(1)
 
     assert captured.value.kind == BackendFailureKind.SCHEMA_INVALID
     assert captured.value.retryable is False
+
+
+def test_command_backend_timeout_kills_descendants_holding_output_pipes(
+    tmp_path: Path,
+) -> None:
+    executable = tmp_path / "model-with-child"
+    executable.write_text(
+        """#!/usr/bin/env python3
+import subprocess
+import sys
+import time
+subprocess.Popen([sys.executable, "-c", "import time; time.sleep(5)"])
+time.sleep(5)
+""",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    backend = CommandBackend(
+        CommandBackendConfig(
+            backend_id="child-command",
+            model="test",
+            argv_template=(str(executable),),
+            probe_argv=((str(executable),),),
+        )
+    )
+
+    started = time.monotonic()
+    with pytest.raises(BackendError) as captured:
+        backend.exchange(_request(), timeout_seconds=0.1)
+    elapsed = time.monotonic() - started
+
+    assert captured.value.kind == BackendFailureKind.TIMEOUT
+    assert captured.value.request_timed_out is True
+    assert elapsed < 2

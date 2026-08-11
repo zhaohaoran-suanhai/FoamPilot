@@ -1,7 +1,8 @@
 # 阶段 4：FoamPilot Desktop IDE 规格
 
-状态：设计已确认，尚未进入实施。前三阶段的核心接口已经存在，但部分真实 gate 尚未完成；
-阶段 4 只有在用户再次明确批准后才能进入实现。本文描述目标实现，不代表当前能力。
+状态：设计已确认。Desktop A 只读 Run Inspector 和 Desktop B 交互式求解 v1 已完成实现与
+真实 Foundation OpenFOAM v10 run gate。Desktop B v1 包含 TaskDraft/TaskSpec、环境检查、规范求解、
+公开知识上下文和残差监控；Desktop C 的三维可视化与 Desktop D 的受控修改尚未实施。
 
 ## 1. 产品定位
 
@@ -384,11 +385,10 @@ IDE 自身崩溃或 worker 连接丢失不能覆盖已有 CFD primary failure。
 
 ### 14.2 Desktop B：任务创建与执行
 
-- TaskDraft/TaskSpec 编辑；
-- geometry/public asset 导入；
-- preflight/model doctor；
-- `QProcess` 启动 canonical solve；
-- 实时 workflow/log 更新。
+- 已实现：TaskDraft/TaskSpec 编辑、高影响信息确认、preflight/model doctor；
+- 已实现：`QProcess` 启动 canonical solve，使用唯一 job root 绑定具体 run；
+- 已实现：实时 workflow/log、公开 Knowledge/Skill 引用和 solver residual 更新；
+- v1 资产边界：TaskSpec 可以引用工程根目录内的公开资产，尚无拖放导入器。
 
 ### 14.3 Desktop C：几何、网格与结果可视化
 

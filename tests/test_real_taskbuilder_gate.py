@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -53,7 +54,7 @@ def _extracted_payload(request: str) -> dict:
     def fact(path, value):
         return {
             "path": path,
-            "value": value,
+            "value": json.dumps(value),
             "source": "user_text",
             "evidence": request,
             "impact": "high",

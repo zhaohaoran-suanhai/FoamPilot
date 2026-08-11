@@ -1,0 +1,75 @@
+"""Qt-independent, immutable view models for the desktop run inspector."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict
+
+from foampilot.artifacts import RunSummary
+
+
+class FrozenModel(BaseModel):
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        extra="forbid",
+        frozen=True,
+    )
+
+
+class RunFileView(FrozenModel):
+    path: str
+    bytes: int
+    category: Literal["case", "log", "report", "workflow", "other"]
+
+
+class TimelineView(FrozenModel):
+    sequence: int
+    stage: str
+    state: str
+    attempt: int | None
+    step_id: str | None
+    detail: str
+
+
+class KnowledgeReference(FrozenModel):
+    stage: Literal["author", "repair"]
+    attempt: int | None
+    slot: str
+    entry_id: str
+    title: str | None
+    knowledge_type: str | None
+    source_locator: str | None
+    source_sha256: str | None
+
+
+class SkillReference(FrozenModel):
+    stage: Literal["author", "repair"]
+    attempt: int | None
+    name: str
+
+
+class ResidualSample(FrozenModel):
+    attempt: int | None
+    source_log: str
+    sequence: int
+    simulation_time: float | None
+    iteration: int | None
+    field: str
+    initial_residual: float
+    final_residual: float
+    solver_iterations: int
+
+
+class RunSnapshot(FrozenModel):
+    run_dir: Path
+    summary: RunSummary | None
+    timeline: tuple[TimelineView, ...]
+    files: tuple[RunFileView, ...]
+    manifest_state: Literal["verified", "invalid", "pending"]
+    manifest_issues: tuple[str, ...]
+    warnings: tuple[str, ...]
+    context_references: tuple[KnowledgeReference, ...] = ()
+    skill_references: tuple[SkillReference, ...] = ()
+    residual_samples: tuple[ResidualSample, ...] = ()

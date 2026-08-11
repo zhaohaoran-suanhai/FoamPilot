@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from hashlib import sha256
 import json
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -83,6 +84,7 @@ from foampilot.taskbuilder import (
     extract_task_draft,
     validate_task_draft,
 )
+from foampilot.desktop import DesktopDependencyError
 
 
 COMMANDS = (
@@ -93,6 +95,7 @@ COMMANDS = (
     "inspect",
     "report",
     "preflight",
+    "desktop",
     "model",
     "knowledge",
     "skill",
@@ -162,6 +165,9 @@ def _parser() -> argparse.ArgumentParser:
 
     preflight = subparsers.add_parser("preflight")
     preflight.add_argument("--json", action="store_true")
+
+    desktop = subparsers.add_parser("desktop")
+    desktop.add_argument("--open-run", type=Path)
 
     model = subparsers.add_parser("model")
     model_commands = model.add_subparsers(dest="model_command")
@@ -504,12 +510,12 @@ def _task_builder(arguments: argparse.Namespace) -> int:
             assets,
             _native_gateway(arguments),
             budget=ModelBudgetLedger.start(
-                total_model_deadline_seconds=120,
-                lineage_transport_attempt_limit=3,
+                total_model_deadline_seconds=420,
+                lineage_transport_attempt_limit=2,
             ).open_stage(
                 ModelStage.TASK_EXTRACTION,
-                request_timeout_seconds=60,
-                stage_deadline_seconds=90,
+                request_timeout_seconds=180,
+                stage_deadline_seconds=390,
                 max_transport_attempts=2,
             ),
             trace=trace,
@@ -839,6 +845,33 @@ def _report(arguments: argparse.Namespace) -> int:
     return 4
 
 
+def _desktop_launcher(run_dir: Path | None) -> int:
+    try:
+        from foampilot.desktop.application import launch
+    except ModuleNotFoundError as error:
+        if error.name == "PySide6" or (
+            error.name is not None and error.name.startswith("PySide6.")
+        ):
+            raise DesktopDependencyError(
+                "PySide6 is not installed"
+            ) from error
+        raise
+    return launch(run_dir)
+
+
+def _desktop(arguments: argparse.Namespace) -> int:
+    try:
+        return _desktop_launcher(arguments.open_run)
+    except DesktopDependencyError as error:
+        print(
+            "DESKTOP_DEPENDENCY_MISSING: "
+            "请安装 foampilot[desktop]。"
+            f" ({error})",
+            file=sys.stderr,
+        )
+        return 3
+
+
 def _knowledge_manifest(root: Path) -> Path:
     candidates = (
         root / "knowledge-manifest.json",
@@ -1160,6 +1193,7 @@ def main(argv: list[str] | None = None) -> int:
             "resume": _native_resume,
             "inspect": _native_inspect,
             "preflight": _preflight,
+            "desktop": _desktop,
             "model": _model,
             "report": _report,
             "knowledge": _knowledge,

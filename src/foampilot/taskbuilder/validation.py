@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from foampilot.environment import EnvironmentSnapshot
+from foampilot.tasks import GeometryInput, MeshIntent
 
 from .messages_zh import taskbuilder_message_zh
 from .models import DraftIssue, DraftReview, FactSource, TaskDraft
@@ -52,6 +53,21 @@ def validate_task_draft(
         issues.append(
             _issue("TASK_UNIT_AMBIGUOUS", "blocking", "geometry.length_unit")
         )
+    if geometry:
+        try:
+            GeometryInput.model_validate(geometry)
+        except ValueError:
+            issues.append(
+                _issue("TASK_REQUEST_INCOMPLETE", "blocking", "geometry")
+            )
+    mesh_fact = facts.get("mesh")
+    if mesh_fact is not None:
+        try:
+            MeshIntent.model_validate(mesh_fact.value)
+        except ValueError:
+            issues.append(
+                _issue("TASK_REQUEST_INCOMPLETE", "blocking", "mesh")
+            )
     declared_assets = {item.path for item in draft.assets}
     geometry_assets = geometry.get("assets", [])
     if isinstance(geometry_assets, list):

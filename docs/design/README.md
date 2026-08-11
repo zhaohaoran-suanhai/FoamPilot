@@ -1,8 +1,9 @@
 # FoamPilot 下一阶段顺序演进规格
 
-状态：四项设计方向已确认。阶段 1—3 已按顺序实现并分别保留证据报告；阶段 4 仍为设计，
-尚未进入实现。各子规格中的“目标实现”描述应结合对应阶段报告判断，不能把未通过的真实 gate
-当作现有能力。
+状态：四项设计方向已确认。阶段 1—3 已按顺序实现并分别保留证据报告；阶段 4 已完成
+Desktop A 和 Desktop B 交互式求解 v1，Desktop C/D 尚未实施。各子规格中的“目标实现”
+描述应结合对应阶段报告判断，不能把三维可视化、人工 revision 或未通过的
+真实 gate 当作现有能力。
 
 ## 1. 目标
 
@@ -108,10 +109,13 @@ CFD 推理决定的离散格式和模型组合。
 - [阶段 2：前处理能力](preprocessing-design.md)
 - [阶段 3：自然语言 TaskBuilder](natural-language-task-builder-design.md)
 - [阶段 4：FoamPilot Desktop IDE](desktop-ide-design.md)
+- [Desktop B 交互式求解 v1 设计](desktop-ide-interactive-v1-design.md)
 - [阶段 1 实施记录](../reports/2026-08-04-stage-1-knowledge-skills.md)
 - [阶段 2 实施记录](../reports/2026-08-04-stage-2-preprocessing.md)
 - [阶段 3 实施记录](../reports/2026-08-04-stage-3-taskbuilder.md)
 - [Agent Harness v2 P0/P1 实施与验证](../reports/2026-08-06-agent-harness-p0-p1.md)
+- [Desktop A Run Inspector 实施与验证](../reports/2026-08-06-desktop-a-run-inspector.md)
+- [Desktop B 交互式求解 v1 实施与验证](../reports/2026-08-11-desktop-b-live-solve.md)
 
 ## 8. 总体验收口径
 
