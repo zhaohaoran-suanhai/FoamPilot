@@ -1,32 +1,17 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from foampilot.runtime import (
     RuntimeConfig,
-    preflight_passed,
     parse_openfoam_log,
-    run_preflight,
 )
 
 
-def test_local_foundation_v10_preflight_detects_icofoam() -> None:
-    config = RuntimeConfig.local_foundation_v10()
-    assert config.openfoam_root == Path("/home/edwin/workplace/OpenFOAM-10")
-    assert config.python_executable == Path(
-        "/home/edwin/feal-venv-py312/bin/python"
-    )
-    assert config.bubblewrap == Path("/usr/local/bin/bwrap")
-    assert config.execution_backend == "auto"
-    checks = {check.name: check for check in run_preflight(config)}
-    assert checks["solver:icoFoam"].ok, checks["solver:icoFoam"].detail
-    assert preflight_passed(list(checks.values()))
-    if not checks["bubblewrap_launch"].ok:
-        assert not checks["bubblewrap_launch"].blocking
-        assert checks["execution_backend"].ok
-        assert "host" in checks["execution_backend"].detail
+def test_runtime_schema_has_no_machine_specific_python_or_tutorial_fields() -> None:
+    assert "python_executable" not in RuntimeConfig.model_fields
+    assert "tutorial_root" not in RuntimeConfig.model_fields
+    assert "execution_backend" not in RuntimeConfig.model_fields
 
 
 def test_openfoam_log_parser_tracks_completion_and_failures() -> None:

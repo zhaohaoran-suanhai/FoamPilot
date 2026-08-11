@@ -60,5 +60,4 @@ public_checks:
     parameters:
       path: 1/p
 public_assets: []
-protected_paths:
-  - /home/edwin/workplace/OpenFOAM-10/tutorials
+protected_paths: []

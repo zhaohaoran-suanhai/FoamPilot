@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 from pydantic import BaseModel
+import pytest
 
 from foampilot.models import (
     BackendFailureKind,
@@ -24,6 +26,12 @@ from foampilot.qualification.suites import (
     SuiteCase,
     SuiteRole,
 )
+from foampilot.runtime import (
+    RuntimeConfig,
+    RuntimeConfigError,
+    RuntimeConfigProvenance,
+    RuntimeResolution,
+)
 from tests.support.model_gateway import (
     FakeClock,
     ScriptedBackend,
@@ -31,10 +39,171 @@ from tests.support.model_gateway import (
 )
 
 
+def _runtime_resolution(
+    isolation: str = "sandbox_required",
+) -> RuntimeResolution:
+    return RuntimeResolution(
+        config=RuntimeConfig(
+            openfoam_root=Path("/opt/openfoam10"),
+            isolation=isolation,
+        ),
+        provenance=RuntimeConfigProvenance(fields={}),
+    )
+
+
+def _pass_runtime_preflight(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "foampilot.qualification.runner.run_preflight",
+        lambda config, *, workspace_root: SimpleNamespace(
+            ok=True,
+            environment=SimpleNamespace(
+                tutorial_root=Path("/opt/openfoam10/tutorials")
+            ),
+            sandbox_probe=SimpleNamespace(
+                failure_code=None,
+                detail="synthetic qualification preflight passed",
+            ),
+        ),
+    )
+
+
+def test_qualification_rejects_non_required_policy_before_workers(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    started = False
+
+    def fail_if_started(*args, **kwargs):
+        nonlocal started
+        started = True
+        raise AssertionError("worker must not start")
+
+    monkeypatch.setattr(
+        "foampilot.qualification.runner.ThreadPoolExecutor",
+        fail_if_started,
+    )
+    suite = QualificationSuite(
+        protocol_id="policy-gate-test",
+        max_workers=1,
+        cases=[
+            SuiteCase(
+                case_id="laminar-cavity",
+                role=SuiteRole.REGRESSION,
+            )
+        ],
+    )
+
+    with pytest.raises(RuntimeConfigError) as captured:
+        run_qualification_suite(
+            suite=suite,
+            run_root=tmp_path,
+            workers=1,
+            backend_id="fake",
+            model_name="fake-model",
+            gateway=object(),
+            runtime_resolution=_runtime_resolution("trusted_host"),
+        )
+
+    assert captured.value.code == "RUNTIME_POLICY_CONFLICT"
+    assert started is False
+
+
+def test_qualification_requires_tutorials_before_workers(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    started = False
+
+    def fail_if_started(*args, **kwargs):
+        nonlocal started
+        started = True
+        raise AssertionError("worker must not start")
+
+    monkeypatch.setattr(
+        "foampilot.qualification.runner.ThreadPoolExecutor",
+        fail_if_started,
+    )
+    monkeypatch.setattr(
+        "foampilot.qualification.runner.run_preflight",
+        lambda config, *, workspace_root: SimpleNamespace(
+            ok=True,
+            environment=SimpleNamespace(tutorial_root=None),
+            sandbox_probe=SimpleNamespace(
+                failure_code=None,
+                detail="sandbox passed",
+            ),
+        ),
+    )
+    suite = QualificationSuite(
+        protocol_id="tutorial-gate-test",
+        max_workers=1,
+        cases=[
+            SuiteCase(
+                case_id="laminar-cavity",
+                role=SuiteRole.REGRESSION,
+            )
+        ],
+    )
+
+    with pytest.raises(RuntimeConfigError) as captured:
+        run_qualification_suite(
+            suite=suite,
+            run_root=tmp_path,
+            workers=1,
+            backend_id="fake",
+            model_name="fake-model",
+            gateway=object(),
+            runtime_resolution=_runtime_resolution(),
+        )
+
+    assert captured.value.code == "OPENFOAM_DISCOVERY_FAILED"
+    assert "FOAM_TUTORIALS" in captured.value.message
+    assert started is False
+
+
+def test_qualification_preserves_workspace_preflight_failure(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "foampilot.qualification.runner.run_preflight",
+        lambda config, *, workspace_root: SimpleNamespace(
+            ok=False,
+            environment=SimpleNamespace(tutorial_root=None),
+            sandbox_probe=SimpleNamespace(failure_code=None, detail="not probed"),
+            failure_code="WORKSPACE_NOT_WRITABLE",
+            failure_message="工作目录不可写。",
+            failure_recovery="选择可写目录后重试。",
+        ),
+    )
+    suite = QualificationSuite(
+        protocol_id="workspace-gate-test",
+        max_workers=1,
+        cases=[
+            SuiteCase(case_id="laminar-cavity", role=SuiteRole.REGRESSION)
+        ],
+    )
+
+    with pytest.raises(RuntimeConfigError) as captured:
+        run_qualification_suite(
+            suite=suite,
+            run_root=tmp_path,
+            workers=1,
+            backend_id="fake",
+            model_name="fake-model",
+            gateway=object(),
+            runtime_resolution=_runtime_resolution(),
+        )
+
+    assert captured.value.code == "WORKSPACE_NOT_WRITABLE"
+    assert captured.value.message == "工作目录不可写。"
+
+
 def test_suite_passes_one_injected_gateway_to_every_worker(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    _pass_runtime_preflight(monkeypatch)
     suite = QualificationSuite(
         protocol_id="gateway-sharing-test",
         max_workers=2,
@@ -52,8 +221,14 @@ def test_suite_passes_one_injected_gateway_to_every_worker(
     sentinel_gateway = object()
     observed: list[object] = []
 
-    def fake_run_one(case_id, *, run_root, gateway):
-        del run_root
+    def fake_run_one(
+        case_id,
+        *,
+        run_root,
+        gateway,
+        runtime_resolution,
+    ):
+        del run_root, runtime_resolution
         observed.append(gateway)
         return {"case_id": case_id}
 
@@ -104,6 +279,7 @@ def test_suite_passes_one_injected_gateway_to_every_worker(
         backend_id="fake",
         model_name="fake-model",
         gateway=sentinel_gateway,
+        runtime_resolution=_runtime_resolution(),
     )
 
     assert observed == [sentinel_gateway, sentinel_gateway]
@@ -113,6 +289,7 @@ def test_shared_breaker_defers_later_task_without_http(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    _pass_runtime_preflight(monkeypatch)
     class Output(BaseModel):
         value: str
 
@@ -158,8 +335,14 @@ def test_shared_breaker_defers_later_task_without_http(
     )
     deferred_by_circuit: list[bool] = []
 
-    def fake_run_one(case_id, *, run_root, gateway):
-        del run_root
+    def fake_run_one(
+        case_id,
+        *,
+        run_root,
+        gateway,
+        runtime_resolution,
+    ):
+        del run_root, runtime_resolution
         ledger = ModelBudgetLedger.start(
             now=clock.monotonic,
         )
@@ -218,6 +401,7 @@ def test_shared_breaker_defers_later_task_without_http(
         backend_id="fake",
         model_name="fake-model",
         gateway=gateway,
+        runtime_resolution=_runtime_resolution(),
     )
 
     assert deferred_by_circuit == [False, True]

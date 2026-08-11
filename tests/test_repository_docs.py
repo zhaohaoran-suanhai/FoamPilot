@@ -80,3 +80,29 @@ def test_repository_documents_taskbuilder_without_a_second_solve_path() -> None:
     assert "不持有 Runner" in integration
     assert "同一个\n`NativeAgent.solve()`" in integration
     assert "不会被猜测" in overview
+
+
+def test_repository_documents_portable_runtime_and_isolation() -> None:
+    root = Path(__file__).resolve().parents[1]
+    combined = "\n".join(
+        (root / path).read_text(encoding="utf-8")
+        for path in (
+            "README.md",
+            "AGENTS.md",
+            "docs/architecture.md",
+            "docs/system-overview.md",
+            "docs/independent-agent-quickstart.md",
+            "docs/desktop-ide.md",
+        )
+    )
+    for token in (
+        "FOAMPILOT_OPENFOAM_ROOT",
+        "sandbox_required",
+        "sandbox_preferred",
+        "trusted_host",
+        "runtime-config.json",
+        "execution-risk-report.json",
+        "execution-policy.json",
+    ):
+        assert token in combined
+    assert "audited host 与 bubblewrap 不具有相同安全性" in combined

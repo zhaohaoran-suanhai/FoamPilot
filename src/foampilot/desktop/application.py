@@ -12,7 +12,10 @@ from PySide6.QtWidgets import QApplication
 _ACTIVE_WINDOWS: set[object] = set()
 
 
-def launch(run_dir: Path | None = None) -> int:
+def launch(
+    run_dir: Path | None = None,
+    runtime_cli_args: tuple[str, ...] = (),
+) -> int:
     """Start the optional desktop application."""
 
     from .main_window import FoamPilotMainWindow
@@ -23,7 +26,10 @@ def launch(run_dir: Path | None = None) -> int:
         application = QApplication(sys.argv[:1])
     application.setOrganizationName("FoamPilot")
     application.setApplicationName("FoamPilot")
-    window = FoamPilotMainWindow(settings=QSettings())
+    window = FoamPilotMainWindow(
+        settings=QSettings(),
+        runtime_cli_args=runtime_cli_args,
+    )
     if run_dir is not None:
         window.open_run(run_dir)
     else:

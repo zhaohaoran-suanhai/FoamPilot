@@ -75,10 +75,7 @@ def test_native_qualification_has_exactly_six_safe_task_specs() -> None:
         assert task.openfoam_target.distribution == "foundation"
         assert task.openfoam_target.version == "10"
         assert task.public_checks
-        assert any(
-            path == Path("/home/edwin/workplace/OpenFOAM-10/tutorials")
-            for path in map(Path, task.protected_paths)
-        )
+        assert task.protected_paths == []
         visible = json.dumps(
             task.agent_payload(),
             ensure_ascii=False,

@@ -50,9 +50,7 @@ def test_development_task_is_public_and_protected(case_id: str) -> None:
 
     assert task.task_id == case_id
     assert task.openfoam_target.version == "10"
-    assert task.protected_paths == [
-        "/home/edwin/workplace/OpenFOAM-10/tutorials"
-    ]
+    assert task.protected_paths == []
     visible = json.dumps(task.agent_payload())
     assert "tutorials/" not in visible
     assert "golden" not in visible.lower()
@@ -84,9 +82,7 @@ def test_holdout_task_is_public_and_protected(case_id: str) -> None:
 
     assert task.task_id == case_id
     assert task.openfoam_target.version == "10"
-    assert task.protected_paths == [
-        "/home/edwin/workplace/OpenFOAM-10/tutorials"
-    ]
+    assert task.protected_paths == []
     visible = json.dumps(task.agent_payload())
     assert "tutorials/" not in visible
     assert "golden" not in visible.lower()

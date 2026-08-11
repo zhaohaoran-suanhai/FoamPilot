@@ -37,32 +37,77 @@ Agent 从空 case 目录开始工作。它可以使用公开 OpenFOAM 文档与�
 
 - Python 3.12 或更高版本；
 - Foundation OpenFOAM v10；
-- bubblewrap（`bwrap`，推荐；不可用时 `auto` 后端可降级）；
+- bubblewrap（`bwrap`，推荐）；
 - NumPy、Pydantic、PyYAML 与 PyVista；
 - 已登录的 Codex CLI，或由无秘密 YAML 声明的 OpenAI-compatible 模型后端。
 
-当前工作站配置使用：
-
-```text
-/home/edwin/workplace/OpenFOAM-10
-/home/edwin/feal-venv-py312/bin/python
-/usr/local/bin/bwrap
-```
-
-这些路径是显式 runtime 配置，并不表示 FoamPilot 依赖其最初拆分来源的代码仓库。
+FoamPilot 不内置用户目录、Python 虚拟环境或 OpenFOAM 安装路径。运行时按
+CLI > 环境变量 > 显式 TOML > `FOAMPILOT_RUNTIME_CONFIG` >
+`$XDG_CONFIG_HOME/foampilot/runtime.toml` > 有限自动发现 > 默认值逐字段解析，
+并把来源写入 `runtime-config-provenance.json`。
 
 ## 安装
 
 ```bash
 python -m pip install -e ".[test]"
-foampilot preflight --json
+foampilot preflight \
+  --openfoam-root /opt/OpenFOAM/OpenFOAM-10 \
+  --execution-isolation sandbox_preferred \
+  --json
 foampilot model doctor --json
 ```
 
-默认工作站配置使用 `execution_backend=auto`：先做一次有界 bubblewrap 探测并缓存结果；
-namespace 可用时使用无网络 bubblewrap，不可用时选择有 executable allowlist、资源限制和
-完整日志的 audited host 后端。host 后端不提供 network namespace 隔离，`preflight` 会明确
-报告所选后端与 fallback 原因，而不会因 bubblewrap 权限不足无限等待。
+可冻结为 `~/.config/foampilot/runtime.toml`（或 `$XDG_CONFIG_HOME` 下同一路径）：
+
+```toml
+schema_version = 1
+
+[openfoam]
+distribution = "foundation"
+version = "10"
+root = "/opt/OpenFOAM/OpenFOAM-10"
+
+[execution]
+isolation = "sandbox_preferred"
+bubblewrap = "auto"
+max_mpi_ranks = 4
+allow_dynamic_code_on_host = false
+trusted_readonly_roots = ["/opt/site-openfoam-tools"]
+```
+
+支持的环境变量为 `FOAMPILOT_RUNTIME_CONFIG`、`FOAMPILOT_OPENFOAM_ROOT`、
+`FOAMPILOT_EXECUTION_ISOLATION`、`FOAMPILOT_BUBBLEWRAP`、
+`FOAMPILOT_MAX_MPI_RANKS` 和 `FOAMPILOT_ALLOW_DYNAMIC_CODE_ON_HOST`；布尔值只接受
+小写 `true`/`false`。共享 CLI flags 为 `--runtime-config`、`--openfoam-root`、
+`--execution-isolation`、`--bubblewrap`、`--max-mpi-ranks`、
+`--allow-dynamic-code-on-host` 与可重复的 `--trusted-readonly-root`。
+
+三档执行策略是：`sandbox_required` 必须通过完整 bubblewrap launch probe；
+`sandbox_preferred` 仅在 namespace/bwrap 机制不可用且 case 风险为 low 时，才在首命令前
+选择 host；`trusted_host` 明确选择宿主执行。audited host 与 bubblewrap 不具有相同安全性：
+host 没有 network/filesystem namespace，typed argv 和资源限制也不能替代隔离。
+qualification 固定要求 `sandbox_required`。
+
+host 决策使用 fail-closed 静态审计：OpenFOAM 命令必须来自已发现的规范绝对路径，模型不能用
+`-case`、distributed roots 或绝对 argv 改写 Runner 上下文；动态代码、`#calc`、`systemCall`、
+`timeActivatedFileUpdate`、动态库、外部/变量 include、宏展开 type/library 以及无法分类的执行
+directive 都会阻断默认 host 路线。`.foampilot` 是 Runner 专用命名空间，不能由 TaskSpec、公开
+资产或模型生成文件写入。该审计是 host 降级门禁，不等价于 bubblewrap 隔离证明。
+
+```bash
+foampilot solve task.yaml \
+  --run-root runs \
+  --runtime-config ~/.config/foampilot/runtime.toml \
+  --backend auto \
+  --json
+```
+
+每个 run 固化 `runtime-config.json`、`runtime-config-provenance.json`、`preflight.json`、
+`sandbox-probe.json` 与 `execution-policy.json`；每个 attempt 另存
+`execution-risk-report.json`、probe 和 policy。`OPENFOAM_DISCOVERY_FAILED` 应通过显式 root
+或 TOML 修复；`SANDBOX_REQUIRED_UNAVAILABLE` 需要安装/修复 bwrap 或 user namespace；
+`HOST_DYNAMIC_CODE_BLOCKED` 表示高风险或未知 case 禁止 host fallback，应恢复 sandbox，
+只有明确选择 `trusted_host` 且显式允许动态代码才可解除该 host 门禁。
 
 ## 交互式桌面 IDE
 

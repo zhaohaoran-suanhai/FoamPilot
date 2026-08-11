@@ -44,6 +44,16 @@ TaskSpec 的用户也可以直接粘贴到 TaskSpec 页并开始求解。TaskSpe
 工程目录为根，因此资产应放在该目录内。
 
 “环境检查”会依次执行 OpenFOAM preflight 和模型后端 doctor。建议第一次求解前先运行。
+从命令行启动 Desktop 时可以传入与 `solve` 相同的显式 Runtime flags，例如：
+
+```bash
+foampilot desktop \
+  --runtime-config ~/.config/foampilot/runtime.toml \
+  --execution-isolation sandbox_preferred
+```
+
+Desktop 只把这些参数原样转发给规范 `preflight`/`solve`，不重新实现 resolver，也不会降低
+isolation；TaskDraft 不接收 Runtime 参数。
 
 ## 运行中看什么
 
@@ -55,7 +65,9 @@ TaskSpec 的用户也可以直接粘贴到 TaskSpec 页并开始求解。TaskSpe
 - “产物”：最终 `RunSummary`、选中文件、公开验证/qualification 报告；
 - 左侧：当前 run 内经过安全路径检查的 case、日志、报告和 workflow 文件；
 - 底部：排序后的 workflow 时间线、OpenFOAM 日志以及 TaskBuilder/solve 进程输出；
-- 右侧：IDE Job、当前阶段、Workflow、Native、Qualification 和 Manifest 分层状态。
+- 右侧：IDE Job、当前阶段、Workflow、Native、Qualification、Manifest，以及配置来源、
+  OpenFOAM root/version、requested isolation、actual backend、risk、sandbox probe 与 fallback
+  warning。host 会明确标为“未隔离”，不能显示成与 bubblewrap 等价的成功。
 
 残差下降只是数值证据之一。求解器出现正常 `End` 不自动证明充分收敛、网格无关或工程适用。
 
@@ -83,6 +95,9 @@ TaskSpec 的用户也可以直接粘贴到 TaskSpec 页并开始求解。TaskSpe
 - 每次求解使用唯一 job root，并只绑定其中发现的唯一 `run-*`；
 - run 文件查看拒绝符号链接、绝对路径、`..`、未登记文件和超过显示上限的文件；
 - QSettings 仅保存上次 run 和窗口布局，不写入 run；
+- Desktop 只展示 run 中公开、规范的 `runtime-config.json`、
+  `execution-risk-report.json`、`execution-policy.json` 等证据和模型实际收到的 Knowledge/Skill；
+  不展示隐藏思维过程。audited host 与 bubblewrap 不具有相同安全性；
 - 规范作业运行期间关闭窗口会被阻止，以免 Qt 销毁子进程；v1 尚无取消按钮；
 - 当前没有 resume、人工 repair、case revision、三维 VTK/PyVista 视图、ParaView 启动、远程
   HPC、多用户和权限管理。

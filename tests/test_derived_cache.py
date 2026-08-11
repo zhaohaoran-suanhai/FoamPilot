@@ -23,14 +23,23 @@ from tests.test_native_case_generation import (
     _plan,
     _task,
 )
+from tests.support.runtime import synthetic_execution_evidence
 
 
 class PolyMeshRunner:
     def __init__(self) -> None:
         self.calls: list[list[str]] = []
 
-    def run(self, *, case_dir, commands, budget):
-        del budget
+    def run(
+        self,
+        *,
+        case_dir,
+        commands,
+        budget,
+        risk_report,
+        protected_paths,
+    ):
+        del budget, risk_report
         case = Path(case_dir)
         self.calls.append([item.executable for item in commands])
         log_dir = case / ".foampilot/logs"
@@ -71,7 +80,11 @@ class PolyMeshRunner:
                     execution_backend="host",
                 )
             )
-        return PlanRunResult(case_dir=case, steps=steps)
+        return PlanRunResult(
+            case_dir=case,
+            steps=steps,
+            **synthetic_execution_evidence(protected_paths),
+        )
 
 
 def _mesh_task():
@@ -198,6 +211,12 @@ def test_mesh_cache_skips_generator_but_rechecks_mesh_and_solver(
     assert (
         warm.run_dir / "attempt-01/case/constant/polyMesh/points"
     ).is_file()
+    risk = json.loads(
+        (warm.run_dir / "attempt-01/execution-risk-report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "constant/polyMesh/points" in risk["scanned_file_sha256"]
     run_result = json.loads(
         (warm.run_dir / "attempt-01/run-result.json").read_text(
             encoding="utf-8"

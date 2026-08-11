@@ -76,8 +76,13 @@ foampilot qualify suite \
 
 ## 执行、repair 与恢复
 
-- 真实求解先运行 `preflight`。bubblewrap 不可用时可以采用有明确记录的 audited-host
-  fallback，不能等待交互权限对话。
+- 真实求解先运行 `preflight`。Runtime 配置来自统一 CLI/TOML/环境变量/有限发现 resolver；
+  禁止恢复固定用户路径或固定 Python executable。
+- `sandbox_required` 禁止 host；`sandbox_preferred` 只允许 low-risk case 因 bwrap/namespace
+  机制不可用而在首命令前降级；`trusted_host` 必须显式选择。audited host 与 bubblewrap
+  不具有相同安全性，qualification 必须使用 `sandbox_required`。
+- 每个 run/attempt 保留 `runtime-config.json`、`execution-risk-report.json`、
+  `execution-policy.json` 和 sandbox probe；repair 后必须重扫，运行中不得切换 backend。
 - `author` 和 `public_asset` 字段必须在执行前存在；由 mesh、initialize 或 solver 创建的
   字段不得被错误地提前要求存在。
 - 每个 attempt 独立保存，不得原地修改已固化目录。

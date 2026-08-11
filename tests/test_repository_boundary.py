@@ -65,6 +65,24 @@ def test_repository_has_no_functional_legacy_references() -> None:
     assert violations == []
 
 
+def test_deliverable_task_assets_have_no_personal_paths() -> None:
+    violations: list[str] = []
+    for root in (
+        ROOT / "src/foampilot/qualification/data",
+        ROOT / "examples",
+    ):
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            if "__pycache__" in path.parts or path.suffix == ".pyc":
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if "/home/edwin" in text or "feal-venv" in text:
+                violations.append(str(path.relative_to(ROOT)))
+
+    assert violations == []
+
+
 def test_cli_exposes_the_foampilot_command_surface(capsys) -> None:
     assert build_parser().prog == "foampilot"
     assert COMMANDS == SUPPORTED_COMMANDS

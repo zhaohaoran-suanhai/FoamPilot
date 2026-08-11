@@ -112,11 +112,19 @@ lineage 至多允许七次真实 transport attempt。代码、knowledge、Skill�
 ## 隔离
 
 Runner 优先将 attempt case 目录绑定为 `/case`，在 bubblewrap 中关闭网络且不接受 shell
-program。`execution_backend=auto` 会对 bubblewrap 做一次有界、缓存的可用性探测；若嵌套
-环境拒绝 namespace，则使用同一 typed policy、allowlist、cwd、资源限制和日志契约执行
-audited host command。host fallback 不具有 network namespace 隔离，preflight 和每个 step
-都会记录实际后端与 fallback 原因。MPI ranks 属于 typed command record，必须处于 TaskSpec
-预算内。
+program。统一 Runtime resolver 提供 `sandbox_required`、`sandbox_preferred`、`trusted_host`
+三档策略。每个 attempt 在首命令前对 materialized case 生成
+`execution-risk-report.json`，执行完整 launch probe，并冻结一次 backend；运行中禁止切换。
+只有 `sandbox_preferred`、low-risk case 且 bwrap/namespace 机制不可用时才允许 host fallback。
+沙箱 setup 或可信挂载错误绝不降级。audited host 与 bubblewrap 不具有相同安全性：host
+没有 network/filesystem namespace。`runtime-config.json`、`sandbox-probe.json` 和
+`execution-policy.json` 进入不可变 manifest，MPI ranks 仍必须同时满足 TaskSpec 和 Runtime
+预算。
+
+host 后端只执行 EnvironmentSnapshot 中已验证的 canonical executable path，并拒绝模型提供的
+case/root 覆盖与绝对参数。最终 materialized case（含 cache restore）会重新扫描宏展开型 include、
+type/library、动态代码、命令执行和任意文件更新入口；`.foampilot` 由 Runner 独占。环境发现与 help
+探测使用隔离 HOME 和最小环境，避免用户 prefs 或 PATH shadow 改变随后执行的命令事实。
 
 Evaluator-only qualification 在已完成 case 的临时副本上运行，因此 VTK marker file 与
 post-processing 不会修改 artifact manifest。

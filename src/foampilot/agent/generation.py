@@ -72,6 +72,7 @@ def _safe_relative(relative: str) -> bool:
         bool(relative)
         and not parsed.is_absolute()
         and ".." not in parsed.parts
+        and ".foampilot" not in parsed.parts
     )
 
 

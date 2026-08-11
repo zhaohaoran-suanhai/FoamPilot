@@ -487,6 +487,75 @@ def test_context_and_residual_tabs_render_public_run_evidence(
     assert window.residual_table.topLevelItemCount() == 2
 
 
+def test_runtime_security_artifacts_render_unisolated_warning(
+    qtbot,
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run-runtime"
+    attempt = run_dir / "attempt-01"
+    attempt.mkdir(parents=True)
+    (run_dir / "task.yaml").write_text("task_id: runtime\n", encoding="utf-8")
+    (run_dir / "runtime-config.json").write_text(
+        json.dumps(
+            {
+                "openfoam_root": "/opt/OpenFOAM/OpenFOAM-10",
+                "version": "10",
+                "isolation": "sandbox_preferred",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "runtime-config-provenance.json").write_text(
+        json.dumps(
+            {
+                "fields": {
+                    "execution.isolation": {
+                        "source": "environment",
+                        "locator": "FOAMPILOT_EXECUTION_ISOLATION",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (attempt / "execution-risk-report.json").write_text(
+        json.dumps({"risk_level": "low"}),
+        encoding="utf-8",
+    )
+    (attempt / "execution-policy.json").write_text(
+        json.dumps(
+            {
+                "requested_isolation": "sandbox_preferred",
+                "actual_backend": "host",
+                "fallback_reason": "Operation not permitted",
+                "unisolated_warning": "host execution is not isolated",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (attempt / "sandbox-probe.json").write_text(
+        json.dumps(
+            {
+                "status": "failed",
+                "failure_code": "NAMESPACE_UNAVAILABLE",
+            }
+        ),
+        encoding="utf-8",
+    )
+    window = FoamPilotMainWindow()
+    qtbot.addWidget(window)
+
+    window.open_run(run_dir)
+
+    assert "environment" in window.config_source_label.text()
+    assert "OpenFOAM-10" in window.openfoam_runtime_label.text()
+    assert "sandbox_preferred" in window.isolation_label.text()
+    assert "host" in window.actual_backend_label.text()
+    assert "low" in window.risk_label.text()
+    assert "NAMESPACE_UNAVAILABLE" in window.sandbox_probe_label.text()
+    assert "未隔离" in window.fallback_warning_label.text()
+
+
 def test_batch_root_offers_concrete_child_selection(
     qtbot,
     tmp_path: Path,
@@ -531,6 +600,47 @@ def test_task_actions_build_fixed_cli_arguments(
     assert arguments[:3] == ["task", "draft", "--request-file"]
     assert arguments[-3:] == ["--backend", "auto", "--json"]
     assert run_root is None
+
+
+def test_runtime_options_reach_preflight_and_solve_but_not_task_draft(
+    qtbot,
+    tmp_path: Path,
+) -> None:
+    controller = RecordingJobController()
+    runtime_args = (
+        "--runtime-config",
+        "/tmp/runtime.toml",
+        "--execution-isolation",
+        "sandbox_required",
+    )
+    window = FoamPilotMainWindow(
+        job_controller=controller,
+        runtime_cli_args=runtime_args,
+    )
+    qtbot.addWidget(window)
+
+    window.check_environment()
+    preflight, _ = controller.calls[-1]
+    assert preflight == ["preflight", *runtime_args, "--json"]
+    controller.finish(0)
+    controller.finish(0)
+
+    window.set_workspace(tmp_path / "project")
+    window.request_editor.setPlainText("求解二维方腔。")
+    window.generate_draft()
+    draft, _ = controller.calls[-1]
+    assert draft[0:2] == ["task", "draft"]
+    assert "--runtime-config" not in draft
+    controller.finish(4)
+
+    window.task_editor.setPlainText("schema_version: 2\ntask_id: direct\n")
+    window.start_solve()
+    controller.finish(0)
+    solve, _ = controller.calls[-1]
+    json_index = solve.index("--json")
+    assert solve[json_index - len(runtime_args) : json_index] == list(
+        runtime_args
+    )
 
 
 def test_direct_taskspec_validates_then_starts_unique_solve(

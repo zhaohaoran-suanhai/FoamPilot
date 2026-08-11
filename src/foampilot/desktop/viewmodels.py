@@ -73,3 +73,8 @@ class RunSnapshot(FrozenModel):
     context_references: tuple[KnowledgeReference, ...] = ()
     skill_references: tuple[SkillReference, ...] = ()
     residual_samples: tuple[ResidualSample, ...] = ()
+    runtime_config: dict[str, object] | None = None
+    runtime_provenance: dict[str, object] | None = None
+    execution_risk: dict[str, object] | None = None
+    execution_policy: dict[str, object] | None = None
+    sandbox_probe: dict[str, object] | None = None

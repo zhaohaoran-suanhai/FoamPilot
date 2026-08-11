@@ -171,6 +171,32 @@ def test_plan_rejects_unsafe_files_shell_and_protected_references(
     }
 
 
+def test_generated_file_rejects_internal_foampilot_namespace() -> None:
+    with pytest.raises(ValidationError, match="reserved"):
+        GeneratedFile(
+            path=".foampilot/host-home/.OpenFOAM/10/prefs.sh",
+            content="id\n",
+        )
+
+
+def test_plan_validation_defends_against_constructed_reserved_path(
+    task: TaskSpec,
+) -> None:
+    plan = valid_plan().model_copy(deep=True)
+    plan.files[0] = GeneratedFile.model_construct(
+        path="system/.foampilot/prefs.sh",
+        content="id\n",
+    )
+
+    issues = validate_execution_plan(
+        plan,
+        task,
+        {"blockMesh", "potentialFoam", "icoFoam"},
+    )
+
+    assert "RESERVED_INTERNAL_PATH" in {issue.code for issue in issues}
+
+
 def test_plan_rejects_duplicate_paths_steps_and_public_asset_overlap(
     task: TaskSpec,
 ) -> None:

@@ -15,13 +15,13 @@ from foampilot.models import (
     ModelGateway,
 )
 from foampilot.plans import ExecutionPlan, GeneratedFile
-from foampilot.runtime import RuntimeConfig
 from foampilot.tasks import load_task_spec
 from tests.support.model_gateway import (
     ScriptedBackend,
     backend_error,
     valid_response,
 )
+from tests.support.runtime import real_runtime_config
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -98,6 +98,7 @@ def test_solver_failure_backend_deferred_resume_repair_real_gate(
         for _ in range(3)
     ]
     store = ArtifactStore(tmp_path / "runs")
+    runtime = real_runtime_config()
     parent = NativeAgent(
         gateway=_gateway(
             [
@@ -105,7 +106,7 @@ def test_solver_failure_backend_deferred_resume_repair_real_gate(
                 *overloads,
             ]
         ),
-        runtime_config=RuntimeConfig.local_foundation_v10(),
+        runtime_config=runtime,
         artifact_store=store,
     ).solve(task)
     parent_manifest = (
@@ -123,7 +124,7 @@ def test_solver_failure_backend_deferred_resume_repair_real_gate(
         gateway=_gateway(
             [valid_response(repair.model_dump_json())]
         ),
-        runtime_config=RuntimeConfig.local_foundation_v10(),
+        runtime_config=runtime,
         artifact_store=store,
     ).resume(parent.run_dir)
 

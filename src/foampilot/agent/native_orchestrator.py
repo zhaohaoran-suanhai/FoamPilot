@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sys
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
@@ -64,11 +66,21 @@ from foampilot.routing import (
     route_capability,
 )
 from foampilot.runtime import (
+    ExecutionPolicyDecision,
     PlanRunResult,
     PlanRunner,
     ReusedStepResult,
     RuntimeConfig,
+    RuntimeConfigProvenance,
+    RuntimeExecutionError,
+    RuntimeFieldSource,
+    RuntimeCheck,
+    SandboxProbe,
+    run_preflight,
+    scan_execution_risk,
 )
+from foampilot.runtime.preflight import RuntimePreflightReport
+from foampilot.runtime.protection import runtime_protected_paths
 from foampilot.tasks import TaskSpec, stage_public_assets
 from foampilot.validation.models import (
     PublicValidationCheck,
@@ -124,6 +136,95 @@ from .status import (
 # one complete response instead of discarding it at the former 300 s limit.
 GENERATION_REQUEST_TIMEOUT_SECONDS = 420
 GENERATION_STAGE_DEADLINE_SECONDS = 480
+
+
+def _python_api_runtime_provenance() -> RuntimeConfigProvenance:
+    fields = (
+        "schema_version",
+        "openfoam.distribution",
+        "openfoam.version",
+        "openfoam.root",
+        "execution.isolation",
+        "execution.bubblewrap",
+        "execution.max_mpi_ranks",
+        "execution.allow_dynamic_code_on_host",
+        "execution.trusted_readonly_roots",
+    )
+    return RuntimeConfigProvenance(
+        fields={
+            field: RuntimeFieldSource(
+                source="python_api",
+                locator="NativeAgent(runtime_config=...)",
+            )
+            for field in fields
+        }
+    )
+
+
+def _pending_execution_policy(
+    config: RuntimeConfig,
+) -> ExecutionPolicyDecision:
+    return ExecutionPolicyDecision(
+        requested_isolation=config.isolation,
+        actual_backend=None,
+        allowed=False,
+        code="POLICY_PENDING",
+        dynamic_code_host_opt_in=config.allow_dynamic_code_on_host,
+    )
+
+
+def _synthetic_preflight(
+    environment: EnvironmentSnapshot,
+) -> RuntimePreflightReport:
+    probe = SandboxProbe(
+        status="not_requested",
+        ok=None,
+        return_code=None,
+        detail=(
+            "sandbox probe not run because the environment snapshot was "
+            "injected by a trusted Python caller"
+        ),
+    )
+    return RuntimePreflightReport(
+        ok=True,
+        python_executable=Path(sys.executable).resolve(),
+        checks=(
+            RuntimeCheck(
+                name="injected_environment_snapshot",
+                ok=True,
+                detail=(
+                    "trusted Python caller supplied the environment; this "
+                    "is not a real installation or sandbox readiness gate"
+                ),
+                blocking=False,
+            ),
+        ),
+        environment=environment,
+        sandbox_probe=probe,
+    )
+
+
+def _execution_environment_failure(
+    *,
+    code: str,
+    detail: str,
+    evidence_paths: Sequence[str],
+    step_id: str | None = None,
+    message: str = "执行隔离环境不可用。",
+    recovery: str = (
+        "修复 bubblewrap/namespace 后重试；sandbox_preferred 只会对 "
+        "low-risk case 在首命令前降级。"
+    ),
+) -> FailureRecord:
+    return FailureRecord(
+        domain=FailureDomain.ENVIRONMENT,
+        code=code,
+        step_id=step_id,
+        detail=detail,
+        message=message,
+        recovery=recovery,
+        evidence_paths=list(evidence_paths),
+    )
 
 
 def _run_result_seconds(run: PlanRunResult) -> float:
@@ -534,6 +635,8 @@ class NativeAgent:
         gateway: ModelGateway | None,
         runtime_config: RuntimeConfig,
         artifact_store: ArtifactStore,
+        runtime_provenance: RuntimeConfigProvenance | None = None,
+        protected_runtime_roots: Sequence[Path] = (),
         environment_snapshot: EnvironmentSnapshot | None = None,
         runner: PlanRunner | Any | None = None,
         knowledge_text: str | None = None,
@@ -542,6 +645,18 @@ class NativeAgent:
     ) -> None:
         self.gateway = gateway
         self.runtime_config = runtime_config
+        self.runtime_provenance = (
+            runtime_provenance or _python_api_runtime_provenance()
+        )
+        resolved_protected_roots: list[Path] = []
+        for root in protected_runtime_roots:
+            path = Path(root)
+            if not path.is_absolute():
+                raise ValueError("protected runtime roots must be absolute")
+            resolved_protected_roots.append(path.resolve())
+        self.protected_runtime_roots = tuple(
+            dict.fromkeys(resolved_protected_roots)
+        )
         self.artifact_store = artifact_store
         self.environment_snapshot = environment_snapshot
         self.runner = runner
@@ -829,6 +944,15 @@ class NativeAgent:
                 "verified plan reuse and strict continuation are mutually exclusive"
             )
         run_dir = self.artifact_store.create_run()
+        _write_json(run_dir / "runtime-config.json", self.runtime_config)
+        _write_json(
+            run_dir / "runtime-config-provenance.json",
+            self.runtime_provenance,
+        )
+        _write_json(
+            run_dir / "execution-policy.json",
+            _pending_execution_policy(self.runtime_config),
+        )
         derived_cache_store = (
             DerivedCache(derived_cache)
             if derived_cache is not None
@@ -940,17 +1064,55 @@ class NativeAgent:
             evidence_paths=["task.yaml"],
         )
 
-        try:
-            environment = self._environment(run_dir)
-        except (OSError, RuntimeError) as error:
+        if self.environment_snapshot is not None:
+            preflight = _synthetic_preflight(self.environment_snapshot)
+        else:
+            preflight = run_preflight(
+                self.runtime_config,
+                workspace_root=run_dir,
+            )
+        _write_json(run_dir / "preflight.json", preflight)
+        _write_json(
+            run_dir / "sandbox-probe.json",
+            preflight.sandbox_probe,
+        )
+        if not preflight.ok or preflight.environment is None:
+            probe = preflight.sandbox_probe
+            code = (
+                preflight.failure_code
+                or probe.failure_code
+                or "OPENFOAM_DISCOVERY_FAILED"
+            )
+            if (
+                self.runtime_config.isolation == "sandbox_required"
+                and code in {"BWRAP_UNAVAILABLE", "NAMESPACE_UNAVAILABLE"}
+            ):
+                code = "SANDBOX_REQUIRED_UNAVAILABLE"
             return self._finish(
                 run_dir=run_dir,
                 task=task,
                 status="BLOCKED_ENVIRONMENT",
                 attempts=attempts,
-                message=f"Environment discovery failed: {error}",
+                message="Runtime preflight failed.",
                 model_calls=model_calls,
+                primary_failure=_execution_environment_failure(
+                    code=code,
+                    detail=preflight.failure_message or probe.detail,
+                    evidence_paths=["preflight.json", "sandbox-probe.json"],
+                    message=(
+                        preflight.failure_message or "执行隔离环境不可用。"
+                    ),
+                    recovery=(
+                        preflight.failure_recovery
+                        or (
+                            "修复 bubblewrap/namespace 后重试；"
+                            "sandbox_preferred 只会对 low-risk case "
+                            "在首命令前降级。"
+                        )
+                    ),
+                ),
             )
+        environment = preflight.environment
         _write_json(run_dir / "environment.json", environment)
         if (
             environment.distribution != task.openfoam_target.distribution
@@ -970,6 +1132,18 @@ class NativeAgent:
             stage=WorkflowStage.ENVIRONMENT_READY,
             state=WorkflowEventState.COMPLETED,
             evidence_paths=["environment.json"],
+        )
+        execution_task = task.model_copy(
+            update={
+                "protected_paths": [
+                    str(path)
+                    for path in runtime_protected_paths(
+                        task.protected_paths,
+                        environment,
+                        self.protected_runtime_roots,
+                    )
+                ]
+            }
         )
 
         effective_public_asset_root: str | Path | None = public_asset_root
@@ -1372,7 +1546,7 @@ class NativeAgent:
                 )
                 repair_scope = build_repair_scope(
                     classification=classification,
-                    task=task,
+                    task=execution_task,
                     plan=parent_plan,
                     current_files=current_files,
                     knowledge_ids=(
@@ -1405,7 +1579,7 @@ class NativeAgent:
                 )
                 repair_status = build_agent_status_snapshot(
                     decision_stage=AgentDecisionStage.REPAIR,
-                    task=task,
+                    task=execution_task,
                     capability=capability,
                     context=repair_context,
                     workflow=workflow,
@@ -1433,7 +1607,7 @@ class NativeAgent:
                 )
                 model_calls += 1
                 patch = request_repair_patch(
-                    task=task,
+                    task=execution_task,
                     plan=parent_plan,
                     classification=classification,
                     repair_scope=repair_scope,
@@ -1456,7 +1630,7 @@ class NativeAgent:
                 patch_result = apply_repair_patch(
                     patch,
                     scope=repair_scope,
-                    task=task,
+                    task=execution_task,
                     plan=parent_plan,
                     available_executables=(
                         environment.available_executable_names
@@ -1611,7 +1785,7 @@ class NativeAgent:
                 )
                 author_status = build_agent_status_snapshot(
                     decision_stage=AgentDecisionStage.AUTHOR,
-                    task=task,
+                    task=execution_task,
                     capability=capability,
                     context=context,
                     workflow=workflow,
@@ -1630,7 +1804,7 @@ class NativeAgent:
                 )
                 model_calls += 1
                 plan = author_case_bundle(
-                    task,
+                    execution_task,
                     environment,
                     capability,
                     self.gateway,
@@ -1748,7 +1922,7 @@ class NativeAgent:
             _write_json(run_dir / "authored-execution-plan.json", plan)
         normalization = normalize_execution_plan(
             plan,
-            task,
+            execution_task,
             environment.available_executable_names,
         )
         _write_json(
@@ -1777,7 +1951,7 @@ class NativeAgent:
 
         plan_issues = validate_execution_plan(
             plan,
-            task,
+            execution_task,
             environment.available_executable_names,
         )
         if plan_issues:
@@ -1815,7 +1989,7 @@ class NativeAgent:
                         effective_public_asset_root,
                         case_root,
                     )
-                materialize_case(active_plan, task, case_root)
+                materialize_case(active_plan, execution_task, case_root)
                 if (
                     pending_repair_changes is not None
                     and pending_repair_source_attempt is not None
@@ -1880,7 +2054,7 @@ class NativeAgent:
 
             inspection = inspect_native_case(
                 case_root=case_root,
-                task=task,
+                task=execution_task,
                 plan=active_plan,
                 available_executables=(
                     environment.available_executable_names
@@ -1902,6 +2076,16 @@ class NativeAgent:
                     )
                 ],
             )
+            risk_report = scan_execution_risk(
+                case_root,
+                openfoam_root=self.runtime_config.openfoam_root,
+                trusted_readonly_roots=(
+                    self.runtime_config.trusted_readonly_roots
+                ),
+                commands=active_plan.commands,
+            )
+            risk_path = attempt_root / "execution-risk-report.json"
+            _write_json(risk_path, risk_report)
             mesh_quality: MeshQualityReport | None = None
             if inspection.passed:
                 commands_to_execute = (
@@ -2055,12 +2239,101 @@ class NativeAgent:
                     runner = PlanRunner.from_runtime_config(
                         self.runtime_config,
                         environment.available_executable_names,
+                        environment=environment,
                         workspace_root=run_dir,
                     )
-                run_result = runner.run(
-                    case_dir=case_root,
+                protected_paths = runtime_protected_paths(
+                    execution_task.protected_paths,
+                    environment,
+                    self.protected_runtime_roots,
+                )
+                risk_report = scan_execution_risk(
+                    case_root,
+                    openfoam_root=self.runtime_config.openfoam_root,
+                    trusted_readonly_roots=(
+                        self.runtime_config.trusted_readonly_roots
+                    ),
                     commands=commands_to_execute,
-                    budget=task.resource_budget,
+                )
+                _write_json(risk_path, risk_report)
+                try:
+                    run_result = runner.run(
+                        case_dir=case_root,
+                        commands=commands_to_execute,
+                        budget=task.resource_budget,
+                        risk_report=risk_report,
+                        protected_paths=protected_paths,
+                    )
+                except RuntimeExecutionError as error:
+                    risk_report = risk_report.model_copy(
+                        update={"policy_decision": error.decision.code}
+                    )
+                    _write_json(risk_path, risk_report)
+                    _write_json(
+                        attempt_root / "sandbox-probe.json",
+                        error.probe,
+                    )
+                    _write_json(
+                        attempt_root / "execution-policy.json",
+                        error.decision,
+                    )
+                    _write_json(run_dir / "sandbox-probe.json", error.probe)
+                    _write_json(
+                        run_dir / "execution-policy.json",
+                        error.decision,
+                    )
+                    attempts.append(
+                        AttemptSummary(
+                            attempt=attempt_number,
+                            status="BLOCKED_ENVIRONMENT",
+                        )
+                    )
+                    evidence = [
+                        f"attempt-{attempt_number:02d}/execution-risk-report.json",
+                        f"attempt-{attempt_number:02d}/sandbox-probe.json",
+                        f"attempt-{attempt_number:02d}/execution-policy.json",
+                    ]
+                    return self._finish(
+                        run_dir=run_dir,
+                        task=task,
+                        status="BLOCKED_ENVIRONMENT",
+                        attempts=attempts,
+                        message="Execution policy blocked the attempt.",
+                        model_calls=model_calls,
+                        primary_failure=_execution_environment_failure(
+                            code=error.code,
+                            detail=error.probe.detail,
+                            evidence_paths=evidence,
+                        ),
+                    )
+                if (
+                    run_result.sandbox_probe is None
+                    or run_result.execution_policy is None
+                ):
+                    raise RuntimeError(
+                        "runner omitted sandbox probe or execution policy evidence"
+                    )
+                risk_report = risk_report.model_copy(
+                    update={
+                        "policy_decision": run_result.execution_policy.code
+                    }
+                )
+                _write_json(risk_path, risk_report)
+                _write_json(
+                    attempt_root / "sandbox-probe.json",
+                    run_result.sandbox_probe,
+                )
+                _write_json(
+                    attempt_root / "execution-policy.json",
+                    run_result.execution_policy,
+                )
+                _write_json(
+                    run_dir / "sandbox-probe.json",
+                    run_result.sandbox_probe,
+                )
+                _write_json(
+                    run_dir / "execution-policy.json",
+                    run_result.execution_policy,
                 )
                 execution_seconds_used += _run_result_seconds(run_result)
                 if reused_steps:
@@ -2068,6 +2341,37 @@ class NativeAgent:
                         update={"reused_steps": reused_steps}
                     )
                 _write_json(attempt_root / "run-result.json", run_result)
+                if run_result.execution_error_code is not None:
+                    attempts.append(
+                        AttemptSummary(
+                            attempt=attempt_number,
+                            status="BLOCKED_ENVIRONMENT",
+                            failed_step_id=run_result.failed_step_id,
+                        )
+                    )
+                    evidence = [
+                        f"attempt-{attempt_number:02d}/execution-risk-report.json",
+                        f"attempt-{attempt_number:02d}/sandbox-probe.json",
+                        f"attempt-{attempt_number:02d}/execution-policy.json",
+                        f"attempt-{attempt_number:02d}/run-result.json",
+                    ]
+                    return self._finish(
+                        run_dir=run_dir,
+                        task=task,
+                        status="BLOCKED_ENVIRONMENT",
+                        attempts=attempts,
+                        message="Sandbox setup failed during execution.",
+                        model_calls=model_calls,
+                        primary_failure=_execution_environment_failure(
+                            code=run_result.execution_error_code,
+                            detail=(
+                                "the selected sandbox backend failed before "
+                                "a trustworthy OpenFOAM result was produced"
+                            ),
+                            evidence_paths=evidence,
+                            step_id=run_result.failed_step_id,
+                        ),
+                    )
                 for step in run_result.steps:
                     _record_event(
                         workflow,
@@ -2314,7 +2618,7 @@ class NativeAgent:
                 )
                 repair_scope = build_repair_scope(
                     classification=classification,
-                    task=task,
+                    task=execution_task,
                     plan=active_plan,
                     current_files=current_files,
                     knowledge_ids=(
@@ -2363,7 +2667,7 @@ class NativeAgent:
                 )
                 repair_status = build_agent_status_snapshot(
                     decision_stage=AgentDecisionStage.REPAIR,
-                    task=task,
+                    task=execution_task,
                     capability=capability,
                     context=repair_context,
                     workflow=workflow,
@@ -2391,7 +2695,7 @@ class NativeAgent:
                 )
                 model_calls += 1
                 patch = request_repair_patch(
-                    task=task,
+                    task=execution_task,
                     plan=active_plan,
                     classification=classification,
                     repair_scope=repair_scope,
@@ -2414,7 +2718,7 @@ class NativeAgent:
                 patch_result = apply_repair_patch(
                     patch,
                     scope=repair_scope,
-                    task=task,
+                    task=execution_task,
                     plan=active_plan,
                     available_executables=(
                         environment.available_executable_names

@@ -94,11 +94,13 @@ class FoamPilotMainWindow(QMainWindow):
         repository: RunRepository | None = None,
         settings: QSettings | None = None,
         job_controller: DesktopJobController | None = None,
+        runtime_cli_args: tuple[str, ...] = (),
     ) -> None:
         super().__init__()
         self.repository = repository or RunRepository()
         self.settings = settings
         self.job_controller = job_controller or DesktopJobController(self)
+        self.runtime_cli_args = tuple(str(item) for item in runtime_cli_args)
         self.workspace: DesktopWorkspace | None = None
         self.current_snapshot: RunSnapshot | None = None
         self.recovery_warning = ""
@@ -331,6 +333,13 @@ class FoamPilotMainWindow(QMainWindow):
         self.primary_failure_label = QLabel()
         self.terminal_blocker_label = QLabel()
         self.manifest_label = QLabel()
+        self.config_source_label = QLabel()
+        self.openfoam_runtime_label = QLabel()
+        self.isolation_label = QLabel()
+        self.actual_backend_label = QLabel()
+        self.risk_label = QLabel()
+        self.sandbox_probe_label = QLabel()
+        self.fallback_warning_label = QLabel()
         for label in (
             self.job_status_label,
             self.current_stage_label,
@@ -342,6 +351,13 @@ class FoamPilotMainWindow(QMainWindow):
             self.primary_failure_label,
             self.terminal_blocker_label,
             self.manifest_label,
+            self.config_source_label,
+            self.openfoam_runtime_label,
+            self.isolation_label,
+            self.actual_backend_label,
+            self.risk_label,
+            self.sandbox_probe_label,
+            self.fallback_warning_label,
         ):
             label.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextSelectableByMouse
@@ -702,13 +718,28 @@ class FoamPilotMainWindow(QMainWindow):
         *,
         run_root: Path | None = None,
     ) -> None:
+        effective_arguments = list(arguments)
+        if (
+            effective_arguments
+            and effective_arguments[0] in {"preflight", "solve"}
+            and self.runtime_cli_args
+        ):
+            insertion = (
+                effective_arguments.index("--json")
+                if "--json" in effective_arguments
+                else len(effective_arguments)
+            )
+            effective_arguments[insertion:insertion] = self.runtime_cli_args
         self._job_purpose = purpose
         self.process_log_viewer.appendPlainText(
-            f"\n[{purpose}] foampilot " + " ".join(arguments)
+            f"\n[{purpose}] foampilot " + " ".join(effective_arguments)
         )
         self.bottom_tabs.setCurrentWidget(self.process_log_viewer)
         try:
-            self.job_controller.start_cli(arguments, run_root=run_root)
+            self.job_controller.start_cli(
+                effective_arguments,
+                run_root=run_root,
+            )
         except DesktopJobError as error:
             self._job_purpose = None
             self._desktop_error("DESKTOP_PROCESS_FAILED", str(error))
@@ -868,6 +899,17 @@ class FoamPilotMainWindow(QMainWindow):
         self.primary_failure_label.setText("Primary failure: not available")
         self.terminal_blocker_label.setText("Terminal blocker: not available")
         self.manifest_label.setText("Manifest: pending")
+        self.config_source_label.setText("Config source: not available")
+        self.openfoam_runtime_label.setText(
+            "OpenFOAM root/version: not available"
+        )
+        self.isolation_label.setText("Requested isolation: not available")
+        self.actual_backend_label.setText("Actual backend: not available")
+        self.risk_label.setText("Risk: not available")
+        self.sandbox_probe_label.setText("Sandbox probe: not available")
+        self.fallback_warning_label.setText(
+            "Fallback warning: not available"
+        )
         self.status_label.setText("not available")
         self.knowledge_tree.clear()
         self.skill_tree.clear()
@@ -904,6 +946,64 @@ class FoamPilotMainWindow(QMainWindow):
             f"Terminal blocker: {terminal_blocker}"
         )
         self.manifest_label.setText(f"Manifest: {snapshot.manifest_state}")
+        config = snapshot.runtime_config or {}
+        provenance = snapshot.runtime_provenance or {}
+        policy = snapshot.execution_policy or {}
+        risk = snapshot.execution_risk or {}
+        probe = snapshot.sandbox_probe or {}
+        provenance_fields = provenance.get("fields")
+        isolation_source: object | None = None
+        if isinstance(provenance_fields, dict):
+            source_record = provenance_fields.get("execution.isolation")
+            if isinstance(source_record, dict):
+                isolation_source = source_record.get("source")
+                locator = source_record.get("locator")
+                if locator:
+                    isolation_source = f"{isolation_source} ({locator})"
+        self.config_source_label.setText(
+            f"Config source: {_text(isolation_source)}"
+        )
+        self.openfoam_runtime_label.setText(
+            "OpenFOAM root/version: "
+            f"{_text(config.get('openfoam_root'))} / "
+            f"{_text(config.get('version'))}"
+        )
+        requested_isolation = policy.get(
+            "requested_isolation",
+            config.get("isolation"),
+        )
+        self.isolation_label.setText(
+            f"Requested isolation: {_text(requested_isolation)}"
+        )
+        actual_backend = policy.get("actual_backend")
+        self.actual_backend_label.setText(
+            f"Actual backend: {_text(actual_backend)}"
+        )
+        self.risk_label.setText(
+            f"Risk: {_text(risk.get('risk_level'))}"
+        )
+        probe_detail = probe.get("status")
+        if probe.get("failure_code"):
+            probe_detail = (
+                f"{probe_detail} ({probe.get('failure_code')})"
+            )
+        self.sandbox_probe_label.setText(
+            f"Sandbox probe: {_text(probe_detail)}"
+        )
+        if actual_backend == "host":
+            warning = (
+                policy.get("unisolated_warning")
+                or policy.get("fallback_reason")
+                or "typed argv 不提供文件系统或网络隔离"
+            )
+            fallback = f"未隔离宿主机执行：{warning}"
+        elif actual_backend == "bubblewrap":
+            fallback = "无；当前 attempt 使用 bubblewrap 隔离"
+        else:
+            fallback = _text(policy.get("fallback_reason"))
+        self.fallback_warning_label.setText(
+            f"Fallback warning: {fallback}"
+        )
         self.status_label.setText(native if summary is not None else current_stage)
 
         overview_parts = [_summary_json(snapshot)]

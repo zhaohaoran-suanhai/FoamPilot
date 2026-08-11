@@ -44,15 +44,42 @@ foampilot preflight --json
 foampilot model doctor --json
 ```
 
-当前本机配置使用：
+先写入可复制的 Runtime 配置；不要依赖开发机路径：
 
-- `/home/edwin/workplace/OpenFOAM-10`；
-- `/usr/local/bin/bwrap`（推荐；`auto` 后端可降级）；
-- `/home/edwin/feal-venv-py312/bin/python`。
+```toml
+# ~/.config/foampilot/runtime.toml
+schema_version = 1
+[openfoam]
+distribution = "foundation"
+version = "10"
+root = "/opt/OpenFOAM/OpenFOAM-10"
+[execution]
+isolation = "sandbox_preferred"
+bubblewrap = "auto"
+max_mpi_ranks = 4
+allow_dynamic_code_on_host = false
+trusted_readonly_roots = []
+```
 
-如果 FoamPilot 本身运行在已经受限的开发沙箱中，bubblewrap 可能无法再次创建
-namespace。`auto` 模式会把该探测记为非阻断并改用 audited host；preflight 和 step
-产物会记录实际后端。host fallback 不具有 network namespace 隔离。
+也可用 `FOAMPILOT_OPENFOAM_ROOT`、`FOAMPILOT_EXECUTION_ISOLATION` 等环境变量或共享 CLI
+flags 覆盖。验证命令为：
+
+```bash
+foampilot preflight \
+  --openfoam-root /opt/OpenFOAM/OpenFOAM-10 \
+  --execution-isolation sandbox_preferred \
+  --json
+```
+
+`sandbox_preferred` 只允许 low-risk case 在 bwrap/namespace 机制不可用时回退；
+`sandbox_required` 完全禁止 host；`trusted_host` 明确接受宿主权限执行。audited host 与
+bubblewrap 不具有相同安全性，前者没有 network/filesystem namespace。检查
+`runtime-config.json`、`execution-risk-report.json` 和 `execution-policy.json` 可确认请求策略、
+case 风险和实际 backend。qualification 只能使用 `sandbox_required`。
+
+遇到 `OPENFOAM_DISCOVERY_FAILED` 时设置明确的 v10 root；遇到
+`SANDBOX_REQUIRED_UNAVAILABLE` 时修复 bwrap/user namespace；遇到
+`HOST_DYNAMIC_CODE_BLOCKED` 时恢复 sandbox，不要把高风险 case 静默放到 host。
 
 ## 校验、生成计划、求解和报告
 

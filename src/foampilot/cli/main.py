@@ -67,10 +67,16 @@ from foampilot.qualification import (
     run_qualification_suite,
 )
 from foampilot.runtime import (
-    RuntimeConfig,
+    IsolationPolicy,
+    RuntimeConfigError,
+    RuntimeExecutionError,
+    RuntimeOverrides,
+    RuntimeResolution,
     preflight_passed,
+    resolve_runtime_config,
     run_preflight,
 )
+from foampilot.runtime.protection import runtime_protected_paths
 from foampilot.routing import route_capability
 from foampilot.skills import (
     load_skill_scenarios,
@@ -134,6 +140,7 @@ def _parser() -> argparse.ArgumentParser:
     native_plan.add_argument("path", type=Path)
     native_plan.add_argument("--output", required=True, type=Path)
     _add_backend_options(native_plan)
+    _add_runtime_options(native_plan)
     native_plan.add_argument("--json", action="store_true")
 
     native_solve = subparsers.add_parser("solve")
@@ -143,20 +150,21 @@ def _parser() -> argparse.ArgumentParser:
     native_solve.add_argument("--reuse-verified-plan", type=Path)
     native_solve.add_argument("--derived-cache", type=Path)
     _add_backend_options(native_solve)
-    native_solve.add_argument("--max-mpi-ranks", type=int, default=1)
+    _add_runtime_options(native_solve)
     native_solve.add_argument("--json", action="store_true")
 
     native_resume = subparsers.add_parser("resume")
     native_resume.add_argument("parent_run", type=Path)
     native_resume.add_argument("--run-root", required=True, type=Path)
     _add_backend_options(native_resume)
-    native_resume.add_argument("--max-mpi-ranks", type=int, default=1)
+    _add_runtime_options(native_resume)
     native_resume.add_argument("--json", action="store_true")
 
     native_inspect = subparsers.add_parser("inspect")
     native_inspect.add_argument("task", type=Path)
     native_inspect.add_argument("plan", type=Path)
     native_inspect.add_argument("case_dir", type=Path)
+    _add_runtime_options(native_inspect)
     native_inspect.add_argument("--json", action="store_true")
 
     report = subparsers.add_parser("report")
@@ -164,10 +172,12 @@ def _parser() -> argparse.ArgumentParser:
     report.add_argument("--json", action="store_true")
 
     preflight = subparsers.add_parser("preflight")
+    _add_runtime_options(preflight)
     preflight.add_argument("--json", action="store_true")
 
     desktop = subparsers.add_parser("desktop")
     desktop.add_argument("--open-run", type=Path)
+    _add_runtime_options(desktop)
 
     model = subparsers.add_parser("model")
     model_commands = model.add_subparsers(dest="model_command")
@@ -253,11 +263,7 @@ def _parser() -> argparse.ArgumentParser:
     shock.add_argument("--json", action="store_true")
     wall_heat = audit_commands.add_parser("wall-heat-flux")
     wall_heat.add_argument("case_dir", type=Path)
-    wall_heat.add_argument(
-        "--openfoam-root",
-        type=Path,
-        default=RuntimeConfig.local_foundation_v10().openfoam_root,
-    )
+    _add_runtime_options(wall_heat)
     wall_heat.add_argument("--hot-patch", required=True)
     wall_heat.add_argument("--cold-patch", required=True)
     wall_heat.add_argument("--json", action="store_true")
@@ -329,6 +335,7 @@ def _parser() -> argparse.ArgumentParser:
     qualify.add_argument("--run-root", required=True, type=Path)
     qualify.add_argument("--workers", type=int, choices=(1, 2), default=2)
     _add_backend_options(qualify)
+    _add_runtime_options(qualify)
     qualify.add_argument("--json", action="store_true")
     return parser
 
@@ -337,6 +344,52 @@ def _add_backend_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--backend", default="auto")
     parser.add_argument("--backend-config", type=Path)
     parser.add_argument("--model-name")
+
+
+def _add_runtime_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--runtime-config", type=Path)
+    parser.add_argument("--openfoam-root", type=Path)
+    parser.add_argument(
+        "--execution-isolation",
+        choices=("sandbox_required", "sandbox_preferred", "trusted_host"),
+    )
+    parser.add_argument("--bubblewrap")
+    parser.add_argument("--max-mpi-ranks", type=int)
+    parser.add_argument(
+        "--allow-dynamic-code-on-host",
+        action="store_true",
+        default=None,
+    )
+    parser.add_argument(
+        "--trusted-readonly-root",
+        action="append",
+        type=Path,
+        default=None,
+    )
+
+
+def _resolve_runtime(
+    arguments: argparse.Namespace,
+    *,
+    default_isolation: IsolationPolicy = "sandbox_preferred",
+) -> RuntimeResolution:
+    trusted_roots = arguments.trusted_readonly_root
+    return resolve_runtime_config(
+        explicit_config=arguments.runtime_config,
+        cli_overrides=RuntimeOverrides(
+            openfoam_root=arguments.openfoam_root,
+            isolation=arguments.execution_isolation,
+            bubblewrap=arguments.bubblewrap,
+            max_mpi_ranks=arguments.max_mpi_ranks,
+            allow_dynamic_code_on_host=(
+                arguments.allow_dynamic_code_on_host
+            ),
+            trusted_readonly_roots=(
+                tuple(trusted_roots) if trusted_roots is not None else None
+            ),
+        ),
+        default_isolation=default_isolation,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -497,10 +550,7 @@ def _task_builder(arguments: argparse.Namespace) -> int:
         )
         protected = tuple(
             dict.fromkeys(
-                [
-                    str(RuntimeConfig.local_foundation_v10().tutorial_root),
-                    *(str(path.resolve()) for path in arguments.protected_path),
-                ]
+                str(path.resolve()) for path in arguments.protected_path
             )
         )
         trace = InMemoryModelTraceSink()
@@ -638,10 +688,22 @@ def _task_builder(arguments: argparse.Namespace) -> int:
 
 def _native_plan(arguments: argparse.Namespace) -> int:
     task = load_task_spec(arguments.path)
-    config = RuntimeConfig.local_foundation_v10().model_copy(
-        update={"max_mpi_ranks": task.resource_budget.max_mpi_ranks}
+    resolution = _resolve_runtime(arguments)
+    environment = discover_environment(
+        resolution.config,
+        arguments.output.parent,
     )
-    environment = discover_environment(config, arguments.output.parent)
+    execution_task = task.model_copy(
+        update={
+            "protected_paths": [
+                str(path)
+                for path in runtime_protected_paths(
+                    task.protected_paths,
+                    environment,
+                )
+            ]
+        }
+    )
     gateway = _native_gateway(arguments)
     ledger = ModelBudgetLedger.start()
     trace = JsonlModelTraceSink(
@@ -667,7 +729,7 @@ def _native_plan(arguments: argparse.Namespace) -> int:
     )
     context = load_agent_context(task, capability)
     plan = author_case_bundle(
-        task,
+        execution_task,
         environment,
         capability,
         gateway,
@@ -681,12 +743,12 @@ def _native_plan(arguments: argparse.Namespace) -> int:
     )
     plan = normalize_execution_plan(
         plan,
-        task,
+        execution_task,
         environment.available_executable_names,
     ).plan
     issues = validate_execution_plan(
         plan,
-        task,
+        execution_task,
         environment.available_executable_names,
     )
     if issues:
@@ -714,16 +776,15 @@ def _native_plan(arguments: argparse.Namespace) -> int:
 
 def _native_solve(arguments: argparse.Namespace) -> int:
     task = load_task_spec(arguments.path)
-    config = RuntimeConfig.local_foundation_v10().model_copy(
-        update={"max_mpi_ranks": arguments.max_mpi_ranks}
-    )
+    resolution = _resolve_runtime(arguments)
     outcome = NativeAgent(
         gateway=(
             None
             if arguments.reuse_verified_plan is not None
             else _native_gateway(arguments)
         ),
-        runtime_config=config,
+        runtime_config=resolution.config,
+        runtime_provenance=resolution.provenance,
         artifact_store=ArtifactStore(arguments.run_root),
     ).solve(
         task,
@@ -752,12 +813,11 @@ def _native_outcome_exit_code(outcome) -> int:
 
 
 def _native_resume(arguments: argparse.Namespace) -> int:
-    config = RuntimeConfig.local_foundation_v10().model_copy(
-        update={"max_mpi_ranks": arguments.max_mpi_ranks}
-    )
+    resolution = _resolve_runtime(arguments)
     outcome = NativeAgent(
         gateway=_native_gateway(arguments),
-        runtime_config=config,
+        runtime_config=resolution.config,
+        runtime_provenance=resolution.provenance,
         artifact_store=ArtifactStore(arguments.run_root),
     ).resume(arguments.parent_run)
     payload = outcome.model_dump(mode="json")
@@ -774,10 +834,11 @@ def _native_inspect(arguments: argparse.Namespace) -> int:
     plan = ExecutionPlan.model_validate_json(
         arguments.plan.read_text(encoding="utf-8")
     )
-    config = RuntimeConfig.local_foundation_v10().model_copy(
-        update={"max_mpi_ranks": task.resource_budget.max_mpi_ranks}
+    resolution = _resolve_runtime(arguments)
+    environment = discover_environment(
+        resolution.config,
+        arguments.case_dir,
     )
-    environment = discover_environment(config, arguments.case_dir)
     report = inspect_native_case(
         case_root=arguments.case_dir,
         task=task,
@@ -801,11 +862,35 @@ def _native_inspect(arguments: argparse.Namespace) -> int:
 
 
 def _preflight(arguments: argparse.Namespace) -> int:
-    checks = run_preflight(RuntimeConfig.local_foundation_v10())
-    ok = preflight_passed(checks)
+    resolution = _resolve_runtime(arguments)
+    report = run_preflight(
+        resolution.config,
+        workspace_root=Path.cwd(),
+    )
+    ok = preflight_passed(report)
     payload = {
         "status": "PASS" if ok else "BLOCKED_ENVIRONMENT",
-        "checks": [check.model_dump(mode="json") for check in checks],
+        "config": resolution.config.model_dump(mode="json"),
+        "provenance": resolution.provenance.model_dump(mode="json"),
+        "python_executable": str(report.python_executable),
+        "checks": [
+            check.model_dump(mode="json") for check in report.checks
+        ],
+        "environment": (
+            report.environment.model_dump(mode="json")
+            if report.environment is not None
+            else None
+        ),
+        "sandbox_probe": report.sandbox_probe.model_dump(mode="json"),
+        "failure": (
+            {
+                "code": report.failure_code,
+                "message": report.failure_message,
+                "recovery": report.failure_recovery,
+            }
+            if report.failure_code is not None
+            else None
+        ),
     }
     _emit(
         payload,
@@ -845,7 +930,10 @@ def _report(arguments: argparse.Namespace) -> int:
     return 4
 
 
-def _desktop_launcher(run_dir: Path | None) -> int:
+def _desktop_launcher(
+    run_dir: Path | None,
+    runtime_cli_args: tuple[str, ...],
+) -> int:
     try:
         from foampilot.desktop.application import launch
     except ModuleNotFoundError as error:
@@ -856,12 +944,35 @@ def _desktop_launcher(run_dir: Path | None) -> int:
                 "PySide6 is not installed"
             ) from error
         raise
-    return launch(run_dir)
+    return launch(run_dir, runtime_cli_args)
+
+
+def _runtime_cli_args(arguments: argparse.Namespace) -> tuple[str, ...]:
+    values: list[str] = []
+    scalar_options = (
+        ("runtime_config", "--runtime-config"),
+        ("openfoam_root", "--openfoam-root"),
+        ("execution_isolation", "--execution-isolation"),
+        ("bubblewrap", "--bubblewrap"),
+        ("max_mpi_ranks", "--max-mpi-ranks"),
+    )
+    for attribute, option in scalar_options:
+        value = getattr(arguments, attribute)
+        if value is not None:
+            values.extend((option, str(value)))
+    if arguments.allow_dynamic_code_on_host is True:
+        values.append("--allow-dynamic-code-on-host")
+    for root in arguments.trusted_readonly_root or ():
+        values.extend(("--trusted-readonly-root", str(root)))
+    return tuple(values)
 
 
 def _desktop(arguments: argparse.Namespace) -> int:
     try:
-        return _desktop_launcher(arguments.open_run)
+        return _desktop_launcher(
+            arguments.open_run,
+            _runtime_cli_args(arguments),
+        )
     except DesktopDependencyError as error:
         print(
             "DESKTOP_DEPENDENCY_MISSING: "
@@ -1031,9 +1142,10 @@ def _audit(arguments: argparse.Namespace) -> int:
         )
         return 0
     if arguments.audit_command == "wall-heat-flux":
+        resolution = _resolve_runtime(arguments)
         balance = audit_wall_heat_flux(
             arguments.case_dir,
-            openfoam_root=arguments.openfoam_root,
+            openfoam_root=resolution.config.openfoam_root,
             hot_patch=arguments.hot_patch,
             cold_patch=arguments.cold_patch,
         )
@@ -1053,6 +1165,10 @@ def _audit(arguments: argparse.Namespace) -> int:
 
 
 def _qualify(arguments: argparse.Namespace) -> int:
+    runtime_resolution = _resolve_runtime(
+        arguments,
+        default_isolation="sandbox_required",
+    )
     gateway = _native_gateway(arguments, qualification=True)
     if arguments.suite == "official-six":
         if arguments.suite_file is not None:
@@ -1065,6 +1181,7 @@ def _qualify(arguments: argparse.Namespace) -> int:
             backend_id=arguments.backend,
             model_name=arguments.model_name,
             gateway=gateway,
+            runtime_resolution=runtime_resolution,
         )
     elif arguments.suite == "suite":
         if arguments.suite_file is None:
@@ -1078,6 +1195,7 @@ def _qualify(arguments: argparse.Namespace) -> int:
             backend_id=arguments.backend,
             model_name=arguments.model_name,
             gateway=gateway,
+            runtime_resolution=runtime_resolution,
         )
     else:
         raise ValueError("a qualification suite is required")
@@ -1229,6 +1347,44 @@ def main(argv: list[str] | None = None) -> int:
             human=(
                 f"{status}: {backend_payload['message']} "
                 f"{backend_payload['recovery']}"
+            ),
+        )
+        return 3
+    except RuntimeConfigError as error:
+        as_json = bool(getattr(arguments, "json", False))
+        payload = {
+            "status": "BLOCKED_ENVIRONMENT",
+            "code": error.code,
+            "message": error.message,
+            "recovery": error.recovery,
+        }
+        if error.detail is not None:
+            payload["detail"] = error.detail
+        _emit(
+            payload,
+            as_json=as_json,
+            human=(
+                f"BLOCKED_ENVIRONMENT: {error.message} {error.recovery}"
+            ),
+        )
+        return 3
+    except RuntimeExecutionError as error:
+        as_json = bool(getattr(arguments, "json", False))
+        payload = {
+            "status": "BLOCKED_ENVIRONMENT",
+            "code": error.code,
+            "message": "执行隔离环境不可用。",
+            "recovery": (
+                "修复 bubblewrap/namespace 后重试；sandbox_preferred "
+                "只会对 low-risk case 在首命令前降级。"
+            ),
+        }
+        _emit(
+            payload,
+            as_json=as_json,
+            human=(
+                f"BLOCKED_ENVIRONMENT: {payload['message']} "
+                f"{payload['recovery']}"
             ),
         )
         return 3

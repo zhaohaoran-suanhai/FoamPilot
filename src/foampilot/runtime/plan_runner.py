@@ -2,63 +2,125 @@
 
 from __future__ import annotations
 
+import re
+import subprocess
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-import re
-import subprocess
+from typing import Any
 
+from foampilot.environment.models import EnvironmentSnapshot
 from foampilot.plans import NativeCommand
 from foampilot.tasks import ResourceBudget
 
 from .models import (
+    ExecutionPolicyDecision,
+    ExecutionRiskReport,
     PlanRunResult,
     PlanStepResult,
     RuntimeConfig,
+    SandboxProbe,
 )
-from .sandbox import build_sandbox_prefix
-from .sandbox import probe_bubblewrap
+from .policy import decide_execution_policy
+from .risk import with_command_risk
+from .sandbox import (
+    SandboxBuildError,
+    build_sandbox_argv,
+    not_requested_probe,
+    probe_sandbox,
+)
 
 
-_SOURCE_AND_EXEC = (
-    'source "$1" >/dev/null 2>&1; shift; cd /case; exec "$@"'
-)
 _SOURCE_AND_EXEC_HOST = (
     'source "$1" >/dev/null 2>&1; shift; cd "$1"; shift; exec "$@"'
 )
 _SHELL_TOKENS = {"&&", "||", ";", "|", "<", ">"}
 _SHELL_MARKERS = ("$(", "`", "\n", "\r", "\0")
-_MPI_HOST_OPTIONS = {
-    "--host",
-    "--hostfile",
-    "-host",
-    "-hostfile",
+_MPI_HOST_OPTIONS = {"--host", "--hostfile", "-host", "-hostfile"}
+_CONTEXT_OVERRIDE_OPTIONS = {
+    "-case",
+    "--case",
+    "-roots",
+    "--roots",
+    "-hostroots",
+    "--hostroots",
 }
-_FAILED_MESH_CHECKS = re.compile(
-    r"\bFailed\s+[1-9]\d*\s+mesh checks?\b"
-)
+_FAILED_MESH_CHECKS = re.compile(r"\bFailed\s+[1-9]\d*\s+mesh checks?\b")
 Executor = Callable[..., subprocess.CompletedProcess[str]]
+SandboxProbeCallable = Callable[..., SandboxProbe]
 
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class RuntimeExecutionError(RuntimeError):
+    def __init__(
+        self,
+        decision: ExecutionPolicyDecision,
+        probe: SandboxProbe,
+    ) -> None:
+        super().__init__(decision.code)
+        self.code = decision.code
+        self.decision = decision
+        self.probe = probe
+
+
 class PlanRunner:
-    """Execute typed steps without accepting an Agent-authored shell."""
+    """Execute typed steps after freezing one policy decision per attempt."""
 
     def __init__(
         self,
         *,
         runtime_config: RuntimeConfig,
+        environment: EnvironmentSnapshot,
         available_executables: set[str],
         workspace_root: str | Path,
         executor: Executor = subprocess.run,
+        sandbox_probe: SandboxProbeCallable = probe_sandbox,
     ) -> None:
         self.runtime_config = runtime_config
-        self.available_executables = frozenset(available_executables)
+        self.environment = environment
+        approved_roots = (
+            runtime_config.openfoam_root.resolve(),
+            *(path.resolve() for path in runtime_config.trusted_readonly_roots),
+        )
+        command_paths: dict[str, Path] = {}
+        for command in environment.commands:
+            resolved = command.path.resolve()
+            if not any(resolved.is_relative_to(root) for root in approved_roots):
+                raise ValueError(
+                    f"command path is outside approved runtime roots: {command.name}"
+                )
+            previous = command_paths.get(command.name)
+            if previous is not None and previous != resolved:
+                raise ValueError(
+                    f"duplicate command name resolves to multiple paths: {command.name}"
+                )
+            command_paths[command.name] = resolved
+        if environment.gmsh is not None:
+            gmsh = environment.gmsh.resolve()
+            if gmsh != Path("/usr/bin/gmsh"):
+                raise ValueError("gmsh path is outside the approved system location")
+            command_paths["gmsh"] = gmsh
+        if environment.mpi_launcher is not None:
+            mpi_launcher = environment.mpi_launcher.resolve()
+            system_root = Path("/usr").resolve()
+            if not (
+                mpi_launcher.is_relative_to(system_root)
+                or any(
+                    mpi_launcher.is_relative_to(root)
+                    for root in approved_roots
+                )
+            ):
+                raise ValueError("MPI launcher path is outside approved runtime roots")
+        self.command_paths = command_paths
+        self.available_executables = frozenset(available_executables) & frozenset(
+            command_paths
+        )
         self.workspace_root = Path(workspace_root).resolve()
         self.executor = executor
+        self.sandbox_probe = sandbox_probe
 
     @classmethod
     def from_runtime_config(
@@ -66,10 +128,12 @@ class PlanRunner:
         runtime_config: RuntimeConfig,
         available_executables: set[str],
         *,
+        environment: EnvironmentSnapshot,
         workspace_root: str | Path,
     ) -> "PlanRunner":
         return cls(
             runtime_config=runtime_config,
+            environment=environment,
             available_executables=available_executables,
             workspace_root=workspace_root,
         )
@@ -81,13 +145,15 @@ class PlanRunner:
             raise ValueError("shell syntax is forbidden in typed arguments")
         if any(character in argument for character in (";", "|", "<", ">")):
             raise ValueError("shell syntax is forbidden in typed arguments")
-        path = PurePosixPath(argument)
-        if ".." in path.parts:
-            raise ValueError("parent traversal is forbidden in typed arguments")
-        if path.is_absolute() and not (
-            argument == "/case" or argument.startswith("/case/")
-        ):
-            raise ValueError("absolute path outside /case is forbidden")
+        values = [argument]
+        if argument.startswith("-") and "=" in argument:
+            values.append(argument.split("=", 1)[1])
+        for value in values:
+            path = PurePosixPath(value)
+            if ".." in path.parts:
+                raise ValueError("parent traversal is forbidden in typed arguments")
+            if path.is_absolute():
+                raise ValueError("absolute paths are forbidden in typed arguments")
 
     def _validate_commands(
         self,
@@ -96,52 +162,45 @@ class PlanRunner:
     ) -> None:
         if not commands:
             raise ValueError("execution plan has no commands")
-        if sum(command.timeout_seconds for command in commands) > (
-            budget.max_wall_seconds
-        ):
+        if sum(command.timeout_seconds for command in commands) > budget.max_wall_seconds:
             raise ValueError("command timeout budget exceeds task wall budget")
-        rank_limit = min(
-            budget.max_mpi_ranks,
-            self.runtime_config.max_mpi_ranks,
-        )
+        rank_limit = min(budget.max_mpi_ranks, self.runtime_config.max_mpi_ranks)
         for command in commands:
             if command.executable not in self.available_executables:
-                raise ValueError(
-                    f"executable is not available: {command.executable}"
-                )
+                raise ValueError(f"executable is not available: {command.executable}")
             if command.mpi_ranks > rank_limit:
                 raise ValueError(
-                    f"MPI rank request {command.mpi_ranks} exceeds "
-                    f"limit {rank_limit}"
+                    f"MPI rank request {command.mpi_ranks} exceeds limit {rank_limit}"
                 )
             if any(
                 argument in _MPI_HOST_OPTIONS
-                or any(
-                    argument.startswith(f"{option}=")
-                    for option in _MPI_HOST_OPTIONS
-                )
+                or any(argument.startswith(f"{option}=") for option in _MPI_HOST_OPTIONS)
                 for argument in command.args
             ):
                 raise ValueError("MPI host selection is forbidden")
+            if any(
+                argument.casefold().split("=", 1)[0]
+                in _CONTEXT_OVERRIDE_OPTIONS
+                for argument in command.args
+            ):
+                raise ValueError("case or distributed root context override is forbidden")
             if command.mpi_ranks == 1 and "-parallel" in command.args:
                 raise ValueError("serial steps must not use -parallel")
             for argument in command.args:
                 self._validate_argument(argument)
 
-    @staticmethod
-    def _typed_argv(command: NativeCommand) -> list[str]:
+    def _typed_argv(self, command: NativeCommand) -> list[str]:
+        executable = str(self.command_paths[command.executable])
         if command.mpi_ranks == 1:
-            return [command.executable, *command.args]
-        arguments = [
-            argument
-            for argument in command.args
-            if argument != "-parallel"
-        ]
+            return [executable, *command.args]
+        if self.environment.mpi_launcher is None:
+            raise ValueError("MPI launcher is unavailable")
+        arguments = [argument for argument in command.args if argument != "-parallel"]
         return [
-            "mpirun",
+            str(self.environment.mpi_launcher.resolve()),
             "-n",
             str(command.mpi_ranks),
-            command.executable,
+            executable,
             *arguments,
             "-parallel",
         ]
@@ -152,26 +211,19 @@ class PlanRunner:
         case_dir: Path,
         command: NativeCommand,
         budget: ResourceBudget,
+        protected_paths: Sequence[Path],
     ) -> tuple[list[str], list[str]]:
         typed = self._typed_argv(command)
-        project = str(self.runtime_config.openfoam_root.resolve())
-        full = build_sandbox_prefix(
-            bubblewrap=self.runtime_config.bubblewrap,
-            openfoam_root=self.runtime_config.openfoam_root,
+        launch = build_sandbox_argv(
+            config=self.runtime_config,
+            environment=self.environment,
             case_dir=case_dir,
+            protected_paths=protected_paths,
             memory_mib=budget.memory_mib,
             cpu_seconds=command.timeout_seconds,
-        ) + [
-            "/bin/bash",
-            "--noprofile",
-            "--norc",
-            "-c",
-            _SOURCE_AND_EXEC,
-            "foampilot",
-            f"{project}/etc/bashrc",
-            *typed,
-        ]
-        return full, typed
+            typed_argv=typed,
+        )
+        return list(launch.argv), typed
 
     def _host_command(
         self,
@@ -193,25 +245,15 @@ class PlanRunner:
             "-c",
             _SOURCE_AND_EXEC_HOST,
             "foampilot",
-            str(self.runtime_config.openfoam_root / "etc" / "bashrc"),
+            str(self.runtime_config.openfoam_root / "etc/bashrc"),
             str(case_dir),
             *typed,
         ]
         return full, typed
 
-    def _execution_backend(self) -> tuple[str, str | None]:
-        requested = self.runtime_config.execution_backend
-        if requested != "auto":
-            return requested, None
-        ok, detail = probe_bubblewrap(self.runtime_config.bubblewrap)
-        if ok:
-            return "bubblewrap", None
-        return "host", detail
-
-    @staticmethod
-    def _host_environment(case: Path) -> dict[str, str]:
-        home = case / ".foampilot/host-home"
-        temporary = case / ".foampilot/tmp"
+    def _host_environment(self) -> dict[str, str]:
+        home = self.workspace_root / ".foampilot/runtime-host-home"
+        temporary = self.workspace_root / ".foampilot/runtime-tmp"
         home.mkdir(parents=True, exist_ok=True)
         temporary.mkdir(parents=True, exist_ok=True)
         return {
@@ -224,64 +266,92 @@ class PlanRunner:
             "LC_ALL": "C",
         }
 
+    def _freeze_policy(
+        self,
+        *,
+        case: Path,
+        commands: Sequence[NativeCommand],
+        budget: ResourceBudget,
+        risk_report: ExecutionRiskReport,
+        protected_paths: Sequence[Path],
+    ) -> tuple[SandboxProbe, ExecutionPolicyDecision]:
+        if self.runtime_config.isolation == "trusted_host":
+            probe = not_requested_probe()
+        else:
+            probe = self.sandbox_probe(
+                config=self.runtime_config,
+                environment=self.environment,
+                case_dir=case,
+                protected_paths=protected_paths,
+                memory_mib=budget.memory_mib,
+                cpu_seconds=max(command.timeout_seconds for command in commands),
+            )
+        effective_risk = with_command_risk(risk_report, commands)
+        decision = decide_execution_policy(self.runtime_config, effective_risk, probe)
+        if not decision.allowed:
+            raise RuntimeExecutionError(decision, probe)
+        return probe, decision
+
     def run(
         self,
         *,
         case_dir: str | Path,
         commands: Sequence[NativeCommand],
         budget: ResourceBudget,
+        risk_report: ExecutionRiskReport,
+        protected_paths: Sequence[Path],
     ) -> PlanRunResult:
         case = Path(case_dir).resolve()
-        if (
-            not case.is_relative_to(self.workspace_root)
-            or not case.is_dir()
-        ):
-            raise ValueError(
-                "case is missing or outside runner workspace"
-            )
+        if not case.is_relative_to(self.workspace_root) or not case.is_dir():
+            raise ValueError("case is missing or outside runner workspace")
         self._validate_commands(commands, budget)
+        probe, decision = self._freeze_policy(
+            case=case,
+            commands=commands,
+            budget=budget,
+            risk_report=risk_report,
+            protected_paths=protected_paths,
+        )
+
         log_directory = case / ".foampilot/logs"
         log_directory.mkdir(parents=True, exist_ok=True)
         steps: list[PlanStepResult] = []
         failed_step_id: str | None = None
         run_timed_out = False
-        execution_backend, fallback_reason = self._execution_backend()
+        execution_error_code: str | None = None
 
         for index, command in enumerate(commands, start=1):
-            stdout_path = (
-                log_directory
-                / f"{index:02d}-{command.step_id}.stdout.log"
-            )
-            stderr_path = (
-                log_directory
-                / f"{index:02d}-{command.step_id}.stderr.log"
-            )
-            if execution_backend == "bubblewrap":
-                full_argv, typed_argv = self._sandbox_command(
-                    case_dir=case,
-                    command=command,
-                    budget=budget,
-                )
-                executor_options = {}
-            else:
-                full_argv, typed_argv = self._host_command(
-                    case_dir=case,
-                    command=command,
-                    budget=budget,
-                )
-                executor_options = {
-                    "cwd": case,
-                    "env": self._host_environment(case),
-                }
+            stdout_path = log_directory / f"{index:02d}-{command.step_id}.stdout.log"
+            stderr_path = log_directory / f"{index:02d}-{command.step_id}.stderr.log"
+            try:
+                if decision.actual_backend == "bubblewrap":
+                    full_argv, typed_argv = self._sandbox_command(
+                        case_dir=case,
+                        command=command,
+                        budget=budget,
+                        protected_paths=protected_paths,
+                    )
+                    executor_options: dict[str, Any] = {}
+                else:
+                    full_argv, typed_argv = self._host_command(
+                        case_dir=case,
+                        command=command,
+                        budget=budget,
+                    )
+                    executor_options = {
+                        "cwd": case,
+                        "env": self._host_environment(),
+                    }
+            except SandboxBuildError:
+                failed_step_id = command.step_id
+                execution_error_code = "SANDBOX_SETUP_FAILED"
+                break
+
             started = _utc_now()
             timed_out = False
             return_code: int | None
-            with stdout_path.open(
-                "w",
-                encoding="utf-8",
-            ) as stdout_stream, stderr_path.open(
-                "w",
-                encoding="utf-8",
+            with stdout_path.open("w", encoding="utf-8") as stdout_stream, stderr_path.open(
+                "w", encoding="utf-8"
             ) as stderr_stream:
                 try:
                     completed = self.executor(
@@ -299,27 +369,16 @@ class PlanRunner:
                 except subprocess.TimeoutExpired:
                     timed_out = True
                     return_code = None
+
             semantic_failure = False
-            if (
-                command.executable == "checkMesh"
-                and return_code == 0
-                and not timed_out
-            ):
+            if command.executable == "checkMesh" and return_code == 0 and not timed_out:
                 check_text = "\n".join(
                     (
-                        stdout_path.read_text(
-                            encoding="utf-8",
-                            errors="replace",
-                        ),
-                        stderr_path.read_text(
-                            encoding="utf-8",
-                            errors="replace",
-                        ),
+                        stdout_path.read_text(encoding="utf-8", errors="replace"),
+                        stderr_path.read_text(encoding="utf-8", errors="replace"),
                     )
                 )
-                semantic_failure = bool(
-                    _FAILED_MESH_CHECKS.search(check_text)
-                )
+                semantic_failure = bool(_FAILED_MESH_CHECKS.search(check_text))
             step = PlanStepResult(
                 step_id=command.step_id,
                 command=typed_argv,
@@ -329,10 +388,18 @@ class PlanRunner:
                 timed_out=timed_out,
                 stdout_path=stdout_path,
                 stderr_path=stderr_path,
-                execution_backend=execution_backend,
-                backend_fallback_reason=fallback_reason,
+                execution_backend=decision.actual_backend,
+                backend_fallback_reason=decision.fallback_reason,
             )
             steps.append(step)
+            stderr_text = stderr_path.read_text(encoding="utf-8", errors="replace").lstrip()
+            sandbox_setup_failure = (
+                decision.actual_backend == "bubblewrap"
+                and return_code not in (None, 0)
+                and (stderr_text.startswith("bwrap:") or stderr_text.startswith("prlimit:"))
+            )
+            if sandbox_setup_failure:
+                execution_error_code = "SANDBOX_SETUP_FAILED"
             if timed_out or return_code != 0 or semantic_failure:
                 failed_step_id = command.step_id
                 run_timed_out = timed_out
@@ -343,4 +410,7 @@ class PlanRunner:
             steps=steps,
             failed_step_id=failed_step_id,
             timed_out=run_timed_out,
+            sandbox_probe=probe,
+            execution_policy=decision,
+            execution_error_code=execution_error_code,
         )

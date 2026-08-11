@@ -190,7 +190,11 @@ def test_buoyant_qualification_uses_true_integrated_wall_heat_balance(
         ),
         raising=False,
     )
-    data = SimpleNamespace(case_dir=tmp_path, latest_time=1000.0)
+    data = SimpleNamespace(
+        case_dir=tmp_path,
+        latest_time=1000.0,
+        openfoam_root=tmp_path / "OpenFOAM-10",
+    )
 
     observed = validators._buoyant(data, SimpleNamespace(metrics=[]))
 

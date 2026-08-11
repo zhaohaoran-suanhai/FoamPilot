@@ -28,4 +28,4 @@ public_checks:
   - {name: final-phase, kind: requested_output, parameters: {path: 100/alpha.sludge}}
   - {name: final-velocity, kind: requested_output, parameters: {path: 100/U}}
 public_assets: []
-protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]
+protected_paths: []

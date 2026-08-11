@@ -37,13 +37,13 @@ _MPI_LAUNCHERS = {"mpirun", "mpiexec", "orterun"}
 def _native_executable(command: object) -> str:
     if not isinstance(command, list) or not command:
         return ""
-    executable = str(command[0])
+    executable = Path(str(command[0])).name
     if (
         executable in _MPI_LAUNCHERS
         and len(command) >= 4
         and command[1] in {"-n", "-np"}
     ):
-        return str(command[3])
+        return Path(str(command[3])).name
     return executable
 
 

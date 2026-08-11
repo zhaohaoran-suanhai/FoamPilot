@@ -1,124 +1,166 @@
-"""Read-only discovery for the supported local Foundation v10 runtime."""
+"""Structured readiness report for the effective runtime configuration."""
 
 from __future__ import annotations
 
-import os
-import shlex
 import subprocess
+import sys
+import tempfile
+from collections.abc import Callable
 from pathlib import Path
+from typing import Literal
 
-from .models import RuntimeCheck, RuntimeConfig
-from .sandbox import probe_bubblewrap
+from pydantic import Field
 
+from foampilot.environment import EnvironmentSnapshot, discover_environment
 
-def _path_check(
-    name: str,
-    path: Path,
-    *,
-    executable: bool = False,
-    blocking: bool = True,
-) -> RuntimeCheck:
-    exists = path.is_file() if executable else path.exists()
-    ok = exists and (not executable or os.access(path, os.X_OK))
-    expectation = "executable file" if executable else "existing path"
-    return RuntimeCheck(
-        name=name,
-        ok=ok,
-        detail=f"{path} ({expectation})",
-        blocking=blocking,
-    )
+from .models import (
+    RuntimeCheck,
+    RuntimeConfig,
+    RuntimeConfigError,
+    SandboxProbe,
+    StrictModel,
+)
+from .protection import runtime_protected_paths
+from .sandbox import not_requested_probe, probe_sandbox
 
 
-def _solver_check(config: RuntimeConfig, solver: str) -> RuntimeCheck:
-    bashrc = config.openfoam_root / "etc" / "bashrc"
-    if not bashrc.is_file():
-        return RuntimeCheck(
-            name=f"solver:{solver}",
-            ok=False,
-            detail=f"OpenFOAM bashrc is missing: {bashrc}",
-        )
-    command = f"source {shlex.quote(str(bashrc))}; command -v {shlex.quote(solver)}"
-    result = subprocess.run(
-        ["bash", "-lc", command],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=20,
-    )
-    resolved = result.stdout.strip()
-    return RuntimeCheck(
-        name=f"solver:{solver}",
-        ok=result.returncode == 0 and bool(resolved),
-        detail=resolved or result.stderr.strip() or f"{solver} was not found",
-    )
+class RuntimePreflightReport(StrictModel):
+    schema_version: Literal[1] = 1
+    ok: bool
+    python_executable: Path
+    checks: tuple[RuntimeCheck, ...] = Field(default_factory=tuple)
+    environment: EnvironmentSnapshot | None
+    sandbox_probe: SandboxProbe
+    failure_code: str | None = None
+    failure_message: str | None = None
+    failure_recovery: str | None = None
 
 
-def _bubblewrap_launch_check(config: RuntimeConfig) -> RuntimeCheck:
-    ok, detail = probe_bubblewrap(config.bubblewrap)
-    return RuntimeCheck(
-        name="bubblewrap_launch",
-        ok=ok,
+def _environment_not_probed(detail: str) -> SandboxProbe:
+    return SandboxProbe(
+        status="not_requested",
+        ok=None,
+        return_code=None,
         detail=detail,
-        blocking=config.execution_backend == "bubblewrap",
     )
 
 
-def _execution_backend_check(config: RuntimeConfig) -> RuntimeCheck:
-    bubblewrap_ok, bubblewrap_detail = probe_bubblewrap(
-        config.bubblewrap
-    )
-    if config.execution_backend == "bubblewrap":
-        return RuntimeCheck(
-            name="execution_backend",
-            ok=bubblewrap_ok,
-            detail=(
-                "bubblewrap selected"
-                if bubblewrap_ok
-                else f"bubblewrap unavailable: {bubblewrap_detail}"
+def run_preflight(
+    config: RuntimeConfig,
+    *,
+    workspace_root: str | Path,
+    sandbox_executor: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> RuntimePreflightReport:
+    """Discover the environment and run the production-equivalent sandbox probe."""
+
+    checks: list[RuntimeCheck] = [
+        RuntimeCheck(
+            name="python_interpreter",
+            ok=True,
+            detail=str(Path(sys.executable).resolve()),
+            blocking=False,
+        )
+    ]
+    try:
+        environment = discover_environment(config, workspace_root)
+    except (OSError, RuntimeError, ValueError) as error:
+        if isinstance(error, RuntimeConfigError):
+            failure_code = error.code
+            failure_message = error.message
+            failure_recovery = error.recovery
+        else:
+            failure_code = "OPENFOAM_DISCOVERY_FAILED"
+            failure_message = "Foundation OpenFOAM v10 环境发现失败。"
+            failure_recovery = "检查 OpenFOAM root 与工作目录后重试。"
+        checks.append(
+            RuntimeCheck(
+                name="foundation_v10_environment",
+                ok=False,
+                detail=str(error),
+            )
+        )
+        return RuntimePreflightReport(
+            ok=False,
+            python_executable=Path(sys.executable).resolve(),
+            checks=tuple(checks),
+            environment=None,
+            sandbox_probe=_environment_not_probed(
+                "environment discovery failed before sandbox probe"
+            ),
+            failure_code=failure_code,
+            failure_message=failure_message,
+            failure_recovery=failure_recovery,
+        )
+
+    checks.extend(
+        (
+            RuntimeCheck(
+                name="foundation_v10_environment",
+                ok=True,
+                detail=f"Foundation OpenFOAM {environment.version}",
+            ),
+            RuntimeCheck(
+                name="workspace_writable",
+                ok=environment.workspace_writable,
+                detail=str(environment.workspace_root),
             ),
         )
-    if config.execution_backend == "host":
-        return RuntimeCheck(
-            name="execution_backend",
-            ok=True,
-            detail="audited typed host execution selected explicitly",
-        )
-    return RuntimeCheck(
-        name="execution_backend",
-        ok=True,
-        detail=(
-            "bubblewrap selected by auto policy"
-            if bubblewrap_ok
-            else (
-                "audited typed host execution selected by auto policy; "
-                f"bubblewrap unavailable: {bubblewrap_detail}"
+    )
+    if config.isolation == "trusted_host":
+        probe = not_requested_probe()
+    else:
+        with tempfile.TemporaryDirectory(prefix="foampilot-preflight-") as temporary:
+            case = Path(temporary) / "case"
+            case.mkdir()
+            probe = probe_sandbox(
+                config=config,
+                environment=environment,
+                case_dir=case,
+                protected_paths=runtime_protected_paths((), environment),
+                memory_mib=256,
+                cpu_seconds=5,
+                executor=sandbox_executor,
             )
-        ),
+    probe_blocking = config.isolation == "sandbox_required"
+    checks.append(
+        RuntimeCheck(
+            name="sandbox_full_launch",
+            ok=probe.ok is True or config.isolation == "trusted_host",
+            detail=probe.detail,
+            blocking=probe_blocking,
+        )
+    )
+    ok = all(check.ok or not check.blocking for check in checks)
+    failure_code: str | None = None
+    failure_message: str | None = None
+    failure_recovery: str | None = None
+    if not environment.workspace_writable:
+        failure_code = "WORKSPACE_NOT_WRITABLE"
+        failure_message = "FoamPilot 工作目录不可写。"
+        failure_recovery = "选择当前用户可创建目录和文件的 workspace 后重试。"
+    elif probe_blocking and probe.ok is not True:
+        failure_code = probe.failure_code or "SANDBOX_SETUP_FAILED"
+        if failure_code in {"BWRAP_UNAVAILABLE", "NAMESPACE_UNAVAILABLE"}:
+            failure_code = "SANDBOX_REQUIRED_UNAVAILABLE"
+        failure_message = "sandbox_required 所需的完整 bubblewrap 沙箱不可用。"
+        failure_recovery = "安装或修复 bubblewrap 与 namespace 权限后重试。"
+    return RuntimePreflightReport(
+        ok=ok,
+        python_executable=Path(sys.executable).resolve(),
+        checks=tuple(checks),
+        environment=environment,
+        sandbox_probe=probe,
+        failure_code=failure_code,
+        failure_message=failure_message,
+        failure_recovery=failure_recovery,
     )
 
 
-def preflight_passed(checks: list[RuntimeCheck]) -> bool:
-    """Return whether all blocking runtime checks passed."""
+def preflight_passed(
+    report: RuntimePreflightReport | list[RuntimeCheck],
+) -> bool:
+    """Return readiness for the structured report or legacy check collection."""
 
-    return all(check.ok or not check.blocking for check in checks)
-
-
-def run_preflight(config: RuntimeConfig) -> list[RuntimeCheck]:
-    """Return deterministic readiness checks without changing the environment."""
-
-    checks = [
-        _path_check("python_executable", config.python_executable, executable=True),
-        _path_check("openfoam_root", config.openfoam_root),
-        _path_check("openfoam_bashrc", config.openfoam_root / "etc" / "bashrc"),
-        _path_check("tutorial_root", config.tutorial_root),
-        _path_check(
-            "bubblewrap",
-            config.bubblewrap,
-            executable=True,
-            blocking=config.execution_backend == "bubblewrap",
-        ),
-        _bubblewrap_launch_check(config),
-        _execution_backend_check(config),
-        _solver_check(config, "icoFoam"),
-    ]
-    return checks
+    if isinstance(report, RuntimePreflightReport):
+        return report.ok
+    return all(check.ok or not check.blocking for check in report)

@@ -17,7 +17,11 @@ from foampilot.artifacts import ArtifactStore, NativeAgentOutcome
 from foampilot.models import (
     ModelGateway,
 )
-from foampilot.runtime import RuntimeConfig
+from foampilot.runtime import (
+    RuntimeConfigError,
+    RuntimeResolution,
+    run_preflight,
+)
 from foampilot.tasks import load_task_spec
 
 from .models import (
@@ -124,6 +128,8 @@ def _expected_application(task) -> str:
 def evaluate_case_copy(
     case_id: str,
     source_case: Path,
+    *,
+    openfoam_root: Path,
 ) -> list[QualificationMetric]:
     """Evaluate a copy so VTK markers cannot alter immutable artifacts."""
 
@@ -138,6 +144,7 @@ def evaluate_case_copy(
             case_id,
             case_copy,
             validation,
+            openfoam_root=openfoam_root,
         )
         return validate_observations(observations, reference)
 
@@ -150,6 +157,7 @@ def qualify_outcome(
     duration_seconds: float,
     evaluation_level: str = "physics_qualification",
     expected_application: str | None = None,
+    openfoam_root: Path,
 ) -> dict[str, object]:
     """Create one raw report record from native and evaluator evidence."""
 
@@ -172,7 +180,11 @@ def qualify_outcome(
             ]
         else:
             try:
-                metrics = evaluate_case_copy(case_id, case_dir)
+                metrics = evaluate_case_copy(
+                    case_id,
+                    case_dir,
+                    openfoam_root=openfoam_root,
+                )
             except Exception as error:
                 metrics = [
                     QualificationMetric(
@@ -206,17 +218,18 @@ def _run_one(
     *,
     run_root: Path,
     gateway: ModelGateway,
+    runtime_resolution: RuntimeResolution,
     evaluation_level: str = "physics_qualification",
 ) -> dict[str, object]:
     task = load_task_spec(qualification_data_path("tasks", case_id))
-    config = RuntimeConfig.local_foundation_v10().model_copy(
-        update={"max_mpi_ranks": task.resource_budget.max_mpi_ranks}
-    )
     store = ArtifactStore(run_root / case_id)
+    evaluator_root = qualification_data_path("tasks", case_id).parent.parent
     started = time.monotonic()
     outcome = NativeAgent(
         gateway=gateway,
-        runtime_config=config,
+        runtime_config=runtime_resolution.config,
+        runtime_provenance=runtime_resolution.provenance,
+        protected_runtime_roots=(evaluator_root,),
         artifact_store=store,
     ).solve(task)
     return qualify_outcome(
@@ -225,6 +238,7 @@ def _run_one(
         artifact_store=store,
         duration_seconds=time.monotonic() - started,
         evaluation_level=evaluation_level,
+        openfoam_root=runtime_resolution.config.openfoam_root,
         expected_application=(
             _expected_application(task)
             if evaluation_level == "public_validation"
@@ -261,11 +275,44 @@ def run_qualification_suite(
     backend_id: str,
     model_name: str,
     gateway: ModelGateway,
+    runtime_resolution: RuntimeResolution,
 ) -> QualificationReport:
     """Run one strict suite through the existing native qualification path."""
 
     if workers not in {1, 2}:
         raise ValueError("workers must be 1 or 2")
+    if runtime_resolution.config.isolation != "sandbox_required":
+        raise RuntimeConfigError(
+            "RUNTIME_POLICY_CONFLICT",
+            "Qualification 必须使用 sandbox_required。",
+            "修改 Runtime isolation 后重新运行 qualification。",
+        )
+    preflight = run_preflight(
+        runtime_resolution.config,
+        workspace_root=run_root,
+    )
+    if not preflight.ok or preflight.environment is None:
+        probe = preflight.sandbox_probe
+        code = (
+            preflight.failure_code
+            or probe.failure_code
+            or "OPENFOAM_DISCOVERY_FAILED"
+        )
+        if code in {"BWRAP_UNAVAILABLE", "NAMESPACE_UNAVAILABLE"}:
+            code = "SANDBOX_REQUIRED_UNAVAILABLE"
+        raise RuntimeConfigError(
+            code,
+            preflight.failure_message or "Qualification Runtime preflight 未通过。",
+            preflight.failure_recovery
+            or "修复 Foundation v10 和 bubblewrap/namespace 后重试。",
+            preflight.failure_message or probe.detail,
+        )
+    if preflight.environment.tutorial_root is None:
+        raise RuntimeConfigError(
+            "OPENFOAM_DISCOVERY_FAILED",
+            "当前 Foundation v10 安装缺少 FOAM_TUTORIALS；qualification 无法执行官方算例。",
+            "安装匹配版本的 tutorials，或修复 etc/bashrc 中的 FOAM_TUTORIALS。",
+        )
     selected = [item.case_id for item in suite.cases]
     public_only = {
         item.case_id
@@ -306,6 +353,7 @@ def run_qualification_suite(
             arguments = {
                 "run_root": run_root,
                 "gateway": active_gateway,
+                "runtime_resolution": runtime_resolution,
             }
             if item.evaluation_level != "physics_qualification":
                 arguments["evaluation_level"] = item.evaluation_level
@@ -325,6 +373,7 @@ def run_qualification_suite(
                 item.case_id,
                 run_root=run_root,
                 gateway=active_gateway,
+                runtime_resolution=runtime_resolution,
                 evaluation_level=item.evaluation_level,
             )
         )
@@ -347,6 +396,7 @@ def run_official_six(
     backend_id: str,
     model_name: str,
     gateway: ModelGateway,
+    runtime_resolution: RuntimeResolution,
     case_ids: list[str] | None = None,
 ) -> QualificationReport:
     """Run selected official-six cases through the generic suite runner."""
@@ -374,4 +424,5 @@ def run_official_six(
         backend_id=backend_id,
         model_name=model_name,
         gateway=gateway,
+        runtime_resolution=runtime_resolution,
     )

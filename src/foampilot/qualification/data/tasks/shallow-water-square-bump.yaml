@@ -26,4 +26,4 @@ public_checks:
   - {name: final-depth, kind: requested_output, parameters: {path: 100/h}}
   - {name: final-discharge, kind: requested_output, parameters: {path: 100/hU}}
 public_assets: []
-protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]
+protected_paths: []

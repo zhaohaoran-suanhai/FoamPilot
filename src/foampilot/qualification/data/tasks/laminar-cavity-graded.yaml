@@ -24,4 +24,4 @@ public_checks:
   - {name: final-velocity, kind: requested_output, parameters: {path: 0.7/U}}
   - {name: final-pressure, kind: requested_output, parameters: {path: 0.7/p}}
 public_assets: []
-protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]
+protected_paths: []

@@ -29,4 +29,4 @@ public_checks:
   - {name: final-iteration, kind: final_time, parameters: {minimum: 300}}
   - {name: finite-fields, kind: finite_fields, parameters: {}}
 public_assets: []
-protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]
+protected_paths: []

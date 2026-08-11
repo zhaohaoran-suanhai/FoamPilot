@@ -12,6 +12,14 @@ from .models import ExecutionPlan, PlanIssue
 _SHELL_TOKENS = {"&&", "||", ";", "|", "<", ">"}
 _SHELL_MARKERS = ("$(", "`", "\n", "\r", "\0")
 _MPI_HOST_OPTIONS = {"--host", "--hostfile", "-host", "-hostfile"}
+_CONTEXT_OVERRIDE_OPTIONS = {
+    "-case",
+    "--case",
+    "-roots",
+    "--roots",
+    "-hostroots",
+    "--hostroots",
+}
 _MPI_LAUNCHERS = {"mpirun", "mpiexec", "orterun"}
 
 
@@ -38,25 +46,27 @@ def _validate_argument(argument: str, location: str) -> list[PlanIssue]:
                 "shell syntax is forbidden in typed command arguments",
             )
         )
-    path = PurePosixPath(argument)
-    if ".." in path.parts:
-        issues.append(
-            _issue(
-                "PARENT_TRAVERSAL",
-                location,
-                "parent traversal is forbidden in command arguments",
+    values = [argument]
+    if argument.startswith("-") and "=" in argument:
+        values.append(argument.split("=", 1)[1])
+    for value in values:
+        path = PurePosixPath(value)
+        if ".." in path.parts:
+            issues.append(
+                _issue(
+                    "PARENT_TRAVERSAL",
+                    location,
+                    "parent traversal is forbidden in command arguments",
+                )
             )
-        )
-    if path.is_absolute() and not (
-        argument == "/case" or argument.startswith("/case/")
-    ):
-        issues.append(
-            _issue(
-                "EXTERNAL_ABSOLUTE_PATH",
-                location,
-                "absolute paths outside /case are forbidden",
+        if path.is_absolute():
+            issues.append(
+                _issue(
+                    "EXTERNAL_ABSOLUTE_PATH",
+                    location,
+                    "absolute paths are forbidden in command arguments",
+                )
             )
-        )
     return issues
 
 
@@ -81,6 +91,14 @@ def validate_execution_plan(
         )
     for index, generated in enumerate(plan.files):
         location = f"files[{index}]"
+        if ".foampilot" in PurePosixPath(generated.path).parts:
+            issues.append(
+                _issue(
+                    "RESERVED_INTERNAL_PATH",
+                    f"{location}.path",
+                    ".foampilot is reserved for Runner-owned artifacts",
+                )
+            )
         if not _safe_relative(generated.path):
             issues.append(
                 _issue(
@@ -160,6 +178,17 @@ def validate_execution_plan(
         for argument_index, argument in enumerate(command.args):
             argument_location = f"{location}.args[{argument_index}]"
             issues.extend(_validate_argument(argument, argument_location))
+            if (
+                argument.casefold().split("=", 1)[0]
+                in _CONTEXT_OVERRIDE_OPTIONS
+            ):
+                issues.append(
+                    _issue(
+                        "CASE_CONTEXT_OVERRIDE",
+                        argument_location,
+                        "case and distributed root selection is Runner-owned",
+                    )
+                )
             if (
                 argument in _MPI_HOST_OPTIONS
                 or any(

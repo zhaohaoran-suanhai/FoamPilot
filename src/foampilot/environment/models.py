@@ -23,7 +23,7 @@ class EnvironmentSnapshot(StrictModel):
     distribution: Literal["foundation"]
     version: str
     openfoam_root: Path
-    tutorial_root: Path
+    tutorial_root: Path | None
     workspace_root: Path
     workspace_writable: bool
     commands: list[CommandFact]

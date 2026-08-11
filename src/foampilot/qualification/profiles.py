@@ -16,9 +16,11 @@ class OpenFOAMCaseData:
         self,
         case_dir: str | Path,
         *,
+        openfoam_root: Path,
         region: str | None = None,
     ) -> None:
         self.case_dir = Path(case_dir).resolve()
+        self.openfoam_root = Path(openfoam_root).resolve()
         self.region = region
         marker = self.case_dir / "foampilot.foam"
         marker.touch(exist_ok=True)

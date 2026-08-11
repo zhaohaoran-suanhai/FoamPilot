@@ -44,6 +44,20 @@ _POSTPROCESS_COMMANDS = {
     "foamToVTK",
     "sample",
 }
+_MPI_LAUNCHERS = {"mpirun", "mpiexec", "orterun"}
+
+
+def _command_executable(command: list[str]) -> str:
+    if not command:
+        return ""
+    executable = Path(command[0]).name
+    if (
+        executable in _MPI_LAUNCHERS
+        and len(command) >= 4
+        and command[1] in {"-n", "-np"}
+    ):
+        return Path(command[3]).name
+    return executable
 
 
 def _field_values(
@@ -140,7 +154,7 @@ def _check_mesh_diagnostics(
 ) -> str | None:
     diagnostics: list[str] = []
     for step, text in zip(reversed(steps), reversed(texts), strict=True):
-        if "checkMesh" not in step.command:
+        if _command_executable(step.command) != "checkMesh":
             continue
         for raw_line in text.splitlines():
             line = raw_line.strip()
@@ -257,7 +271,7 @@ def _check(
     if kind == "mesh_ok":
         matched = any(
             _successful(step)
-            and "checkMesh" in step.command
+            and _command_executable(step.command) == "checkMesh"
             and bool(re.search(r"\bMesh OK\b", text))
             for step, text in zip(steps, texts, strict=True)
         )
@@ -286,7 +300,8 @@ def _check(
         configured = parameters.get("executable")
         executable = str(configured) if isinstance(configured, str) else ""
         executed = any(
-            executable in step.command and _successful(step)
+            executable == _command_executable(step.command)
+            and _successful(step)
             for step in steps
         )
         reused = executable in reused_executables
@@ -582,12 +597,12 @@ def _check(
 def _failure_layer(step: PlanStepResult, text: str) -> FailureLayer:
     if re.search(r"(?m)^(?:bwrap|prlimit):", text):
         return "ENVIRONMENT_BLOCKED"
-    commands = set(step.command)
-    if commands & _MESH_COMMANDS:
+    executable = _command_executable(step.command)
+    if executable in _MESH_COMMANDS:
         return "MESH_FAILED"
-    if commands & _INITIALIZATION_COMMANDS:
+    if executable in _INITIALIZATION_COMMANDS:
         return "INITIALIZATION_FAILED"
-    if commands & _POSTPROCESS_COMMANDS:
+    if executable in _POSTPROCESS_COMMANDS:
         return "POSTPROCESS_FAILED"
     return "SOLVER_FAILED"
 

@@ -15,13 +15,13 @@ from foampilot.models import (
     ModelStage,
 )
 from foampilot.plans import ExecutionPlan
-from foampilot.runtime import RuntimeConfig
 from foampilot.taskbuilder import (
     compile_task_draft,
     extract_task_draft,
     validate_task_draft,
 )
 from tests.test_native_case_generation import RecordingModel
+from tests.support.runtime import real_runtime_config
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,6 +124,7 @@ def _extracted_payload(request: str) -> dict:
 def test_natural_language_compiles_and_uses_canonical_real_solver(
     tmp_path: Path,
 ) -> None:
+    runtime = real_runtime_config()
     request = (
         "Use icoFoam to solve a transient laminar incompressible single-phase "
         "side-driven enclosure 0.10 m wide, 0.06 m high and 0.001 m thick. "
@@ -140,9 +141,7 @@ def test_natural_language_compiles_and_uses_canonical_real_solver(
             stage_deadline_seconds=30,
         ),
         trace=InMemoryModelTraceSink(),
-        protected_paths=(
-            str(RuntimeConfig.local_foundation_v10().tutorial_root),
-        ),
+        protected_paths=(),
     )
     compilation = compile_task_draft(validate_task_draft(draft))
     plan = ExecutionPlan.model_validate_json(PLAN.read_text(encoding="utf-8"))
@@ -150,7 +149,7 @@ def test_natural_language_compiles_and_uses_canonical_real_solver(
 
     outcome = NativeAgent(
         gateway=RecordingModel([plan]),
-        runtime_config=RuntimeConfig.local_foundation_v10(),
+        runtime_config=runtime,
         artifact_store=store,
     ).solve(compilation.task)
 

@@ -10,7 +10,11 @@ import subprocess
 import tempfile
 from typing import Iterable
 
-from foampilot.runtime import RuntimeConfig
+from foampilot.runtime.config import (
+    isolated_source_environment,
+    probe_openfoam_root,
+)
+from foampilot.runtime.models import RuntimeConfig
 
 from .models import CommandFact, EnvironmentSnapshot
 
@@ -26,36 +30,24 @@ def _run_sourced(
     timeout: int = 10,
 ) -> subprocess.CompletedProcess[str]:
     bashrc = config.openfoam_root / "etc/bashrc"
-    return subprocess.run(
-        [
-            "/bin/bash",
-            "--noprofile",
-            "--norc",
-            "-c",
-            _SOURCE_AND_EXEC,
-            "foampilot",
-            str(bashrc),
-            *argv,
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-
-
-def _sourced_environment(config: RuntimeConfig) -> dict[str, str]:
-    result = _run_sourced(config, ["/usr/bin/env", "-0"])
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip()
-        raise RuntimeError(f"could not source OpenFOAM environment: {detail}")
-    values: dict[str, str] = {}
-    for entry in result.stdout.split("\0"):
-        if not entry or "=" not in entry:
-            continue
-        name, value = entry.split("=", 1)
-        values[name] = value
-    return values
+    with tempfile.TemporaryDirectory(prefix="foampilot-source-home-") as temporary:
+        return subprocess.run(
+            [
+                "/bin/bash",
+                "--noprofile",
+                "--norc",
+                "-c",
+                _SOURCE_AND_EXEC,
+                "foampilot",
+                str(bashrc),
+                *argv,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=isolated_source_environment(Path(temporary)),
+        )
 
 
 def _command_directories(
@@ -63,21 +55,15 @@ def _command_directories(
     environment: dict[str, str],
 ) -> list[Path]:
     root = config.openfoam_root.resolve()
-    declared = {
-        Path(value).resolve()
-        for name in (
-            "FOAM_APPBIN",
-            "FOAM_SITE_APPBIN",
-            "FOAM_USER_APPBIN",
-        )
-        if (value := environment.get(name))
-    }
+    trusted = tuple(path.resolve() for path in config.trusted_readonly_roots)
     directories: list[Path] = []
     for value in environment.get("PATH", "").split(os.pathsep):
         if not value:
             continue
         directory = Path(value).resolve()
-        if directory in declared or directory.is_relative_to(root):
+        if directory.is_relative_to(root) or any(
+            directory.is_relative_to(item) for item in trusted
+        ):
             if directory not in directories:
                 directories.append(directory)
     return directories
@@ -88,6 +74,10 @@ def _discover_commands(
     environment: dict[str, str],
 ) -> list[CommandFact]:
     commands: dict[str, Path] = {}
+    approved_roots = (
+        config.openfoam_root.resolve(),
+        *(path.resolve() for path in config.trusted_readonly_roots),
+    )
     for directory in _command_directories(config, environment):
         if not directory.is_dir():
             continue
@@ -97,26 +87,16 @@ def _discover_commands(
                 and not path.is_dir()
                 and os.access(path, os.X_OK)
             ):
-                commands[path.name] = path.resolve()
+                resolved = path.resolve()
+                if any(
+                    resolved.is_relative_to(root)
+                    for root in approved_roots
+                ):
+                    commands[path.name] = resolved
     return [
         CommandFact(name=name, path=path)
         for name, path in sorted(commands.items())
     ]
-
-
-def _version(
-    config: RuntimeConfig,
-    environment: dict[str, str],
-) -> str:
-    result = _run_sourced(config, ["foamVersion"])
-    text = (result.stdout or result.stderr).strip()
-    match = re.search(r"(?:OpenFOAM[- ]?)?([0-9]+)", text)
-    if result.returncode == 0 and match:
-        return match.group(1)
-    fallback = environment.get("WM_PROJECT_VERSION", "").strip()
-    if fallback:
-        return fallback
-    raise RuntimeError(f"could not determine OpenFOAM version: {text}")
 
 
 def _which(
@@ -125,6 +105,23 @@ def _which(
 ) -> Path | None:
     value = shutil.which(name, path=environment.get("PATH"))
     return Path(value).resolve() if value else None
+
+
+def _approved_mpi_launcher(
+    config: RuntimeConfig,
+    environment: dict[str, str],
+) -> Path | None:
+    launcher = _which("mpirun", environment) or _which("mpiexec", environment)
+    if launcher is None:
+        return None
+    approved_roots = (
+        Path("/usr").resolve(),
+        config.openfoam_root.resolve(),
+        *(path.resolve() for path in config.trusted_readonly_roots),
+    )
+    if any(launcher.is_relative_to(root) for root in approved_roots):
+        return launcher
+    return None
 
 
 def _workspace_is_writable(path: Path) -> bool:
@@ -147,10 +144,10 @@ def _workspace_is_writable(path: Path) -> bool:
 
 def _help_excerpt(
     config: RuntimeConfig,
-    name: str,
+    executable: Path,
 ) -> str:
     try:
-        result = _run_sourced(config, [name, "-help"])
+        result = _run_sourced(config, [str(executable.resolve()), "-help"])
     except subprocess.TimeoutExpired:
         return "help command timed out"
     combined = "\n".join(
@@ -171,7 +168,7 @@ def enrich_command_help(
         command.model_copy(
             update={
                 "help_excerpt": (
-                    _help_excerpt(config, command.name)
+                    _help_excerpt(config, command.path)
                     if command.name in selected
                     else command.help_excerpt
                 )
@@ -189,22 +186,23 @@ def discover_environment(
 ) -> EnvironmentSnapshot:
     """Return facts from a sourced Foundation OpenFOAM environment."""
 
-    environment = _sourced_environment(config)
+    probe = probe_openfoam_root(config.openfoam_root)
+    environment = probe.environment
     workspace = Path(workspace_root).resolve()
+    gmsh = _which("gmsh", environment)
+    if gmsh != Path("/usr/bin/gmsh"):
+        gmsh = None
     snapshot = EnvironmentSnapshot(
         schema_version=1,
         distribution="foundation",
-        version=_version(config, environment),
-        openfoam_root=config.openfoam_root.resolve(),
-        tutorial_root=config.tutorial_root.resolve(),
+        version=environment["WM_PROJECT_VERSION"],
+        openfoam_root=probe.root,
+        tutorial_root=probe.tutorial_root,
         workspace_root=workspace,
         workspace_writable=_workspace_is_writable(workspace),
         commands=_discover_commands(config, environment),
-        mpi_launcher=(
-            _which("mpirun", environment)
-            or _which("mpiexec", environment)
-        ),
-        gmsh=_which("gmsh", environment),
+        mpi_launcher=_approved_mpi_launcher(config, environment),
+        gmsh=gmsh,
         max_mpi_ranks=config.max_mpi_ranks,
     )
     return enrich_command_help(

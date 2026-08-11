@@ -17,6 +17,7 @@ from tests.test_native_case_generation import (
     _plan,
     _task,
 )
+from tests.support.runtime import synthetic_execution_evidence
 
 
 class VerifiedPlanRunner:
@@ -24,8 +25,16 @@ class VerifiedPlanRunner:
         self.mesh_ok = mesh_ok
         self.calls: list[list[NativeCommand]] = []
 
-    def run(self, *, case_dir, commands, budget):
-        del budget
+    def run(
+        self,
+        *,
+        case_dir,
+        commands,
+        budget,
+        risk_report,
+        protected_paths,
+    ):
+        del budget, risk_report
         case = Path(case_dir)
         self.calls.append(list(commands))
         log_dir = case / ".foampilot/logs"
@@ -58,7 +67,11 @@ class VerifiedPlanRunner:
                     execution_backend="host",
                 )
             )
-        return PlanRunResult(case_dir=case, steps=steps)
+        return PlanRunResult(
+            case_dir=case,
+            steps=steps,
+            **synthetic_execution_evidence(protected_paths),
+        )
 
 
 def _verified_plan():

@@ -15,9 +15,13 @@ from foampilot.models import (
 )
 from foampilot.plans import GeneratedFile, NativeCommand
 from foampilot.runtime import (
+    ExecutionPolicyDecision,
+    ExecutionRiskReport,
     PlanRunResult,
     PlanStepResult,
     RuntimeConfig,
+    RuntimeExecutionError,
+    SandboxProbe,
 )
 
 from tests.test_native_case_generation import (
@@ -45,9 +49,21 @@ class SequencePlanRunner:
     def __init__(self, outcomes: list[tuple[int, str, str]]) -> None:
         self.outcomes = outcomes
         self.calls = 0
+        self.risk_reports: list[ExecutionRiskReport] = []
+        self.protected_paths: list[tuple[Path, ...]] = []
 
-    def run(self, *, case_dir, commands, budget):
+    def run(
+        self,
+        *,
+        case_dir,
+        commands,
+        budget,
+        risk_report,
+        protected_paths,
+    ):
         del budget
+        self.risk_reports.append(risk_report)
+        self.protected_paths.append(tuple(protected_paths))
         return_code, stdout_text, stderr_text = self.outcomes[self.calls]
         self.calls += 1
         command = commands[-1]
@@ -74,6 +90,22 @@ class SequencePlanRunner:
             failed_step_id=(
                 None if return_code == 0 else command.step_id
             ),
+            sandbox_probe=SandboxProbe(
+                status="passed",
+                ok=True,
+                builder_sha256="a" * 64,
+                namespace_flags=("--unshare-net",),
+                mount_count=8,
+                protected_path_count=len(protected_paths),
+                return_code=0,
+                detail="synthetic sandbox probe passed",
+            ),
+            execution_policy=ExecutionPolicyDecision(
+                requested_isolation="sandbox_preferred",
+                actual_backend="bubblewrap",
+                allowed=True,
+                code="SANDBOX_SELECTED",
+            ),
         )
 
 
@@ -81,8 +113,18 @@ class MeshQualityRunner:
     def __init__(self, max_non_orthogonality: float) -> None:
         self.max_non_orthogonality = max_non_orthogonality
 
-    def run(self, *, case_dir, commands, budget):
+    def run(
+        self,
+        *,
+        case_dir,
+        commands,
+        budget,
+        risk_report,
+        protected_paths,
+    ):
         del budget
+        del risk_report
+        del protected_paths
         case = Path(case_dir)
         log_dir = case / ".foampilot/logs"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -113,17 +155,30 @@ class MeshQualityRunner:
                     stderr_path=stderr,
                 )
             )
-        return PlanRunResult(case_dir=case, steps=steps)
+        return PlanRunResult(
+            case_dir=case,
+            steps=steps,
+            sandbox_probe=SandboxProbe(
+                status="passed",
+                ok=True,
+                builder_sha256="a" * 64,
+                namespace_flags=("--unshare-net",),
+                mount_count=8,
+                protected_path_count=0,
+                return_code=0,
+                detail="synthetic sandbox probe passed",
+            ),
+            execution_policy=ExecutionPolicyDecision(
+                requested_isolation="sandbox_preferred",
+                actual_backend="bubblewrap",
+                allowed=True,
+                code="SANDBOX_SELECTED",
+            ),
+        )
 
 
 def _runtime_config() -> RuntimeConfig:
-    root = Path("/home/edwin/workplace/OpenFOAM-10")
-    return RuntimeConfig(
-        openfoam_root=root,
-        tutorial_root=root / "tutorials",
-        python_executable=Path("/home/edwin/feal-venv-py312/bin/python"),
-        bubblewrap=Path("/usr/local/bin/bwrap"),
-    )
+    return RuntimeConfig(openfoam_root=Path("/opt/openfoam"))
 
 
 def _agent(
@@ -212,6 +267,138 @@ def test_native_agent_reaches_public_validation_pass(
     assert '"stage":"OPENFOAM_STEP_STARTED"' in workflow_events
     assert '"stage":"OPENFOAM_STEP_COMPLETE"' in workflow_events
     assert '"stage":"ROUTING_READY"' in workflow_events
+
+
+def test_native_agent_freezes_runtime_and_execution_evidence(
+    tmp_path: Path,
+) -> None:
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=RecordingModel([_plan()]),
+        runner=SequencePlanRunner([(0, "Time = 1\nEnd\n", "")]),
+    ).solve(_task())
+
+    assert json.loads(
+        (outcome.run_dir / "runtime-config.json").read_text(encoding="utf-8")
+    )["isolation"] == "sandbox_preferred"
+    assert (outcome.run_dir / "runtime-config-provenance.json").is_file()
+    assert (outcome.run_dir / "sandbox-probe.json").is_file()
+    assert (outcome.run_dir / "execution-policy.json").is_file()
+    attempt = outcome.run_dir / "attempt-01"
+    assert (attempt / "execution-risk-report.json").is_file()
+    assert (attempt / "sandbox-probe.json").is_file()
+    assert (attempt / "execution-policy.json").is_file()
+    store = ArtifactStore(outcome.run_dir.parent)
+    assert store.verify(outcome.run_dir) == []
+    manifest = json.loads(
+        (outcome.run_dir / "artifact-manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )["files"]
+    expected = {
+        "runtime-config.json",
+        "runtime-config-provenance.json",
+        "sandbox-probe.json",
+        "execution-policy.json",
+        "attempt-01/execution-risk-report.json",
+        "attempt-01/sandbox-probe.json",
+        "attempt-01/execution-policy.json",
+    }
+    assert expected <= set(manifest)
+
+    (attempt / "execution-policy.json").write_text(
+        '{"mutated": true}\n',
+        encoding="utf-8",
+    )
+    assert store.verify(outcome.run_dir) == [
+        "hash mismatch: attempt-01/execution-policy.json"
+    ]
+
+
+class PolicyBlockedRunner:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def run(
+        self,
+        *,
+        case_dir,
+        commands,
+        budget,
+        risk_report,
+        protected_paths,
+    ):
+        del case_dir, commands, budget, risk_report, protected_paths
+        self.calls += 1
+        probe = SandboxProbe(
+            status="failed",
+            ok=False,
+            failure_code="NAMESPACE_UNAVAILABLE",
+            return_code=1,
+            detail="user namespaces are disabled",
+        )
+        decision = ExecutionPolicyDecision(
+            requested_isolation="sandbox_preferred",
+            actual_backend=None,
+            allowed=False,
+            code="HOST_DYNAMIC_CODE_BLOCKED",
+            fallback_reason=probe.detail,
+        )
+        raise RuntimeExecutionError(decision, probe)
+
+
+class SandboxSetupFailureRunner(SequencePlanRunner):
+    def run(self, **kwargs):
+        result = super().run(**kwargs)
+        return result.model_copy(
+            update={
+                "failed_step_id": result.steps[0].step_id,
+                "execution_error_code": "SANDBOX_SETUP_FAILED",
+            }
+        )
+
+
+def test_native_agent_maps_policy_block_to_environment_without_repair(
+    tmp_path: Path,
+) -> None:
+    runner = PolicyBlockedRunner()
+    model = RecordingModel([_plan()])
+
+    outcome = NativeAgent(
+        gateway=model,
+        runtime_config=_runtime_config(),
+        artifact_store=ArtifactStore(tmp_path / "runs"),
+        environment_snapshot=_environment("blockMesh", "icoFoam"),
+        runner=runner,
+    ).solve(_task())
+
+    assert outcome.status == "BLOCKED_ENVIRONMENT"
+    assert outcome.summary.attempts[-1].status == "BLOCKED_ENVIRONMENT"
+    assert outcome.summary.primary_failure is not None
+    assert outcome.summary.primary_failure.code == "HOST_DYNAMIC_CODE_BLOCKED"
+    assert runner.calls == 1
+    assert len(model.requests) == 1
+    assert not (outcome.run_dir / "attempt-02").exists()
+
+
+def test_native_agent_maps_runtime_sandbox_setup_failure_without_repair(
+    tmp_path: Path,
+) -> None:
+    runner = SandboxSetupFailureRunner([(1, "", "bwrap: setup failed")])
+    model = RecordingModel([_plan()])
+
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=model,
+        runner=runner,
+    ).solve(_task())
+
+    assert outcome.status == "BLOCKED_ENVIRONMENT"
+    assert outcome.summary.primary_failure is not None
+    assert outcome.summary.primary_failure.code == "SANDBOX_SETUP_FAILED"
+    assert runner.calls == 1
+    assert len(model.requests) == 1
+    assert not (outcome.run_dir / "attempt-02").exists()
 
 
 def test_native_agent_probes_geometry_before_routing_and_generation(
@@ -509,6 +696,56 @@ def test_native_agent_applies_one_evidence_scoped_repair(
     )
     assert '"current_stage": "repair"' in model.requests[1].user_prompt
     assert runner.calls == 2
+
+
+def test_native_agent_recomputes_execution_risk_after_repair(
+    tmp_path: Path,
+) -> None:
+    coded_control = (
+        _control_dict(delta_t=0.001)
+        + "#codeStream\n{\ncode #{ int generated = 1; #};\n}\n"
+    )
+    repair = RepairPatch(
+        because="The first solver log contains non-finite evidence.",
+        evidence=["nan appears in the solve log"],
+        file_operations=[
+            {
+                "operation": "replace",
+                "path": "system/controlDict",
+                "content": coded_control,
+            }
+        ],
+        command_operations=[],
+        expected_check="The repaired solve reaches End.",
+        stable_control="The mesh and boundaries remain unchanged.",
+    )
+    runner = SequencePlanRunner(
+        [
+            (0, "Time = 0.1\nnan in U\n", ""),
+            (0, "Time = 1\nEnd\n", ""),
+        ]
+    )
+
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=RecordingModel([_plan(), repair]),
+        runner=runner,
+    ).solve(_task())
+
+    first = json.loads(
+        (outcome.run_dir / "attempt-01/execution-risk-report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    second = json.loads(
+        (outcome.run_dir / "attempt-02/execution-risk-report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert first["risk_level"] == "low"
+    assert second["risk_level"] == "high"
+    assert second["scanned_file_sha256"] != first["scanned_file_sha256"]
+    assert [report.risk_level for report in runner.risk_reports] == ["low", "high"]
 
 
 def test_native_agent_repairs_blocking_static_issue_before_execution(
@@ -880,3 +1117,73 @@ def test_native_agent_preserves_invalid_plan_issues_without_json_crash(
     assert (outcome.run_dir / "execution-plan.json").is_file()
     assert (outcome.run_dir / "plan-issues.json").is_file()
     assert ArtifactStore(tmp_path / "runs").verify(outcome.run_dir) == []
+
+
+def test_native_agent_adds_discovered_tutorial_to_execution_guards(
+    tmp_path: Path,
+) -> None:
+    tutorial_root = tmp_path / "OpenFOAM-10/tutorials"
+    environment = _environment("blockMesh", "icoFoam").model_copy(
+        update={"tutorial_root": tutorial_root}
+    )
+    plan = _plan(
+        files=[
+            GeneratedFile(
+                path="system/controlDict",
+                content=(
+                    "FoamFile\n{\n class dictionary;\n"
+                    " object controlDict;\n}\n"
+                    "application icoFoam;\n"
+                    f'#include "{tutorial_root}/cavity/controlDict"\n'
+                ),
+            )
+        ]
+    )
+    outcome = NativeAgent(
+        gateway=RecordingModel([plan]),
+        runtime_config=_runtime_config(),
+        artifact_store=ArtifactStore(tmp_path / "runs"),
+        environment_snapshot=environment,
+        runner=SequencePlanRunner([]),
+    ).solve(_task().model_copy(update={"protected_paths": []}))
+
+    assert outcome.status == "PLAN_INVALID"
+    assert "PROTECTED_REFERENCE" in (
+        outcome.run_dir / "plan-issues.json"
+    ).read_text(encoding="utf-8")
+    author_status = json.loads(
+        (outcome.run_dir / "agent-status-author-01.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert author_status["immutable_constraints"]["protected_path_count"] == 1
+
+
+def test_runtime_tutorial_path_is_protected_before_model_authoring(
+    tmp_path: Path,
+) -> None:
+    tutorial_root = tmp_path / "OpenFOAM-10/tutorials"
+    environment = _environment("blockMesh", "icoFoam").model_copy(
+        update={"tutorial_root": tutorial_root}
+    )
+    model = RecordingModel([_plan()])
+    base_task = _task()
+    task = base_task.model_copy(
+        update={
+            "prompt": (
+                f"{base_task.prompt} Copy the case from "
+                f"{tutorial_root}/cavity."
+            )
+        }
+    )
+
+    outcome = NativeAgent(
+        gateway=model,
+        runtime_config=_runtime_config(),
+        artifact_store=ArtifactStore(tmp_path / "runs"),
+        environment_snapshot=environment,
+        runner=SequencePlanRunner([]),
+    ).solve(task)
+
+    assert outcome.status == "CASE_GENERATION_FAILED"
+    assert model.requests == []

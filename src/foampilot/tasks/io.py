@@ -5,7 +5,7 @@ from __future__ import annotations
 from hashlib import sha256
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import tempfile
 
 import yaml
@@ -42,6 +42,8 @@ def stage_public_assets(
     staged: list[Path] = []
 
     for asset in task.public_assets:
+        if ".foampilot" in PurePosixPath(asset.path).parts:
+            raise ValueError("public asset uses the reserved .foampilot namespace")
         source = (source_directory / asset.path).resolve()
         if not source.is_relative_to(source_directory) or not source.is_file():
             raise ValueError(f"public asset source is invalid: {asset.path}")

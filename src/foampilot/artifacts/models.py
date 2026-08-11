@@ -73,6 +73,11 @@ class RunSummary(StrictModel):
     def status(self) -> str:
         if self.native_status is not None:
             return self.native_status
+        if (
+            self.primary_failure is not None
+            and self.primary_failure.domain == "environment"
+        ):
+            return "BLOCKED_ENVIRONMENT"
         if self.primary_failure is not None and self.primary_failure.code in {
             "REQUEST_INCOMPLETE",
             "ROUTING_UNRESOLVED",

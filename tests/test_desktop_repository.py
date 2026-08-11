@@ -251,6 +251,76 @@ def test_open_projects_residual_samples_from_attempt_logs(
     )
 
 
+def test_desktop_projects_latest_runtime_security_artifacts(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run-runtime"
+    (run_dir / "attempt-01").mkdir(parents=True)
+    (run_dir / "attempt-02").mkdir()
+    (run_dir / "task.yaml").write_text("task_id: runtime\n", encoding="utf-8")
+    (run_dir / "runtime-config.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "openfoam_root": "/opt/OpenFOAM/OpenFOAM-10",
+                "version": "10",
+                "isolation": "sandbox_preferred",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "runtime-config-provenance.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "fields": {
+                    "execution.isolation": {
+                        "source": "environment",
+                        "locator": "FOAMPILOT_EXECUTION_ISOLATION",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    for attempt, risk in ((1, "unknown"), (2, "low")):
+        (run_dir / f"attempt-{attempt:02d}/execution-risk-report.json").write_text(
+            json.dumps({"risk_level": risk}),
+            encoding="utf-8",
+        )
+    (run_dir / "attempt-02/execution-policy.json").write_text(
+        json.dumps(
+            {
+                "requested_isolation": "sandbox_preferred",
+                "actual_backend": "host",
+                "fallback_reason": "Operation not permitted",
+                "unisolated_warning": "host execution is not isolated",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "attempt-02/sandbox-probe.json").write_text(
+        json.dumps(
+            {
+                "status": "failed",
+                "failure_code": "NAMESPACE_UNAVAILABLE",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = RunRepository().open(run_dir)
+
+    assert snapshot.runtime_config is not None
+    assert snapshot.runtime_config["isolation"] == "sandbox_preferred"
+    assert snapshot.execution_policy is not None
+    assert snapshot.execution_policy["actual_backend"] == "host"
+    assert snapshot.execution_risk is not None
+    assert snapshot.execution_risk["risk_level"] == "low"
+    assert snapshot.sandbox_probe is not None
+    assert snapshot.sandbox_probe["status"] == "failed"
+
+
 def test_manifest_mismatch_is_visible_without_hiding_files(
     tmp_path: Path,
 ) -> None:
@@ -268,6 +338,37 @@ def test_manifest_mismatch_is_visible_without_hiding_files(
         snapshot,
         "attempt-01/case/.foampilot/logs/solve.stdout.log",
     ) == "mutated\n"
+
+
+def test_finalized_run_never_projects_unregistered_security_artifact(
+    tmp_path: Path,
+) -> None:
+    store = ArtifactStore(tmp_path / "runs")
+    run_dir = store.create_run()
+    (run_dir / "runtime-config.json").write_text(
+        json.dumps({"isolation": "sandbox_required"}),
+        encoding="utf-8",
+    )
+    policy = run_dir / "attempt-01/execution-policy.json"
+    policy.parent.mkdir(parents=True)
+    policy.write_text(
+        json.dumps({"actual_backend": "bubblewrap"}),
+        encoding="utf-8",
+    )
+    store.finalize(run_dir)
+    injected = run_dir / "attempt-999/execution-policy.json"
+    injected.parent.mkdir()
+    injected.write_text(
+        json.dumps({"actual_backend": "host"}),
+        encoding="utf-8",
+    )
+
+    snapshot = RunRepository().open(run_dir)
+
+    assert snapshot.manifest_state == "invalid"
+    assert snapshot.runtime_config is None
+    assert snapshot.execution_policy is None
+    assert any("untrusted" in warning for warning in snapshot.warnings)
 
 
 def test_read_text_is_confined_to_opened_run(tmp_path: Path) -> None:

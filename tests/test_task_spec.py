@@ -158,6 +158,21 @@ def test_public_asset_is_hash_verified_before_staging(
         stage_public_assets(task, source, tmp_path / "other-case")
 
 
+def test_public_asset_rejects_internal_foampilot_namespace() -> None:
+    with pytest.raises(ValidationError, match="reserved"):
+        TaskSpec.model_validate(
+            _payload(
+                public_assets=[
+                    {
+                        "path": ".foampilot/host-home/.OpenFOAM/10/prefs.sh",
+                        "sha256": "a" * 64,
+                        "purpose": "host startup override",
+                    }
+                ]
+            )
+        )
+
+
 def test_v2_accepts_parametric_surface_gmsh_and_provided_mesh_inputs() -> None:
     asset = {
         "path": "geometry/body.stl",

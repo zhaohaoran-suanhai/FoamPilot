@@ -10,9 +10,9 @@ from foampilot.agent.repair_patch import RepairPatch
 from foampilot.artifacts import ArtifactStore
 from foampilot.models import BackendRegistry, ModelGateway
 from foampilot.plans import ExecutionPlan, NativeCommand
-from foampilot.runtime import RuntimeConfig
 from foampilot.tasks import load_task_spec
 from tests.support.model_gateway import ScriptedBackend, valid_response
+from tests.support.runtime import real_runtime_config
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,7 +68,7 @@ def test_real_repair_inserts_missing_mesh_commands(tmp_path: Path) -> None:
 
     outcome = NativeAgent(
         gateway=_gateway(missing_mesh.model_dump_json(), patch.model_dump_json()),
-        runtime_config=RuntimeConfig.local_foundation_v10(),
+        runtime_config=real_runtime_config(),
         artifact_store=ArtifactStore(tmp_path / "runs"),
     ).solve(task)
 
@@ -119,7 +119,7 @@ def test_real_repair_removes_invalid_optional_command(tmp_path: Path) -> None:
 
     outcome = NativeAgent(
         gateway=_gateway(complete.model_dump_json(), patch.model_dump_json()),
-        runtime_config=RuntimeConfig.local_foundation_v10(),
+        runtime_config=real_runtime_config(),
         artifact_store=ArtifactStore(tmp_path / "runs"),
     ).solve(task)
 

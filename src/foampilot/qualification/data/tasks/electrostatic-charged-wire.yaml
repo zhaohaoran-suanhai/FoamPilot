@@ -27,4 +27,4 @@ public_checks:
   - {name: final-potential, kind: requested_output, parameters: {path: 0.02/phi}}
   - {name: final-charge, kind: requested_output, parameters: {path: 0.02/rho}}
 public_assets: []
-protected_paths: [/home/edwin/workplace/OpenFOAM-10/tutorials]
+protected_paths: []

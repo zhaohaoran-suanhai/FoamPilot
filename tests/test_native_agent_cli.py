@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from foampilot.artifacts import ArtifactStore, NativeAgentOutcome, RunSummary
 from foampilot.cli.main import build_parser, main
@@ -46,6 +49,53 @@ def test_cli_exposes_native_validate_plan_and_solve_commands() -> None:
     help_text = build_parser().format_help()
 
     assert "{validate,plan,solve,resume,inspect,report" in help_text
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["preflight"],
+        ["plan", "task.yaml", "--output", "plan.json"],
+        ["solve", "task.yaml", "--run-root", "runs"],
+        ["resume", "parent", "--run-root", "runs"],
+        ["inspect", "task.yaml", "plan.json", "case"],
+        [
+            "qualify",
+            "suite",
+            "--suite-file",
+            "suite.yaml",
+            "--run-root",
+            "runs",
+        ],
+        ["desktop"],
+    ],
+)
+def test_runtime_options_exist_on_runtime_commands(
+    argv: list[str],
+) -> None:
+    arguments = build_parser().parse_args(
+        [
+            *argv,
+            "--runtime-config",
+            "/tmp/runtime.toml",
+            "--openfoam-root",
+            "/opt/OpenFOAM/OpenFOAM-10",
+            "--execution-isolation",
+            "sandbox_required",
+            "--bubblewrap",
+            "/usr/bin/bwrap",
+            "--max-mpi-ranks",
+            "3",
+            "--trusted-readonly-root",
+            "/opt/foam-solvers",
+        ]
+    )
+
+    assert arguments.runtime_config == Path("/tmp/runtime.toml")
+    assert arguments.openfoam_root == Path("/opt/OpenFOAM/OpenFOAM-10")
+    assert arguments.execution_isolation == "sandbox_required"
+    assert arguments.max_mpi_ranks == 3
+    assert arguments.trusted_readonly_root == [Path("/opt/foam-solvers")]
 
 
 def test_resume_command_parses_strict_parent_and_run_root() -> None:
@@ -251,6 +301,13 @@ def test_resume_command_returns_zero_for_success(
     monkeypatch.setattr(
         "foampilot.cli.main._native_gateway",
         lambda arguments: object(),
+    )
+    monkeypatch.setattr(
+        "foampilot.cli.main._resolve_runtime",
+        lambda arguments: SimpleNamespace(
+            config=object(),
+            provenance=object(),
+        ),
     )
 
     assert (

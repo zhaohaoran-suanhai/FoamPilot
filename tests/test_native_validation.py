@@ -321,6 +321,23 @@ def test_failed_mesh_check_exposes_bounded_checkmesh_diagnostics(
     assert len(check.detail) <= 1200
 
 
+def test_validation_matches_canonical_executable_paths(tmp_path: Path) -> None:
+    (tmp_path / "1").mkdir()
+    (tmp_path / "1/U").write_text("velocity\n", encoding="utf-8")
+    result = _successful_result(tmp_path)
+    result.steps[0].command = ["/opt/OpenFOAM-10/bin/checkMesh"]
+    result.steps[1].command = ["/opt/OpenFOAM-10/bin/setFields"]
+    result.steps[2].command = ["/opt/OpenFOAM-10/bin/interFoam"]
+
+    report = validate_native_run(
+        task=_task(),
+        run_result=result,
+        case_root=tmp_path,
+    )
+
+    assert report.passed
+
+
 def test_field_checks_fall_back_to_written_openfoam_fields(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

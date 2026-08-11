@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from pathlib import PurePosixPath
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from foampilot.manifests import CaseManifest
 
@@ -17,6 +18,13 @@ class StrictModel(BaseModel):
 class GeneratedFile(StrictModel):
     path: str = Field(min_length=1)
     content: str = Field(min_length=1)
+
+    @field_validator("path")
+    @classmethod
+    def _reserve_internal_namespace(cls, value: str) -> str:
+        if ".foampilot" in PurePosixPath(value).parts:
+            raise ValueError("generated file path uses reserved .foampilot namespace")
+        return value
 
 
 class CommandStage(StrEnum):

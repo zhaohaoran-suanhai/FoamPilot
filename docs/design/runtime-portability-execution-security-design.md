@@ -211,12 +211,14 @@ resolve_runtime_config(cli, environ, explicit_toml, user_toml)
 注释，再识别至少以下构造：
 
 - `#codeStream`；
+- `#calc`、`systemCall` 与 `timeActivatedFileUpdate`；
 - coded function object；
 - coded boundary condition；
 - `dynamicCode` 或等价动态编译入口；
 - 解析后逃出 case root 的 `#include`、`#includeIfPresent`；
 - 绝对 include；
 - 带绝对路径或路径分隔符的动态库加载项；
+- 宏展开的 include、type 和 `*Libs`，以及命令行 case/distributed-root 覆盖；
 - 指向未授权 root 的外部文件引用。
 
 相对 include 只有在规范化后仍位于 case root 才是低风险。`#includeEtc` 只有解析目标处于已验证的

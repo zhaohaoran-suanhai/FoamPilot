@@ -13,22 +13,70 @@ def test_desktop_command_forwards_explicit_run(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    seen: list[Path | None] = []
+    seen: list[tuple[Path | None, tuple[str, ...]]] = []
     monkeypatch.setattr(
         cli,
         "_desktop_launcher",
-        lambda path: seen.append(path) or 0,
+        lambda path, runtime_args: seen.append((path, runtime_args)) or 0,
     )
 
     assert cli.main(["desktop", "--open-run", str(tmp_path)]) == 0
-    assert seen == [tmp_path]
+    assert seen == [(tmp_path, ())]
+
+
+def test_desktop_command_forwards_only_explicit_runtime_options(
+    monkeypatch,
+) -> None:
+    seen: list[tuple[Path | None, tuple[str, ...]]] = []
+    monkeypatch.setattr(
+        cli,
+        "_desktop_launcher",
+        lambda path, runtime_args: seen.append((path, runtime_args)) or 0,
+    )
+
+    assert (
+        cli.main(
+            [
+                "desktop",
+                "--runtime-config",
+                "/tmp/runtime.toml",
+                "--execution-isolation",
+                "sandbox_required",
+                "--max-mpi-ranks",
+                "3",
+                "--trusted-readonly-root",
+                "/opt/solvers",
+            ]
+        )
+        == 0
+    )
+
+    assert seen == [
+        (
+            None,
+            (
+                "--runtime-config",
+                "/tmp/runtime.toml",
+                "--execution-isolation",
+                "sandbox_required",
+                "--max-mpi-ranks",
+                "3",
+                "--trusted-readonly-root",
+                "/opt/solvers",
+            ),
+        )
+    ]
 
 
 def test_desktop_command_reports_missing_optional_dependency(
     monkeypatch,
     capsys,
 ) -> None:
-    def unavailable(path: Path | None) -> int:
+    def unavailable(
+        path: Path | None,
+        runtime_args: tuple[str, ...],
+    ) -> int:
+        del runtime_args
         raise DesktopDependencyError("PySide6 is not installed")
 
     monkeypatch.setattr(cli, "_desktop_launcher", unavailable)

@@ -117,11 +117,17 @@ TaskSpec（也可直接提供）
 foampilot preflight --json
 ```
 
-`preflight` 检查 OpenFOAM、工作目录和执行后端。`auto` 模式只探测一次 bubblewrap；若嵌套
-环境拒绝 namespace，则报告非阻断 fallback 并选择 audited host。host 后端保留 typed
-allowlist、资源限制与日志，但不提供 network namespace 隔离。
-`solve` 自身仍会重新发现环境并检查目标版本和可写性，但不会把单独的完整
-preflight 报告当作运行输入。
+`preflight` 通过统一 resolver 检查 Foundation v10、工作目录和生产等价的完整 sandbox
+launch。默认 `sandbox_preferred`；`sandbox_required` 不允许 host，`trusted_host` 是显式
+宿主执行选择。audited host 与 bubblewrap 不具有相同安全性：host 后端虽保留 typed argv、
+资源限制和日志，但没有 network/filesystem namespace。有效配置与逐字段来源分别写入
+`runtime-config.json` 和 `runtime-config-provenance.json`；每次 case materialize/repair 后重新
+产生 `execution-risk-report.json`，并在第一条 OpenFOAM 命令前写入
+`execution-policy.json`。`solve` 会在 run 内保留完整 preflight 证据。
+
+环境 source 使用临时隔离 HOME；命令发现、help 探测和 Runner 都绑定验证后的 absolute command
+path。host 路线还会拒绝 `-case`/distributed-root 覆盖、绝对 argv、动态代码/库、外部 include、
+`systemCall` 与 `timeActivatedFileUpdate`，且在 mesh cache 恢复后重新计算 case 风险。
 
 ### 5.2 自然语言任务构建（可选）
 

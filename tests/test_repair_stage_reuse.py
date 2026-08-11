@@ -19,6 +19,7 @@ from tests.test_native_case_generation import (
     _plan,
     _task,
 )
+from tests.support.runtime import synthetic_execution_evidence
 
 
 def _changes(*, files=(), commands=()) -> RepairChangeSet:
@@ -112,8 +113,16 @@ class RepairReuseRunner:
     def __init__(self) -> None:
         self.calls: list[list[str]] = []
 
-    def run(self, *, case_dir, commands, budget):
-        del budget
+    def run(
+        self,
+        *,
+        case_dir,
+        commands,
+        budget,
+        risk_report,
+        protected_paths,
+    ):
+        del budget, risk_report
         case = Path(case_dir)
         self.calls.append([item.executable for item in commands])
         call_number = len(self.calls)
@@ -170,6 +179,7 @@ class RepairReuseRunner:
             case_dir=case,
             steps=steps,
             failed_step_id=failed_step_id,
+            **synthetic_execution_evidence(protected_paths),
         )
 
 

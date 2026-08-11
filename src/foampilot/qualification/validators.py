@@ -13,8 +13,6 @@ from foampilot.physics.wall_heat_flux import (
     audit_wall_heat_flux,
     parse_wall_heat_flux_data,
 )
-from foampilot.runtime import RuntimeConfig
-
 from .models import (
     PrivateValidation,
     QualificationMetric,
@@ -205,7 +203,7 @@ def _buoyant(data: OpenFOAMCaseData, validation: PrivateValidation) -> dict:
         "wall_heat_balance",
         lambda: audit_wall_heat_flux(
             data.case_dir,
-            openfoam_root=RuntimeConfig.local_foundation_v10().openfoam_root,
+            openfoam_root=data.openfoam_root,
             hot_patch="hot",
             cold_patch="cold",
         ).normalized_imbalance,
@@ -424,7 +422,12 @@ def _compressible_blocked_channel(
     return output
 
 
-def _cht_region_heat_flow(case_dir: Path, region: str) -> float:
+def _cht_region_heat_flow(
+    case_dir: Path,
+    region: str,
+    *,
+    openfoam_root: Path,
+) -> float:
     function_name = f"wallHeatFlux(region={region})"
     script = (
         'source "$1/etc/bashrc"\n'
@@ -439,7 +442,7 @@ def _cht_region_heat_flow(case_dir: Path, region: str) -> float:
             "-c",
             script,
             "_",
-            str(RuntimeConfig.local_foundation_v10().openfoam_root),
+            str(openfoam_root),
             str(case_dir),
             function_name,
         ],
@@ -479,13 +482,29 @@ def _cht_cooling_cylinder(
     data: OpenFOAMCaseData,
     validation: PrivateValidation,
 ) -> dict:
-    fluid = OpenFOAMCaseData(data.case_dir, region="fluid")
-    solid = OpenFOAMCaseData(data.case_dir, region="solid")
+    fluid = OpenFOAMCaseData(
+        data.case_dir,
+        openfoam_root=data.openfoam_root,
+        region="fluid",
+    )
+    solid = OpenFOAMCaseData(
+        data.case_dir,
+        openfoam_root=data.openfoam_root,
+        region="solid",
+    )
     output = {"final_time": min(fluid.latest_time, solid.latest_time)}
 
     def heat_balance() -> float:
-        fluid_flow = _cht_region_heat_flow(data.case_dir, "fluid")
-        solid_flow = _cht_region_heat_flow(data.case_dir, "solid")
+        fluid_flow = _cht_region_heat_flow(
+            data.case_dir,
+            "fluid",
+            openfoam_root=data.openfoam_root,
+        )
+        solid_flow = _cht_region_heat_flow(
+            data.case_dir,
+            "solid",
+            openfoam_root=data.openfoam_root,
+        )
         return abs(fluid_flow + solid_flow) / max(
             abs(fluid_flow),
             abs(solid_flow),
@@ -652,8 +671,13 @@ def extract_observations(
     case_id: str,
     case_dir: str | Path,
     validation: PrivateValidation,
+    *,
+    openfoam_root: Path,
 ) -> dict[str, Any]:
-    return EXTRACTORS[case_id](OpenFOAMCaseData(case_dir), validation)
+    return EXTRACTORS[case_id](
+        OpenFOAMCaseData(case_dir, openfoam_root=openfoam_root),
+        validation,
+    )
 
 
 def validate_observations(

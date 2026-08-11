@@ -199,6 +199,46 @@ def _residual_views(
     return samples[-_TELEMETRY_SAMPLE_LIMIT:]
 
 
+def _read_json_projection(
+    directory: Path,
+    registered: set[str],
+    relative: str | None,
+    warnings: list[str],
+) -> dict[str, object] | None:
+    if relative is None or relative not in registered:
+        return None
+    relative_path = PurePosixPath(relative)
+    if _has_symlink_component(directory, relative_path):
+        warnings.append(f"{relative} is a symbolic link and was ignored")
+        return None
+    path = directory / Path(*relative_path.parts)
+    try:
+        if path.stat().st_size > 2_097_152:
+            raise ValueError("artifact exceeds the 2 MiB projection limit")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("JSON root must be a mapping")
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        warnings.append(f"{relative} is invalid: {error}")
+        return None
+    return payload
+
+
+def _latest_attempt_artifact(
+    registered: set[str],
+    name: str,
+) -> str | None:
+    matches: list[tuple[int, str]] = []
+    pattern = re.compile(rf"^attempt-(\d+)/{re.escape(name)}$")
+    for relative in registered:
+        match = pattern.match(relative)
+        if match is not None:
+            matches.append((int(match.group(1)), relative))
+    if matches:
+        return max(matches)[1]
+    return name if name in registered else None
+
+
 class RunRepository:
     """Build immutable desktop projections without modifying run artifacts."""
 
@@ -298,17 +338,85 @@ class RunRepository:
         if not manifest.is_file():
             manifest_state = "pending"
             manifest_issues: tuple[str, ...] = ()
+            registered = {item.path for item in files}
         else:
-            issues = ArtifactStore(directory.parent).verify(directory)
+            try:
+                issues = ArtifactStore(directory.parent).verify(directory)
+            except (OSError, ValueError, json.JSONDecodeError) as error:
+                issues = [f"invalid manifest: {error}"]
             manifest_state = "invalid" if issues else "verified"
             manifest_issues = tuple(issues)
+            if manifest_state == "verified":
+                try:
+                    payload = json.loads(manifest.read_text(encoding="utf-8"))
+                    entries = payload["files"]
+                    if not isinstance(entries, dict):
+                        raise ValueError("manifest files must be a mapping")
+                    registered = {
+                        str(relative)
+                        for relative, metadata in entries.items()
+                        if isinstance(relative, str)
+                        and isinstance(metadata, dict)
+                        and metadata.get("type") == "file"
+                    }
+                except (KeyError, OSError, ValueError, json.JSONDecodeError) as error:
+                    manifest_state = "invalid"
+                    manifest_issues = (f"invalid manifest: {error}",)
+                    registered = set()
+            else:
+                registered = set()
+            if manifest_state == "invalid":
+                warnings.append(
+                    "finalized run manifest is invalid; runtime security "
+                    "projections are untrusted and were hidden"
+                )
 
+        trusted_files = [item for item in files if item.path in registered]
         context_references, skill_references = _context_views(
             directory,
-            files,
+            trusted_files,
             warnings,
         )
-        residual_samples = _residual_views(directory, files, warnings)
+        residual_samples = _residual_views(directory, trusted_files, warnings)
+        runtime_config = _read_json_projection(
+            directory,
+            registered,
+            "runtime-config.json",
+            warnings,
+        )
+        runtime_provenance = _read_json_projection(
+            directory,
+            registered,
+            "runtime-config-provenance.json",
+            warnings,
+        )
+        execution_risk = _read_json_projection(
+            directory,
+            registered,
+            _latest_attempt_artifact(
+                registered,
+                "execution-risk-report.json",
+            ),
+            warnings,
+        )
+        execution_policy = _read_json_projection(
+            directory,
+            registered,
+            _latest_attempt_artifact(
+                registered,
+                "execution-policy.json",
+            ),
+            warnings,
+        )
+        sandbox_probe = _read_json_projection(
+            directory,
+            registered,
+            _latest_attempt_artifact(
+                registered,
+                "sandbox-probe.json",
+            ),
+            warnings,
+        )
 
         return RunSnapshot(
             run_dir=directory,
@@ -321,6 +429,11 @@ class RunRepository:
             context_references=tuple(context_references),
             skill_references=tuple(skill_references),
             residual_samples=tuple(residual_samples),
+            runtime_config=runtime_config,
+            runtime_provenance=runtime_provenance,
+            execution_risk=execution_risk,
+            execution_policy=execution_policy,
+            sandbox_probe=sandbox_probe,
         )
 
     def read_text(

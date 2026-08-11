@@ -46,6 +46,8 @@ class PublicAsset(StrictModel):
             raise ValueError(
                 f"public asset path must be a safe relative path: {value!r}"
             )
+        if ".foampilot" in parsed.parts:
+            raise ValueError("public asset path uses the reserved .foampilot namespace")
         return parsed.as_posix()
 
     @field_validator("purpose")

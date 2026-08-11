@@ -11,9 +11,10 @@ from foampilot.agent import NativeAgent
 from foampilot.artifacts import ArtifactStore
 from foampilot.performance import PerformanceSummary
 from foampilot.plans import ExecutionPlan
-from foampilot.runtime import PlanRunResult, RuntimeConfig
+from foampilot.runtime import PlanRunResult
 from foampilot.tasks import load_task_spec
 from tests.test_native_case_generation import RecordingModel
+from tests.support.runtime import real_runtime_config
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,7 +43,7 @@ def test_verified_plan_and_mesh_cache_reach_real_solver_quickly(
     store = ArtifactStore(tmp_path / "runs")
     cache = tmp_path / "derived-cache"
     model = RecordingModel([plan])
-    runtime = RuntimeConfig.local_foundation_v10()
+    runtime = real_runtime_config()
 
     cold = NativeAgent(
         gateway=model,
