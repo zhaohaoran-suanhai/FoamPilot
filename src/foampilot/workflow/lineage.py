@@ -300,6 +300,7 @@ class LineageRecord(StrictModel):
     schema_version: Literal[1] = 1
     relation: Literal[
         "strict_resume",
+        "design_confirmation",
         "rerun_same_input",
         "rerun_with_changes",
     ]
@@ -310,6 +311,7 @@ class LineageRecord(StrictModel):
     input_hash_after: str = Field(pattern=r"^[0-9a-f]{64}$")
     change_categories: list[str] = Field(default_factory=list)
     reused_evidence_paths: list[str] = Field(default_factory=list)
+    confirmation_record_hashes: list[str] = Field(default_factory=list)
 
 
 class RerunInput(StrictModel):

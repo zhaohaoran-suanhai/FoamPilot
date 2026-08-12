@@ -110,6 +110,8 @@ COMMANDS = (
     "rerun",
     "inspect",
     "report",
+    "questions",
+    "confirm",
     "preflight",
     "desktop",
     "model",
@@ -208,6 +210,16 @@ def _parser() -> argparse.ArgumentParser:
     report = subparsers.add_parser("report")
     report.add_argument("run_dir", type=Path)
     report.add_argument("--json", action="store_true")
+
+    questions = subparsers.add_parser("questions")
+    questions.add_argument("run_dir", type=Path)
+    questions.add_argument("--json", action="store_true")
+
+    confirm = subparsers.add_parser("confirm")
+    confirm.add_argument("run_dir", type=Path)
+    confirm.add_argument("--answers", required=True, type=Path)
+    confirm.add_argument("--run-root", required=True, type=Path)
+    confirm.add_argument("--json", action="store_true")
 
     preflight = subparsers.add_parser("preflight")
     _add_runtime_options(preflight)
@@ -614,6 +626,74 @@ def _job(arguments: argparse.Namespace) -> int:
         )
         return 0
     raise ValueError("a job subcommand is required")
+
+
+def _questions(arguments: argparse.Namespace) -> int:
+    from foampilot.workflow.confirmation import load_confirmation_parent
+
+    parent = load_confirmation_parent(arguments.run_dir)
+    payload = {
+        "status": parent.decision.state,
+        "run_dir": str(parent.run_dir),
+        "proposal_sha256": parent.decision.proposal_sha256,
+        "questions": [
+            item.model_dump(mode="json")
+            for item in parent.decision.questions
+        ],
+    }
+    _emit(
+        payload,
+        as_json=arguments.json,
+        human=(
+            f"{parent.decision.state}: "
+            f"{len(parent.decision.questions)} question(s)."
+        ),
+    )
+    return 0
+
+
+def _confirm(arguments: argparse.Namespace) -> int:
+    from foampilot.workflow.confirmation import (
+        apply_confirmation_records,
+        load_confirmation_parent,
+        parse_answers,
+        persist_confirmation_continuation,
+    )
+
+    raw = yaml.safe_load(arguments.answers.read_text(encoding="utf-8"))
+    continuation = apply_confirmation_records(
+        load_confirmation_parent(arguments.run_dir),
+        parse_answers(raw),
+    )
+    child = persist_confirmation_continuation(
+        continuation,
+        run_root=arguments.run_root,
+    )
+    payload = {
+        "status": continuation.decision.state,
+        "run_dir": str(child),
+        "parent_run": str(continuation.parent.run_dir),
+        "confirmation_record_hashes": list(
+            continuation.confirmation_record_hashes
+        ),
+        "design_sha256": (
+            continuation.design.design_sha256
+            if continuation.design is not None
+            else None
+        ),
+        "questions": [
+            item.model_dump(mode="json")
+            for item in continuation.decision.questions
+        ],
+    }
+    _emit(
+        payload,
+        as_json=arguments.json,
+        human=(
+            f"{continuation.decision.state}: confirmation child at {child}."
+        ),
+    )
+    return 0 if continuation.design is not None else 4
 
 
 def _native_gateway(
@@ -1671,6 +1751,8 @@ def _run_main(argv: list[str] | None = None) -> int:
             "desktop": _desktop,
             "model": _model,
             "report": _report,
+            "questions": _questions,
+            "confirm": _confirm,
             "knowledge": _knowledge,
             "skill": _skill,
             "audit": _audit,

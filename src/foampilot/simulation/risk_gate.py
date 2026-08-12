@@ -200,7 +200,8 @@ def evaluate_design_risk(
     intent: SimulationIntent,
     requirements: ResolvedRequirements,
     proposal: CaseDesignProposal,
-    registry: CapabilityRegistry,
+    registry: CapabilityRegistry | None = None,
+    bound_extension_identities: dict[str, str] | None = None,
 ) -> RiskDecision:
     """Classify one proposal without consulting model confidence."""
 
@@ -210,17 +211,26 @@ def evaluate_design_risk(
     )
     capability_reasons = list(proposal.capability_conflicts)
     extension_identities: dict[str, str] = {}
-    for extension_id in extension_ids:
-        try:
-            descriptor = registry.descriptor(extension_id)
-        except LookupError:
+    if registry is None:
+        bound = bound_extension_identities or {}
+        if set(extension_ids) != set(bound):
             capability_reasons.append(
-                f"extension is not registered: {extension_id}"
+                "selected extensions differ from the bound parent decision"
             )
-            continue
-        extension_identities[extension_id] = (
-            f"{descriptor.extension_version}/protocol-{descriptor.protocol_version}"
-        )
+        else:
+            extension_identities = dict(sorted(bound.items()))
+    else:
+        for extension_id in extension_ids:
+            try:
+                descriptor = registry.descriptor(extension_id)
+            except LookupError:
+                capability_reasons.append(
+                    f"extension is not registered: {extension_id}"
+                )
+                continue
+            extension_identities[extension_id] = (
+                f"{descriptor.extension_version}/protocol-{descriptor.protocol_version}"
+            )
 
     requirement_questions = tuple(
         _question_from_gap(item) for item in requirements.gaps

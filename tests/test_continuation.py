@@ -223,6 +223,7 @@ def test_lineage_contract_does_not_advertise_openfoam_continuation() -> None:
     ]
 
     assert "openfoam_continuation" not in relation_schema["enum"]
+    assert "design_confirmation" in relation_schema["enum"]
 
 
 def test_rerun_changed_task_is_explicitly_classified(tmp_path: Path) -> None:

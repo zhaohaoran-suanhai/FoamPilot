@@ -60,6 +60,43 @@ class ResolvedRequirements(StrictModel):
                 return item
         raise KeyError(field_path)
 
+    def with_confirmations(
+        self,
+        values: tuple[ResolvedValue, ...],
+    ) -> "ResolvedRequirements":
+        """Replace confirmable gaps with concrete user-confirmed facts."""
+
+        if any(
+            item.source != "user_confirmation" or not item.confirmed
+            for item in values
+        ):
+            raise ValueError("requirement confirmations need user authority")
+        by_path = {item.field_path: item for item in self.resolved}
+        for item in values:
+            by_path[item.field_path] = item
+        confirmed_paths = set(item.field_path for item in values)
+        gaps = tuple(
+            item
+            for item in self.gaps
+            if not (
+                item.field_path in confirmed_paths
+                and item.kind == "confirmable"
+            )
+        )
+        resolved = tuple(by_path[path] for path in sorted(by_path))
+        return ResolvedRequirements(
+            resolved=resolved,
+            gaps=gaps,
+            conflicts=self.conflicts,
+            selected_extension_ids=self.selected_extension_ids,
+            requirements_sha256=_hash_payload(
+                resolved,
+                gaps,
+                self.conflicts,
+                self.selected_extension_ids,
+            ),
+        )
+
 
 _SOURCE_PRECEDENCE = {
     "user_confirmation": 0,

@@ -14,6 +14,34 @@ from .models import (
 )
 from .store import WorkflowStore
 
+
+def __getattr__(name: str):
+    if name in {
+        "ConfirmationAnswer",
+        "ConfirmationAnswers",
+        "ConfirmationContinuation",
+        "ConfirmationError",
+        "ConfirmationParent",
+        "apply_confirmation_records",
+        "load_confirmation_parent",
+        "parse_answers",
+        "persist_confirmation_continuation",
+    }:
+        from .confirmation import (
+            ConfirmationAnswer,
+            ConfirmationAnswers,
+            ConfirmationContinuation,
+            ConfirmationError,
+            ConfirmationParent,
+            apply_confirmation_records,
+            load_confirmation_parent,
+            parse_answers,
+            persist_confirmation_continuation,
+        )
+
+        return locals()[name]
+    raise AttributeError(name)
+
 __all__ = [
     "FailureDomain",
     "FailureRecord",
@@ -26,4 +54,13 @@ __all__ = [
     "WorkflowStage",
     "WorkflowState",
     "WorkflowStore",
+    "ConfirmationAnswer",
+    "ConfirmationAnswers",
+    "ConfirmationContinuation",
+    "ConfirmationError",
+    "ConfirmationParent",
+    "apply_confirmation_records",
+    "load_confirmation_parent",
+    "parse_answers",
+    "persist_confirmation_continuation",
 ]
