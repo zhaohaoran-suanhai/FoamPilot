@@ -1,0 +1,6 @@
+Time = 0.1
+Region fluid
+smoothSolver: Solving for Ux, Initial residual = 0.2, Final residual = 0.02, No Iterations 2
+Region solid
+PCG: Solving for T, Initial residual = 0.3, Final residual = 0.03, No Iterations 3
+End

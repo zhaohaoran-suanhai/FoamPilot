@@ -5,8 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
+from foampilot.evidence import EvidenceExtractorRegistry
 from foampilot.environment import EnvironmentSnapshot
-from foampilot.plans import NativeCommand
+from foampilot.plans import (
+    ExecutionPlan,
+    GeneratedFile,
+    NativeCommand,
+)
+from foampilot.manifests import CaseManifest, CaseRegion
 from foampilot.runtime import (
     PlanRunResult,
     PlanRunner,
@@ -16,7 +22,7 @@ from foampilot.runtime import (
 from foampilot.runtime.protection import runtime_protected_paths
 from foampilot.tasks import MeshIntent, ResourceBudget
 
-from .mesh_quality import build_mesh_quality_report
+from .mesh_quality import mesh_quality_from_run_facts
 from .models import ExecutedMeshFacts, MeshCheckFact
 
 
@@ -116,12 +122,41 @@ def probe_provided_mesh(
         risk_report=risk,
         protected_paths=protected_paths,
     )
-    metrics = build_mesh_quality_report(
-        result,
+    evidence_plan = ExecutionPlan(
+        compiled_from_design_sha256="0" * 64,
+        compiler_identities={
+            "foampilot.pre-authoring-mesh-probe": "1.0.0/protocol-1"
+        },
+        manifest=CaseManifest(
+            solver_executable="checkMesh",
+            solver_family="mesh-check",
+            regime="unknown",
+            physics_family="mesh",
+            mesh_family="provided",
+            dimensionality="unknown",
+            regions=[
+                CaseRegion(name="default", kind="fluid", path_prefix="")
+            ],
+        ),
+        files=[
+            GeneratedFile(
+                path="system/controlDict",
+                content=_CONTROL_DICT,
+            )
+        ],
+        commands=[command],
+    )
+    run_facts = EvidenceExtractorRegistry.first_party().resolve(
+        environment.distribution,
+        environment.version,
+    ).extract(result, evidence_plan, case)
+    metrics = mesh_quality_from_run_facts(
+        run_facts,
         MeshIntent(
             strategy="provided",
             quality={"require_check_mesh_pass": True},
         ),
+        case,
     )
     step = next(
         (
@@ -147,12 +182,20 @@ def probe_provided_mesh(
             evidence_paths=metrics.evidence_files,
         )
     else:
+        extracted = next(
+            (
+                item
+                for item in run_facts.mesh_checks
+                if item.step_id == step.step_id
+            ),
+            None,
+        )
         mesh_check = MeshCheckFact(
             executed=True,
             executable_identity=str(Path(step.command[0]).resolve()),
             return_code=step.return_code,
             timed_out=step.timed_out,
-            mesh_ok=metrics.check_mesh_passed,
+            mesh_ok=(extracted.mesh_ok if extracted is not None else None),
             evidence_paths=tuple(
                 _relative_evidence(path, case)
                 for path in (step.stdout_path, step.stderr_path)

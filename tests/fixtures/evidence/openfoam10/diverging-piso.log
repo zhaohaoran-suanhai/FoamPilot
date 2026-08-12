@@ -1,0 +1,9 @@
+Time = 0.1
+Courant Number mean: 0.5 max: 4.2
+PCG:  Solving for p, Initial residual = 0.9, Final residual = 0.4, No Iterations 100
+time step continuity errors : sum local = 0.02, global = 0.01, cumulative = 0.2
+Time = 0.2
+Courant Number mean: 4 max: 92
+PCG:  Solving for p, Initial residual = 12, Final residual = 8, No Iterations 100
+time step continuity errors : sum local = 2, global = 1, cumulative = 20
+Floating point exception (core dumped)

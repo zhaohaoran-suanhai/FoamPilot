@@ -1,0 +1,7 @@
+Time = 0.1
+Courant Number mean: 0.02 max: 0.15
+smoothSolver:  Solving for Ux, Initial residual = 0.1, Final residual = 0.001, No Iterations 2
+PCG:  Solving for p, Initial residual = 0.2, Final residual = 0.002, No Iterations 3
+time step continuity errors : sum local = 1e-08, global = -2e-09, cumulative = 3e-08
+Time = 0.2
+End

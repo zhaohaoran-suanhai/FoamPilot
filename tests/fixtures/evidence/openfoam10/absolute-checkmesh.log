@@ -1,0 +1,9 @@
+Create time
+sigFpe : Enabling floating point exception trapping (FOAM_SIGFPE).
+points: 12
+faces: 20
+cells: 8
+Number of regions: 1
+Mesh non-orthogonality Max: 12.5 average: 2.1
+Max skewness = 0.42 OK.
+Mesh OK.

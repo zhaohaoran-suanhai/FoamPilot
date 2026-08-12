@@ -129,3 +129,85 @@ def test_probe_caps_command_timeout_to_sixty_seconds(
     )
 
     assert runner.commands[0].timeout_seconds == 60
+
+
+def test_probe_delegates_log_meaning_to_evidence_extractor(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    case_root = tmp_path / "case"
+    (case_root / "constant/polyMesh").mkdir(parents=True)
+    config, environment = _runtime(tmp_path)
+    runner = RecordingRunner(case_root)
+    monkeypatch.setattr(
+        "foampilot.preprocessing.mesh_probe._build_runner",
+        lambda **kwargs: runner,
+    )
+    calls = []
+
+    class RecordingExtractor:
+        def extract(self, run_result, plan, root):
+            calls.append((run_result, plan, root))
+            from foampilot.evidence import (
+                MeshCheckFact,
+                RawCommandEvidence,
+                RunFacts,
+            )
+            from hashlib import sha256
+
+            stdout = run_result.steps[0].stdout_path
+            stderr = run_result.steps[0].stderr_path
+            stdout_hash = sha256(stdout.read_bytes()).hexdigest()
+            stderr_hash = sha256(stderr.read_bytes()).hexdigest()
+            step = run_result.steps[0]
+            return RunFacts(
+                run_id="probe",
+                attempt=1,
+                plan_sha256="a" * 64,
+                extractor_identities={"test": "1"},
+                raw_steps=(
+                    RawCommandEvidence(
+                        step_id=step.step_id,
+                        stage="check",
+                        executable="checkMesh",
+                        argv=tuple(step.command),
+                        return_code=step.return_code,
+                        started_at=step.started_at,
+                        finished_at=step.finished_at,
+                        elapsed_seconds=step.elapsed_seconds,
+                        timed_out=step.timed_out,
+                        stdout_path=stdout.relative_to(root).as_posix(),
+                        stderr_path=stderr.relative_to(root).as_posix(),
+                        stdout_sha256=stdout_hash,
+                        stderr_sha256=stderr_hash,
+                        execution_backend="host",
+                    ),
+                ),
+                mesh_checks=(
+                    MeshCheckFact(
+                        step_id=step.step_id,
+                        executed=True,
+                        mesh_ok=True,
+                        cells=77,
+                    ),
+                ),
+                source_sha256={
+                    stdout.relative_to(root).as_posix(): stdout_hash,
+                    stderr.relative_to(root).as_posix(): stderr_hash,
+                },
+            )
+
+    monkeypatch.setattr(
+        "foampilot.preprocessing.mesh_probe.EvidenceExtractorRegistry.first_party",
+        lambda: type(
+            "Registry",
+            (),
+            {"resolve": lambda self, distribution, version: RecordingExtractor()},
+        )(),
+    )
+
+    facts = probe_provided_mesh(case_root, environment, config, 60)
+
+    assert len(calls) == 1
+    assert calls[0][2] == case_root.resolve()
+    assert facts.metrics.cells == 77

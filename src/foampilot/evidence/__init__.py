@@ -10,14 +10,24 @@ from .models import (
     RunFacts,
     SolverProgressFact,
 )
+from .extractors import (
+    EvidenceExtractionError,
+    EvidenceExtractor,
+    EvidenceExtractorRegistry,
+)
+from .openfoam10 import OpenFOAM10EvidenceExtractor
 
 __all__ = [
     "ContinuityFact",
     "CourantFact",
+    "EvidenceExtractionError",
+    "EvidenceExtractor",
+    "EvidenceExtractorRegistry",
     "MeshCheckFact",
     "NativeErrorFact",
     "RawCommandEvidence",
     "ResidualFact",
     "RunFacts",
     "SolverProgressFact",
+    "OpenFOAM10EvidenceExtractor",
 ]
