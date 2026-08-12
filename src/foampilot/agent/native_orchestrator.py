@@ -58,6 +58,9 @@ from foampilot.plans import (
     normalize_execution_plan,
     validate_execution_plan,
 )
+from foampilot.observations import (
+    inject_observation_fragments,
+)
 from foampilot.performance import (
     DerivedCache,
     PlanReuseError,
@@ -163,6 +166,7 @@ from foampilot.workflow.lineage import (
 )
 
 from .context import AgentContext, load_agent_context
+from .contract_stages import ContractStageError, ContractStagePipeline
 from .generation import materialize_case
 from .repair import (
     failure_fingerprint,
@@ -1413,6 +1417,8 @@ class NativeAgent:
             capability,
             geometry_facts=geometry_facts,
         )
+        acceptance_path = parent / "acceptance-plan.json"
+        observation_path = parent / "observation-plan.json"
         current = build_resume_fingerprint(
             task=task,
             environment=environment,
@@ -1425,6 +1431,16 @@ class NativeAgent:
             skill_ids=context.skill_names,
             skills_text=context.skills_text,
             public_asset_root=effective_asset_root,
+            acceptance_plan_sha256=(
+                sha256(acceptance_path.read_bytes()).hexdigest()
+                if acceptance_path.is_file()
+                else "0" * 64
+            ),
+            observation_plan_sha256=(
+                sha256(observation_path.read_bytes()).hexdigest()
+                if observation_path.is_file()
+                else "0" * 64
+            ),
         )
         continuation = prepare_continuation(
             parent_run=parent,
@@ -2205,6 +2221,7 @@ class NativeAgent:
         )
 
         case_design: CaseDesign | None = None
+        intent: SimulationIntent | None = None
         selected_registry: CapabilityRegistry | None = None
         if verified_source is None:
             if _continuation is not None:
@@ -2240,6 +2257,10 @@ class NativeAgent:
                 try:
                     case_design = CaseDesign.model_validate_json(
                         parent_design.read_text(encoding="utf-8")
+                    )
+                    intent = SimulationIntent.model_validate_json(
+                        (_continuation.parent_run / "simulation-intent.json")
+                        .read_text(encoding="utf-8")
                     )
                     for name in (
                         "simulation-intent.json",
@@ -2588,6 +2609,12 @@ class NativeAgent:
                         ),
                     )
 
+        if verified_source is not None:
+            case_design = verified_source.design
+            intent = verified_source.intent
+            _write_json(run_dir / "simulation-intent.json", intent)
+            _write_json(run_dir / "case-design.json", case_design)
+
         if case_design is not None and selected_registry is None:
             try:
                 resumed_registry = _production_capability_registry(
@@ -2624,6 +2651,77 @@ class NativeAgent:
                     ),
                 )
 
+        if intent is None and (run_dir / "simulation-intent.json").is_file():
+            try:
+                intent = SimulationIntent.model_validate_json(
+                    (run_dir / "simulation-intent.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+            except (OSError, ValueError) as error:
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status="OBSERVATION_PLANNING_FAILED",
+                    attempts=attempts,
+                    message=f"Frozen intent cannot be loaded: {error}",
+                    model_calls=model_calls,
+                    primary_failure=FailureRecord(
+                        domain=FailureDomain.DESIGN,
+                        code="SIMULATION_INTENT_CHECKPOINT_INVALID",
+                        detail=str(error),
+                    ),
+                )
+
+        assert case_design is not None
+        contract_pipeline = ContractStagePipeline(
+            run_dir=run_dir,
+            task_id=task.task_id,
+            workflow=workflow,
+            cancellation_requested=activity_reporter.is_cancel_requested,
+        )
+        try:
+            planning_contracts = contract_pipeline.plan_before_authoring(
+                intent=intent or SimulationIntent(),
+                design=case_design,
+                mesh_facts=input_mesh_facts,
+            )
+            acceptance_plan = planning_contracts.acceptance
+            observation_plan = planning_contracts.observations
+            if verified_source is not None and (
+                acceptance_plan.canonical_sha256()
+                != verified_source.acceptance_plan.canonical_sha256()
+                or observation_plan.canonical_sha256()
+                != verified_source.observation_plan.canonical_sha256()
+            ):
+                raise ContractStageError(
+                    FailureRecord(
+                        domain=FailureDomain.PLAN,
+                        code="PLAN_REUSE_CONTRACT_MISMATCH",
+                        detail=(
+                            "recompiled acceptance or observation contract "
+                            "differs from the verified source"
+                        ),
+                        message="复用源的观测或验收契约不再与当前输入一致。",
+                        recovery="不使用 warm-plan，重新执行完整设计与编译。",
+                    )
+                )
+        except ContractStageError as error:
+            return self._finish(
+                run_dir=run_dir,
+                task=task,
+                status=error.failure.code,
+                attempts=attempts,
+                message=f"Contract planning failed: {error}",
+                model_calls=model_calls,
+                workflow_state=(
+                    WorkflowState.CANCELLED
+                    if error.failure.code == "USER_CANCELLED"
+                    else WorkflowState.FAILED
+                ),
+                primary_failure=error.failure,
+            )
+
         if self.gateway is not None:
             fingerprint = build_resume_fingerprint(
                 task=task,
@@ -2637,6 +2735,12 @@ class NativeAgent:
                 skill_ids=context.skill_names,
                 skills_text=context.skills_text,
                 public_asset_root=effective_public_asset_root,
+                acceptance_plan_sha256=sha256(
+                    (run_dir / "acceptance-plan.json").read_bytes()
+                ).hexdigest(),
+                observation_plan_sha256=sha256(
+                    (run_dir / "observation-plan.json").read_bytes()
+                ).hexdigest(),
             )
             _write_json(
                 run_dir / "resume-compatibility.json",
@@ -2662,6 +2766,7 @@ class NativeAgent:
 
         if verified_source is not None:
             plan = verified_source.plan
+            contract_pipeline.record_case_authored(_bundle_from_plan(plan))
         elif (
             _continuation is not None
             and _continuation.from_stage
@@ -2938,6 +3043,7 @@ class NativeAgent:
                     environment=environment,
                     task=execution_task,
                     registry=selected_registry,
+                    observation_plan=observation_plan,
                 )
             except OperationCancelled:
                 return self._finish_cancelled(
@@ -3146,6 +3252,11 @@ class NativeAgent:
                         max_transport_attempts=3,
                     ),
                     trace=model_trace,
+                    observation_plan=observation_plan,
+                )
+                bundle, _observation_fragments = inject_observation_fragments(
+                    bundle,
+                    observation_plan,
                 )
                 _write_json(run_dir / "case-bundle.json", bundle)
                 conformance = verify_design_conformance(
@@ -3190,7 +3301,9 @@ class NativeAgent:
                     environment=environment,
                     task=execution_task,
                     registry=selected_registry,
+                    observation_plan=observation_plan,
                 )
+                contract_pipeline.record_case_authored(bundle)
             except OperationCancelled:
                 return self._finish_cancelled(
                     run_dir=run_dir,
@@ -3942,6 +4055,15 @@ class NativeAgent:
                     .extract(run_result, active_plan, case_root)
                 )
                 _write_json(attempt_root / "run-facts.json", run_facts)
+                _record_event(
+                    workflow,
+                    stage=WorkflowStage.EXTRACTING_EVIDENCE,
+                    state=WorkflowEventState.COMPLETED,
+                    attempt=attempt_number,
+                    evidence_paths=[
+                        f"attempt-{attempt_number:02d}/run-facts.json"
+                    ],
+                )
                 mesh_quality = mesh_quality_from_run_facts(
                     run_facts,
                     task.mesh,
@@ -4073,11 +4195,27 @@ class NativeAgent:
                     source_sha256={},
                 )
                 _write_json(attempt_root / "run-facts.json", run_facts)
+                _record_event(
+                    workflow,
+                    stage=WorkflowStage.EXTRACTING_EVIDENCE,
+                    state=WorkflowEventState.COMPLETED,
+                    attempt=attempt_number,
+                    evidence_paths=[
+                        f"attempt-{attempt_number:02d}/run-facts.json"
+                    ],
+                )
                 log_text = json.dumps(
                     run_facts.model_dump(mode="json"),
                     ensure_ascii=False,
                     sort_keys=True,
                 )
+            contract_pipeline.evaluate_after_evidence(
+                contracts=planning_contracts,
+                run_facts=run_facts,
+                case_root=case_root,
+                attempt_root=attempt_root,
+                attempt_number=attempt_number,
+            )
             _write_json(
                 attempt_root / "public-validation.json",
                 report,
@@ -4407,6 +4545,7 @@ class NativeAgent:
                     environment=environment,
                     task=execution_task,
                     registry=selected_registry,
+                    observation_plan=observation_plan,
                 )
             except OperationCancelled:
                 return self._finish_cancelled(

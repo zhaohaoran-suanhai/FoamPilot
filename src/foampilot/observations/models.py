@@ -8,7 +8,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from foampilot.simulation import FactEvidence
+from foampilot.simulation.provenance import FactEvidence
 
 
 ObservationKind = Literal[

@@ -9,7 +9,7 @@ from typing import Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from foampilot.observations import ObservationRequest
-from foampilot.simulation import FactEvidence
+from foampilot.simulation.provenance import FactEvidence
 
 
 AcceptanceOperator = Literal[

@@ -71,6 +71,23 @@ def test_coordinator_runs_declared_stages_and_checkpoints_in_order(
     assert events[-1].state == WorkflowEventState.COMPLETED
 
 
+def test_contract_stages_have_the_required_causal_order() -> None:
+    stages = list(CANONICAL_STAGE_ORDER)
+
+    assert stages.index(WorkflowStage.ACCEPTANCE_COMPILED) < stages.index(
+        WorkflowStage.OBSERVATION_PLANNED
+    )
+    assert stages.index(WorkflowStage.OBSERVATION_PLANNED) < stages.index(
+        WorkflowStage.CASE_AUTHORED
+    )
+    assert stages.index(WorkflowStage.EXTRACTING_EVIDENCE) < stages.index(
+        WorkflowStage.POSTPROCESSED
+    )
+    assert stages.index(WorkflowStage.POSTPROCESSED) < stages.index(
+        WorkflowStage.ACCEPTANCE_EVALUATED
+    )
+
+
 def test_checkpoint_exists_before_completed_transition(tmp_path: Path) -> None:
     seen: list[bool] = []
 
@@ -97,6 +114,26 @@ def test_checkpoint_exists_before_completed_transition(tmp_path: Path) -> None:
     )
 
     assert seen and all(seen)
+
+
+def test_advance_runs_one_production_stage_without_finalizing_run(
+    tmp_path: Path,
+) -> None:
+    calls: list[WorkflowStage] = []
+    coordinator = WorkflowCoordinator(store=WorkflowStore(run_dir=tmp_path))
+    context = WorkflowContext(run_id="run-1", task_id="task-1")
+    service = _Service(WorkflowStage.ACCEPTANCE_COMPILED, calls)
+
+    outcome = coordinator.advance(context, service)
+
+    assert outcome.status == "completed"
+    assert calls == [WorkflowStage.ACCEPTANCE_COMPILED]
+    assert not (tmp_path / "summary.json").exists()
+    events = _events(tmp_path)
+    assert [item.state for item in events] == [
+        WorkflowEventState.STARTED,
+        WorkflowEventState.COMPLETED,
+    ]
 
 
 @pytest.mark.parametrize("stop_index", range(len(CANONICAL_STAGE_ORDER)))

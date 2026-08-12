@@ -122,6 +122,71 @@ class WorkflowCoordinator:
         self.store.finish(summary)
         return WorkflowCoordinatorOutcome(summary=summary)
 
+    def advance(
+        self,
+        context: WorkflowContext,
+        service: StageService,
+    ) -> StageOutcome:
+        """Run one domain service while owning its workflow transitions."""
+
+        if self.cancellation_requested():
+            outcome = StageOutcome(
+                status="cancelled",
+                detail="cancellation requested before the next stage",
+                failure=FailureRecord(
+                    domain=FailureDomain.WORKFLOW,
+                    code="USER_CANCELLED",
+                    detail="cancellation requested before the next stage",
+                ),
+            )
+            self._record(
+                service.stage,
+                WorkflowEventState.CANCELLED,
+                context=context,
+                detail=outcome.detail,
+            )
+            return outcome
+        self._record(
+            service.stage,
+            WorkflowEventState.STARTED,
+            context=context,
+        )
+        try:
+            outcome = service.run(context)
+        except Exception as error:
+            outcome = StageOutcome(
+                status="failed",
+                detail=(
+                    f"{type(error).__name__}: stage service raised an exception"
+                ),
+                failure=FailureRecord(
+                    domain=FailureDomain.WORKFLOW,
+                    code="STAGE_SERVICE_FAILED",
+                    detail=(
+                        f"{type(error).__name__}: stage service raised an exception"
+                    ),
+                ),
+            )
+        state = {
+            "completed": WorkflowEventState.COMPLETED,
+            "deferred": WorkflowEventState.DEFERRED,
+            "failed": WorkflowEventState.FAILED,
+            "cancelled": WorkflowEventState.CANCELLED,
+        }[outcome.status]
+        if outcome.status == "completed":
+            self.store.checkpoint(
+                outcome.checkpoint_name or service.stage.value.lower(),
+                outcome.checkpoint_payload or {},
+            )
+        self._record(
+            service.stage,
+            state,
+            context=context,
+            detail=outcome.detail,
+            evidence_paths=outcome.artifact_paths,
+        )
+        return outcome
+
     def run(
         self,
         context: WorkflowContext,
@@ -147,58 +212,8 @@ class WorkflowCoordinator:
 
         completed: list[WorkflowStage] = []
         for service in services:
-            if self.cancellation_requested():
-                failure = FailureRecord(
-                    domain=FailureDomain.WORKFLOW,
-                    code="USER_CANCELLED",
-                    detail="cancellation requested before the next stage",
-                )
-                return self._finalize(
-                    context=context,
-                    state=WorkflowState.CANCELLED,
-                    completed=tuple(completed),
-                    failure=failure,
-                    detail=failure.detail,
-                )
-            self._record(
-                service.stage,
-                WorkflowEventState.STARTED,
-                context=context,
-            )
-            try:
-                outcome = service.run(context)
-            except Exception as error:
-                failure = FailureRecord(
-                    domain=FailureDomain.WORKFLOW,
-                    code="STAGE_SERVICE_FAILED",
-                    detail=f"{type(error).__name__}: stage service raised an exception",
-                )
-                self._record(
-                    service.stage,
-                    WorkflowEventState.FAILED,
-                    context=context,
-                    detail=failure.detail,
-                )
-                return self._finalize(
-                    context=context,
-                    state=WorkflowState.FAILED,
-                    completed=tuple(completed),
-                    failure=failure,
-                    detail=failure.detail,
-                )
-
+            outcome = self.advance(context, service)
             if outcome.status == "completed":
-                self.store.checkpoint(
-                    outcome.checkpoint_name or service.stage.value.lower(),
-                    outcome.checkpoint_payload or {},
-                )
-                self._record(
-                    service.stage,
-                    WorkflowEventState.COMPLETED,
-                    context=context,
-                    detail=outcome.detail,
-                    evidence_paths=outcome.artifact_paths,
-                )
                 completed.append(service.stage)
                 continue
 
@@ -206,11 +221,6 @@ class WorkflowCoordinator:
                 "deferred": WorkflowState.DEFERRED,
                 "failed": WorkflowState.FAILED,
                 "cancelled": WorkflowState.CANCELLED,
-            }[outcome.status]
-            event_state = {
-                "deferred": WorkflowEventState.DEFERRED,
-                "failed": WorkflowEventState.FAILED,
-                "cancelled": WorkflowEventState.CANCELLED,
             }[outcome.status]
             failure = outcome.failure or FailureRecord(
                 domain=FailureDomain.WORKFLOW,
@@ -220,13 +230,6 @@ class WorkflowCoordinator:
                     else "STAGE_DID_NOT_COMPLETE"
                 ),
                 detail=outcome.detail or "stage did not complete",
-            )
-            self._record(
-                service.stage,
-                event_state,
-                context=context,
-                detail=outcome.detail,
-                evidence_paths=outcome.artifact_paths,
             )
             return self._finalize(
                 context=context,

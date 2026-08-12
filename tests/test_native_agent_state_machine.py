@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import time
 
+import pytest
+
 from foampilot.activity import OperationCancelled
 from foampilot.agent import NativeAgent
 from foampilot.repair import RepairProposal
@@ -45,6 +47,12 @@ from foampilot.simulation import (
     FactEvidence,
     ResolvedValue,
     SimulationIntent,
+)
+from foampilot.acceptance import AcceptanceRequest, AcceptanceScope
+from foampilot.observations import (
+    ObservationRequest,
+    ObservationScope,
+    TimeSelection,
 )
 from foampilot.simulation.design import CaseDesignProposal, ExtensionDecision
 from foampilot.tasks import PublicAsset
@@ -132,6 +140,87 @@ class SequencePlanRunner:
                 allowed=True,
                 code="SANDBOX_SELECTED",
             ),
+        )
+
+
+class AcceptanceIntentModel(RecordingModel):
+    def generate_structured(
+        self,
+        request,
+        schema,
+        *,
+        budget,
+        trace,
+        output_normalizer=None,
+    ):
+        if schema is SimulationIntent:
+            observation = ObservationRequest(
+                observation_id="continuity",
+                kind="continuity",
+                quantity="continuity",
+                dimension="1",
+                scope=ObservationScope(kind="global"),
+                time_selection=TimeSelection(kind="latest"),
+                provenance=(
+                    FactEvidence(
+                        kind="user_quote",
+                        detail="continuity <= 1e-5",
+                    ),
+                ),
+            )
+            self.all_requests.append(request)
+            return __import__(
+                "foampilot.models", fromlist=["ModelResult"]
+            ).ModelResult(
+                value=SimulationIntent(
+                    facts=(
+                        ResolvedValue(
+                            field_path="solver.family",
+                            value="icoFoam",
+                            source="user_text",
+                            impact="low",
+                            evidence=(
+                                FactEvidence(
+                                    kind="user_quote",
+                                    detail="icoFoam",
+                                ),
+                            ),
+                            confirmed=True,
+                        ),
+                    ),
+                    observation_requests=(observation,),
+                    acceptance_requests=(
+                        AcceptanceRequest(
+                            condition_id="continuity-limit",
+                            observation=observation,
+                            operator="less_equal",
+                            limit=1.0e-5,
+                            unit="1",
+                            scope=AcceptanceScope(time="latest"),
+                            source="user_text",
+                            confirmed=True,
+                            provenance=(
+                                FactEvidence(
+                                    kind="user_quote",
+                                    detail="continuity <= 1e-5",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                logical_request_id="acceptance-intent",
+                backend_id=self.primary_backend_id,
+                model=self.primary_model,
+                transport_attempts=1,
+                backend_switches=0,
+                elapsed_seconds=0,
+            )
+        return super().generate_structured(
+            request,
+            schema,
+            budget=budget,
+            trace=trace,
+            output_normalizer=output_normalizer,
         )
 
 
@@ -452,6 +541,20 @@ def test_native_agent_reaches_public_validation_pass(
     assert (
         run_dir / "attempt-01/public-validation.json"
     ).is_file()
+    for name in (
+        "acceptance-plan.json",
+        "observation-plan.json",
+        "derived-metrics.json",
+        "result-report.json",
+    ):
+        assert (run_dir / name).is_file()
+    assert (run_dir / "attempt-01/derived-metrics.json").is_file()
+    result = json.loads(
+        (run_dir / "attempt-01/result-report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert result["verdict"] == "NOT_REQUESTED"
     trace = run_dir / "attempt-01/generation-trace.json"
     assert trace.is_file()
     assert "deterministic_renderer" not in trace.read_text(encoding="utf-8")
@@ -474,6 +577,23 @@ def test_native_agent_reaches_public_validation_pass(
     assert '"stage":"OPENFOAM_STEP_STARTED"' in workflow_events
     assert '"stage":"OPENFOAM_STEP_COMPLETE"' in workflow_events
     assert '"stage":"ROUTING_READY"' in workflow_events
+    stage_names = [
+        json.loads(line)["stage"]
+        for line in workflow_events.splitlines()
+    ]
+    assert stage_names.index("ACCEPTANCE_COMPILED") < stage_names.index(
+        "OBSERVATION_PLANNED"
+    )
+    assert stage_names.index("OBSERVATION_PLANNED") < stage_names.index(
+        "CASE_AUTHORED"
+    )
+    assert stage_names.index("EXTRACTING_EVIDENCE") < stage_names.index(
+        "POSTPROCESSED"
+    )
+    assert stage_names.index("POSTPROCESSED") < stage_names.index(
+        "ACCEPTANCE_EVALUATED"
+    )
+    assert '"observation_plan"' in model.requests[0].user_prompt
 
 
 def test_ready_design_is_frozen_before_case_author_call(
@@ -502,6 +622,52 @@ def test_ready_design_is_frozen_before_case_author_call(
         "author-openfoam-case",
     ]
     assert "frozen_case_design" in model.requests[0].user_prompt
+
+
+def test_non_empty_acceptance_contract_is_evaluated_from_run_facts(
+    tmp_path: Path,
+) -> None:
+    model = AcceptanceIntentModel([_plan()])
+    runner = SequencePlanRunner(
+        [
+            (
+                0,
+                "Time = 1\n"
+                "PCG: Solving for p, Initial residual = 0.2, "
+                "Final residual = 0.002, No Iterations 3\n"
+                "time step continuity errors : sum local = 1e-08, "
+                "global = -2e-09, cumulative = 3e-08\nEnd\n",
+                "",
+            )
+        ]
+    )
+
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=model,
+        runner=runner,
+    ).solve(_task())
+
+    result = json.loads(
+        (outcome.run_dir / "result-report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    metrics = json.loads(
+        (outcome.run_dir / "derived-metrics.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    assert result["verdict"] == "PASS"
+    assert result["conditions"][0]["status"] == "PASS"
+    assert result["conditions"][0]["observed_value"] == pytest.approx(3e-8)
+    assert metrics["series"][0]["observation_id"] == "continuity"
+    assert metrics["series"][0]["samples"][0]["value"] == pytest.approx(3e-8)
+    author_payload = json.loads(model.requests[0].user_prompt)
+    assert author_payload["observation_plan"]["items"][0][
+        "required_for_condition_ids"
+    ] == ["continuity-limit"]
 
 
 class ConfirmationDesignModel(RecordingModel):

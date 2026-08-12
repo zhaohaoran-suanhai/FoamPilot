@@ -15,12 +15,17 @@ class WorkflowStage(StrEnum):
     INGESTING_ASSETS = "INGESTING_ASSETS"
     INSPECTING_INPUT = "INSPECTING_INPUT"
     PLANNING_OBSERVATIONS = "PLANNING_OBSERVATIONS"
+    ACCEPTANCE_COMPILED = "ACCEPTANCE_COMPILED"
+    OBSERVATION_PLANNED = "OBSERVATION_PLANNED"
     AUTHORING_CASE = "AUTHORING_CASE"
+    CASE_AUTHORED = "CASE_AUTHORED"
     VERIFYING_CASE = "VERIFYING_CASE"
     EXECUTING = "EXECUTING"
     EXTRACTING_EVIDENCE = "EXTRACTING_EVIDENCE"
     POST_PROCESSING = "POST_PROCESSING"
+    POSTPROCESSED = "POSTPROCESSED"
     EVALUATING = "EVALUATING"
+    ACCEPTANCE_EVALUATED = "ACCEPTANCE_EVALUATED"
     TASK_VALIDATED = "TASK_VALIDATED"
     ENVIRONMENT_READY = "ENVIRONMENT_READY"
     GEOMETRY_READY = "GEOMETRY_READY"
@@ -116,6 +121,8 @@ class ResumeCompatibility(StrictModel):
     knowledge_hash: str
     skill_ids: list[str] = Field(default_factory=list)
     skill_hash: str
+    acceptance_plan_sha256: str
+    observation_plan_sha256: str
     openfoam_target: dict[str, str]
     executable_names: list[str]
     executable_paths: dict[str, str]
@@ -129,6 +136,8 @@ class ResumeCompatibility(StrictModel):
         "package_artifact_sha256",
         "knowledge_hash",
         "skill_hash",
+        "acceptance_plan_sha256",
+        "observation_plan_sha256",
     )
     @classmethod
     def validate_sha256(cls, value: str | None) -> str | None:

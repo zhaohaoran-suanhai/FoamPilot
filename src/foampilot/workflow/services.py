@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -57,6 +58,22 @@ class StageService(Protocol):
     def run(self, context: WorkflowContext) -> StageOutcome: ...
 
 
+class CallableStageService:
+    """Small production adapter from one domain callable to a stage service."""
+
+    def __init__(
+        self,
+        *,
+        stage: WorkflowStage,
+        callback: Callable[[WorkflowContext], StageOutcome],
+    ) -> None:
+        self.stage = stage
+        self._callback = callback
+
+    def run(self, context: WorkflowContext) -> StageOutcome:
+        return self._callback(context)
+
+
 class StageDescriptor(_StrictFrozenModel):
     stage: WorkflowStage
     input_artifacts: tuple[str, ...] = ()
@@ -90,12 +107,17 @@ CANONICAL_STAGE_DESCRIPTORS: tuple[StageDescriptor, ...] = (
         output_artifact="case-design.json",
     ),
     StageDescriptor(
-        stage=WorkflowStage.PLANNING_OBSERVATIONS,
+        stage=WorkflowStage.ACCEPTANCE_COMPILED,
         input_artifacts=("case-design.json",),
+        output_artifact="acceptance-plan.json",
+    ),
+    StageDescriptor(
+        stage=WorkflowStage.OBSERVATION_PLANNED,
+        input_artifacts=("case-design.json", "acceptance-plan.json"),
         output_artifact="observation-plan.json",
     ),
     StageDescriptor(
-        stage=WorkflowStage.AUTHORING_CASE,
+        stage=WorkflowStage.CASE_AUTHORED,
         input_artifacts=("case-design.json", "observation-plan.json"),
         output_artifact="case-bundle.json",
     ),
@@ -116,14 +138,14 @@ CANONICAL_STAGE_DESCRIPTORS: tuple[StageDescriptor, ...] = (
         output_artifact="run-facts.json",
     ),
     StageDescriptor(
-        stage=WorkflowStage.POST_PROCESSING,
+        stage=WorkflowStage.POSTPROCESSED,
         input_artifacts=("run-facts.json",),
-        output_artifact="physics-metrics.json",
+        output_artifact="derived-metrics.json",
     ),
     StageDescriptor(
-        stage=WorkflowStage.EVALUATING,
-        input_artifacts=("run-facts.json", "physics-metrics.json"),
-        output_artifact="acceptance-report.json",
+        stage=WorkflowStage.ACCEPTANCE_EVALUATED,
+        input_artifacts=("run-facts.json", "derived-metrics.json"),
+        output_artifact="result-report.json",
     ),
 )
 
@@ -136,6 +158,7 @@ __all__ = [
     "ArtifactSink",
     "CANONICAL_STAGE_DESCRIPTORS",
     "CANONICAL_STAGE_ORDER",
+    "CallableStageService",
     "StageDescriptor",
     "StageOutcome",
     "StageService",

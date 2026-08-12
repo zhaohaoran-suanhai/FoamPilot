@@ -289,6 +289,39 @@ def test_resume_rejects_changed_runtime_policy(tmp_path: Path) -> None:
         ).resume(parent.run_dir)
 
 
+def test_resume_rejects_changed_frozen_acceptance_plan(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "runs"
+    parent = _deferred_parent(root)
+    acceptance_path = parent.run_dir / "acceptance-plan.json"
+    payload = json.loads(acceptance_path.read_text(encoding="utf-8"))
+    payload["uncompiled"] = [
+        {
+            "condition_id": "changed-condition",
+            "code": "ACCEPTANCE_CONFIRMATION_REQUIRED",
+            "detail": "changed after the frozen workflow checkpoint",
+            "recovery": "rerun from the changed task",
+        }
+    ]
+    acceptance_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (parent.run_dir / "artifact-manifest.json").unlink()
+    ArtifactStore(root).finalize(parent.run_dir)
+
+    with pytest.raises(
+        ResumeCompatibilityError,
+        match="acceptance_plan_sha256 changed",
+    ):
+        _agent(
+            root=root,
+            replies=[_repair()],
+            runner=SequencePlanRunner([]),
+        ).resume(parent.run_dir)
+
+
 def test_resume_fingerprint_rejects_changed_poly_mesh_zone_member(
     tmp_path: Path,
 ) -> None:

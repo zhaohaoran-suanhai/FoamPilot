@@ -42,6 +42,8 @@ _STRICT_FIELDS = (
     "knowledge_hash",
     "skill_ids",
     "skill_hash",
+    "acceptance_plan_sha256",
+    "observation_plan_sha256",
     "openfoam_target",
 )
 _RESUMABLE_STAGES = {
@@ -238,6 +240,8 @@ def build_resume_fingerprint(
     skill_ids: list[str] | tuple[str, ...],
     skills_text: str,
     public_asset_root: str | Path | None = None,
+    acceptance_plan_sha256: str | None = None,
+    observation_plan_sha256: str | None = None,
 ) -> ResumeCompatibility:
     """Describe every input whose change would make resume a new experiment."""
 
@@ -263,6 +267,8 @@ def build_resume_fingerprint(
         knowledge_hash=_hash_text(knowledge_text),
         skill_ids=list(skill_ids),
         skill_hash=_hash_text(skills_text),
+        acceptance_plan_sha256=acceptance_plan_sha256 or "0" * 64,
+        observation_plan_sha256=observation_plan_sha256 or "0" * 64,
         openfoam_target=task.openfoam_target.model_dump(mode="json"),
         executable_names=sorted(environment.available_executable_names),
         executable_paths={
@@ -479,6 +485,16 @@ def prepare_continuation(
         )
     except ValueError as error:
         raise ResumeCompatibilityError("resume_compatibility") from error
+    for name, field in (
+        ("acceptance-plan.json", "acceptance_plan_sha256"),
+        ("observation-plan.json", "observation_plan_sha256"),
+    ):
+        contract_path = parent / name
+        if not contract_path.is_file():
+            raise ResumeCompatibilityError(field)
+        actual = _file_sha256(contract_path)
+        if actual != getattr(previous, field):
+            raise ResumeCompatibilityError(field)
     for field in _STRICT_FIELDS:
         if getattr(previous, field) != getattr(current, field):
             raise ResumeCompatibilityError(field)
@@ -659,6 +675,8 @@ def build_lineage_record(
                 "knowledge_hash": "knowledge",
                 "skill_ids": "skills",
                 "skill_hash": "skills",
+                "acceptance_plan_sha256": "acceptance",
+                "observation_plan_sha256": "observations",
                 "openfoam_target": "openfoam_target",
                 "executable_names": "runtime_executables",
                 "executable_paths": "runtime_executables",

@@ -17,7 +17,9 @@ from foampilot.extensions import CapabilityRegistry
 from foampilot.inspection import InspectionReport, verify_design_conformance
 from foampilot.plans import ExecutionPlan
 from foampilot.routing import CapabilityProfile
-from foampilot.simulation import CaseDesign
+from foampilot.simulation import CaseDesign, SimulationIntent
+from foampilot.acceptance import AcceptancePlan
+from foampilot.observations import ObservationPlan
 from foampilot.tasks import TaskSpec
 
 
@@ -58,6 +60,10 @@ class VerifiedPlanSource:
     task_sha256: str
     plan_sha256: str
     plan: ExecutionPlan
+    design: CaseDesign
+    intent: SimulationIntent
+    acceptance_plan: AcceptancePlan
+    observation_plan: ObservationPlan
     capability: CapabilityProfile
     public_validation_pass: bool
 
@@ -261,6 +267,9 @@ def load_verified_plan_source(
         conformance_path = attempt_root / "design-conformance.json"
         result_path = attempt_root / "run-result.json"
         facts_path = attempt_root / "run-facts.json"
+        intent_path = source / "simulation-intent.json"
+        acceptance_path = source / "acceptance-plan.json"
+        observation_path = source / "observation-plan.json"
         if not all(
             path.is_file()
             for path in (
@@ -270,6 +279,9 @@ def load_verified_plan_source(
                 conformance_path,
                 result_path,
                 facts_path,
+                intent_path,
+                acceptance_path,
+                observation_path,
             )
         ):
             continue
@@ -280,6 +292,9 @@ def load_verified_plan_source(
             conformance_path,
             result_path,
             facts_path,
+            intent_path,
+            acceptance_path,
+            observation_path,
         ):
             _covered_path(
                 evidence_path,
@@ -301,6 +316,15 @@ def load_verified_plan_source(
             )
             run_facts = RunFacts.model_validate_json(
                 facts_path.read_text(encoding="utf-8")
+            )
+            intent = SimulationIntent.model_validate_json(
+                intent_path.read_text(encoding="utf-8")
+            )
+            acceptance_plan = AcceptancePlan.model_validate_json(
+                acceptance_path.read_text(encoding="utf-8")
+            )
+            observation_plan = ObservationPlan.model_validate_json(
+                observation_path.read_text(encoding="utf-8")
             )
         except ValueError:
             continue
@@ -396,6 +420,10 @@ def load_verified_plan_source(
             task_sha256=expected_task_sha,
             plan_sha256=_canonical_sha256(plan.model_dump(mode="json")),
             plan=plan,
+            design=design,
+            intent=intent,
+            acceptance_plan=acceptance_plan,
+            observation_plan=observation_plan,
             capability=capability,
             public_validation_pass=(
                 summary.native_status == "PUBLIC_VALIDATION_PASS"
