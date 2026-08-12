@@ -103,6 +103,7 @@ COMMANDS = (
     "inspect",
     "report",
     "progress",
+    "results",
     "questions",
     "confirm",
     "preflight",
@@ -210,6 +211,10 @@ def _parser() -> argparse.ArgumentParser:
     progress = subparsers.add_parser("progress")
     progress.add_argument("run_dir", type=Path)
     progress.add_argument("--json", action="store_true")
+
+    results = subparsers.add_parser("results")
+    results.add_argument("run_dir", type=Path)
+    results.add_argument("--json", action="store_true")
 
     questions = subparsers.add_parser("questions")
     questions.add_argument("run_dir", type=Path)
@@ -1359,6 +1364,35 @@ def _progress(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _results(arguments: argparse.Namespace) -> int:
+    projection = build_workflow_projection(arguments.run_dir)
+    payload = {
+        "result_report": (
+            projection.result_report.model_dump(mode="json")
+            if projection.result_report is not None
+            else None
+        ),
+        "derived_metrics": (
+            projection.derived_metrics.model_dump(mode="json")
+            if projection.derived_metrics is not None
+            else None
+        ),
+        "warnings": list(projection.warnings),
+    }
+    report = projection.result_report
+    human = (
+        f"Result verdict: {report.verdict}; "
+        f"conditions={len(report.conditions)}; "
+        f"observations={len(report.observations)}"
+        if report is not None
+        else "Result report is not available; no verdict was recomputed."
+    )
+    _emit(payload, as_json=arguments.json, human=human)
+    if report is None:
+        return 3
+    return 0 if report.verdict in {"PASS", "NOT_REQUESTED"} else 4
+
+
 def _desktop_launcher(
     run_dir: Path | None,
     runtime_cli_args: tuple[str, ...],
@@ -1745,6 +1779,7 @@ def _run_main(argv: list[str] | None = None) -> int:
             "model": _model,
             "report": _report,
             "progress": _progress,
+            "results": _results,
             "questions": _questions,
             "confirm": _confirm,
             "knowledge": _knowledge,

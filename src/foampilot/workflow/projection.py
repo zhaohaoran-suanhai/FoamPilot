@@ -10,9 +10,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from foampilot.artifacts import ArtifactStore
 from foampilot.evidence import MetricPoint, MetricsProjection
+from foampilot.acceptance import ResultReport
+from foampilot.postprocessing import DerivedMetrics
 
 from .events import WorkflowEvent
 from .models import WorkflowEventState, WorkflowStage
+from .services import CANONICAL_STAGE_ORDER
 
 
 class _FrozenModel(BaseModel):
@@ -57,11 +60,51 @@ class WorkflowProjection(_FrozenModel):
     recent_residuals: tuple[ResidualProjection, ...]
     pending_questions: tuple[PendingQuestion, ...]
     failure_summary: FailureSummary | None
+    derived_metrics: DerivedMetrics | None = None
+    result_report: ResultReport | None = None
     artifact_links: tuple[str, ...]
     warnings: tuple[str, ...]
 
 
-_TOTAL_STAGES = 12
+_TOTAL_STAGES = len(CANONICAL_STAGE_ORDER)
+
+
+def _result_artifacts(
+    run_dir: Path,
+    files: set[str],
+) -> tuple[DerivedMetrics | None, ResultReport | None, list[str]]:
+    warnings: list[str] = []
+    metrics: DerivedMetrics | None = None
+    report: ResultReport | None = None
+    if "derived-metrics.json" in files:
+        try:
+            metrics = DerivedMetrics.model_validate_json(
+                (run_dir / "derived-metrics.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+        except (OSError, ValueError):
+            warnings.append("DERIVED_METRICS_INVALID")
+    if "result-report.json" in files:
+        try:
+            report = ResultReport.model_validate_json(
+                (run_dir / "result-report.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+        except (OSError, ValueError):
+            warnings.append("RESULT_REPORT_INVALID")
+    if metrics is not None and report is not None:
+        if (
+            metrics.canonical_sha256() != report.derived_metrics_sha256
+            or metrics.run_facts_sha256 != report.run_facts_sha256
+            or metrics.observation_plan_sha256
+            != report.observation_plan_sha256
+        ):
+            warnings.append("RESULT_EVIDENCE_HASH_MISMATCH")
+            metrics = None
+            report = None
+    return metrics, report, warnings
 
 
 def _manifested_files(run_dir: Path) -> tuple[set[str], list[str]]:
@@ -267,6 +310,11 @@ def build_workflow_projection(
         ),
         default=None,
     )
+    derived_metrics, result_report, result_warnings = _result_artifacts(
+        root,
+        files,
+    )
+    warnings.extend(result_warnings)
     links = tuple(
         sorted(
             path
@@ -275,6 +323,7 @@ def build_workflow_projection(
             or path.endswith("/run-facts.json")
             or path.endswith("/public-validation.json")
             or path.endswith("/mesh-quality-report.json")
+            or path in {"derived-metrics.json", "result-report.json"}
         )
     )
     return WorkflowProjection(
@@ -285,6 +334,8 @@ def build_workflow_projection(
         recent_residuals=_residuals(metrics),
         pending_questions=_questions(root, files),
         failure_summary=_failure(root, files),
+        derived_metrics=derived_metrics,
+        result_report=result_report,
         artifact_links=links,
         warnings=tuple(dict.fromkeys(warnings)),
     )

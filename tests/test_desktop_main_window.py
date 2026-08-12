@@ -37,6 +37,7 @@ from foampilot.jobs import (
     process_identity,
 )
 from foampilot.workflow import WorkflowEvent, WorkflowStage
+from tests.test_cli_results import _write_results
 
 
 NOW = datetime(2026, 8, 6, tzinfo=timezone.utc)
@@ -307,6 +308,30 @@ def test_open_verified_run_renders_read_only_snapshot(
     window.file_tree.setCurrentItem(item)
     qtbot.waitUntil(lambda: "Time = 0.03" in window.file_viewer.toPlainText())
     assert "Time = 0.03" in window.log_viewer.toPlainText()
+
+
+def test_results_page_renders_shared_verdict_observation_and_condition(
+    qtbot,
+    tmp_path: Path,
+) -> None:
+    run_dir = _run(tmp_path, finalized=False)
+    _write_results(run_dir)
+    ArtifactStore(run_dir.parent).finalize(run_dir)
+    window = FoamPilotMainWindow()
+    qtbot.addWidget(window)
+
+    _open_run(qtbot, window, run_dir)
+
+    assert window.workspace_tabs.indexOf(window.results_page) >= 0
+    assert window.result_verdict_label.text() == "验收结论：PASS"
+    assert window.observation_tree.topLevelItemCount() == 1
+    observation = window.observation_tree.topLevelItem(0)
+    assert observation.text(0) == "continuity"
+    assert observation.text(3) == "AVAILABLE"
+    assert window.condition_tree.topLevelItemCount() == 1
+    condition = window.condition_tree.topLevelItem(0)
+    assert condition.text(0) == "continuity-limit"
+    assert condition.text(2) == "PASS"
 
 
 def test_pending_design_renders_fields_reasons_and_candidates_without_override(

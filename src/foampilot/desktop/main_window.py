@@ -319,10 +319,12 @@ class FoamPilotMainWindow(QMainWindow):
         self.task_page = self._build_task_page()
         self.context_page = self._build_context_page()
         self.residual_page = self._build_residual_page()
+        self.results_page = self._build_results_page()
         self.artifact_page = self._build_artifact_page()
         self.workspace_tabs.addTab(self.task_page, "任务")
         self.workspace_tabs.addTab(self.context_page, "知识上下文")
         self.workspace_tabs.addTab(self.residual_page, "残差监控")
+        self.workspace_tabs.addTab(self.results_page, "结果/验收")
         self.workspace_tabs.addTab(self.artifact_page, "产物")
         self.setCentralWidget(self.workspace_tabs)
 
@@ -467,6 +469,34 @@ class FoamPilotMainWindow(QMainWindow):
         self.central_tabs.addTab(self.file_viewer, "文件")
         self.central_tabs.addTab(self.report_viewer, "验证/报告")
         layout.addWidget(self.central_tabs)
+        return page
+
+    def _build_results_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        self.result_verdict_label = QLabel("验收结论：not available")
+        self.result_verdict_label.setObjectName("result_verdict_label")
+        self.result_verdict_label.setWordWrap(True)
+        layout.addWidget(self.result_verdict_label)
+        layout.addWidget(QLabel("观测与派生指标"))
+        self.observation_tree = QTreeWidget()
+        self.observation_tree.setObjectName("observation_tree")
+        self.observation_tree.setHeaderLabels(
+            ["Observation", "Latest", "Unit", "Status", "Scope", "Evidence"]
+        )
+        self.observation_tree.setAlternatingRowColors(True)
+        layout.addWidget(self.observation_tree, 1)
+        layout.addWidget(QLabel("显式验收条件"))
+        self.condition_tree = QTreeWidget()
+        self.condition_tree.setObjectName("condition_tree")
+        self.condition_tree.setHeaderLabels(
+            ["Condition", "Observation", "Status", "Value", "Unit", "Detail", "Evidence"]
+        )
+        self.condition_tree.setAlternatingRowColors(True)
+        layout.addWidget(self.condition_tree, 1)
+        self.missing_evidence_label = QLabel("缺失证据：not available")
+        self.missing_evidence_label.setWordWrap(True)
+        layout.addWidget(self.missing_evidence_label)
         return page
 
     def _build_file_dock(self) -> None:
@@ -1373,6 +1403,10 @@ class FoamPilotMainWindow(QMainWindow):
         self.skill_tree.clear()
         self.residual_plot.set_samples(())
         self.residual_table.clear()
+        self.result_verdict_label.setText("验收结论：not available")
+        self.observation_tree.clear()
+        self.condition_tree.clear()
+        self.missing_evidence_label.setText("缺失证据：not available")
         self._update_action_states()
 
     def _render_snapshot(self, snapshot: RunSnapshot) -> None:
@@ -1473,6 +1507,7 @@ class FoamPilotMainWindow(QMainWindow):
         self._render_timeline(snapshot)
         self._render_context(snapshot)
         self._render_residuals(snapshot)
+        self._render_results(snapshot)
         self._render_initial_report(snapshot)
         self._update_action_states()
 
@@ -1590,6 +1625,73 @@ class FoamPilotMainWindow(QMainWindow):
         for column in range(self.residual_table.columnCount()):
             self.residual_table.resizeColumnToContents(column)
 
+    def _render_results(self, snapshot: RunSnapshot) -> None:
+        self.observation_tree.clear()
+        self.condition_tree.clear()
+        report = snapshot.projection.result_report
+        metrics = snapshot.projection.derived_metrics
+        if report is None:
+            self.result_verdict_label.setText(
+                "验收结论：not available（未重新计算）"
+            )
+            self.missing_evidence_label.setText("缺失证据：not available")
+            return
+        self.result_verdict_label.setText(f"验收结论：{report.verdict}")
+        by_id = {
+            item.observation_id: item
+            for item in (metrics.series if metrics is not None else ())
+        }
+        for observation in report.observations:
+            series = by_id.get(observation.observation_id)
+            scope = (
+                json.dumps(
+                    series.scope.model_dump(mode="json"),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                if series is not None
+                else "not available"
+            )
+            value = observation.latest_value
+            rendered = (
+                json.dumps(value, ensure_ascii=False)
+                if isinstance(value, tuple)
+                else _text(value)
+            )
+            self.observation_tree.addTopLevelItem(
+                QTreeWidgetItem(
+                    [
+                        observation.observation_id,
+                        rendered,
+                        _text(observation.unit),
+                        observation.status,
+                        scope,
+                        ", ".join(observation.evidence_refs),
+                    ]
+                )
+            )
+        for condition in report.conditions:
+            self.condition_tree.addTopLevelItem(
+                QTreeWidgetItem(
+                    [
+                        condition.condition_id,
+                        condition.observation_id,
+                        condition.status,
+                        _text(condition.observed_value),
+                        _text(condition.unit),
+                        condition.detail,
+                        ", ".join(condition.evidence_refs),
+                    ]
+                )
+            )
+        self.missing_evidence_label.setText(
+            "缺失证据："
+            + (", ".join(report.missing_evidence) or "无")
+        )
+        for tree in (self.observation_tree, self.condition_tree):
+            for column in range(tree.columnCount()):
+                tree.resizeColumnToContents(column)
+
     def _render_initial_report(self, snapshot: RunSnapshot) -> None:
         self.report_viewer.clear()
         if snapshot.design_questions is not None:
@@ -1598,6 +1700,7 @@ class FoamPilotMainWindow(QMainWindow):
             )
             return
         priorities = (
+            "result-report.json",
             "risk-decision.json",
             "public-validation.json",
             "qualification-report.json",
