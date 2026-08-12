@@ -234,7 +234,7 @@ def reconcile_job(
             return RecoveryDecision(
                 job_id=spec.job_id,
                 state=RecoveryState.FINALIZED,
-                code="JOB_CANCELLED_BEFORE_RUN",
+                code="USER_CANCELLED",
                 reason_zh="任务在产生 run 前已按用户请求正常取消。",
                 recovery_zh="可检查 worker 日志，或从原始规范输入重新提交。",
                 allowed_actions=(RecoveryAction.INSPECT,),

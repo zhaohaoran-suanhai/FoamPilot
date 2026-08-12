@@ -264,7 +264,7 @@ def test_reconcile_pre_run_user_cancel_is_not_evidence_damage(
     decision = reconcile_job(store.root, now=lambda: NOW)
 
     assert decision.state == RecoveryState.FINALIZED
-    assert decision.code == "JOB_CANCELLED_BEFORE_RUN"
+    assert decision.code == "USER_CANCELLED"
     assert decision.allowed_actions == (RecoveryAction.INSPECT,)
     assert decision.manifest_issues == ()
 

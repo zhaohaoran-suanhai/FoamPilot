@@ -80,6 +80,20 @@ def _critical_status_update(
     ) from last_error
 
 
+def _emergency_terminalize(
+    store: LocalJobStore,
+    error: BaseException,
+) -> bool:
+    """Attempt one non-recursive FAILED transition after control failure."""
+
+    _record_control_failure(store, error)
+    try:
+        store.emergency_fail_status(occurred_at=_utc_now())
+    except (OSError, ValueError):
+        return False
+    return True
+
+
 def _default_cli_runner(arguments, *, activity_reporter) -> int:
     from foampilot.cli.main import main
 
@@ -314,7 +328,9 @@ def run_local_job(
         except JobStatusWriteError as error:
             with stderr_path.open("a", encoding="utf-8") as stderr_stream:
                 print(str(error), file=stderr_stream)
-            raise
+            if not _emergency_terminalize(store, error):
+                raise
+            return 5
         return exit_code
 
 

@@ -107,6 +107,7 @@ from foampilot.authoring import (
 from foampilot.repair import NumericalRepairEnvelope, NumericalRepairRule
 from foampilot.repair import (
     RepairChangeSet,
+    RepairDecision,
     RepairPolicy,
     apply_authorized_repair,
     authorize_repair,
@@ -1063,6 +1064,87 @@ class NativeAgent:
             state=final_event_state,
             detail=message,
         )
+        if (
+            active_workflow_state
+            in {WorkflowState.FAILED, WorkflowState.DEFERRED}
+            and not (run_dir / "failure-report.json").exists()
+        ):
+            classifications = sorted(
+                run_dir.glob("failure-classification-attempt-*.json")
+            )
+            run_fact_paths = sorted(
+                run_dir.glob("attempt-*/run-facts.json")
+            )
+            if classifications and run_fact_paths:
+                from foampilot.agent.failure import (
+                    NativeFailureClassification,
+                )
+                from foampilot.reporting import build_failure_report
+
+                classification = NativeFailureClassification.model_validate_json(
+                    classifications[-1].read_text(encoding="utf-8")
+                )
+                run_facts = RunFacts.model_validate_json(
+                    run_fact_paths[-1].read_text(encoding="utf-8")
+                )
+                terminal_code = (
+                    terminal_blocker.code
+                    if terminal_blocker is not None
+                    else "TERMINAL_FAILURE"
+                )
+                reason_codes = (terminal_code,)
+                if (
+                    classification.code == "numerical_instability"
+                    and not task.repair_policy.automatic_numerical_repair
+                ):
+                    reason_codes = (
+                        "AUTOMATIC_NUMERICAL_REPAIR_DISABLED",
+                    )
+                decision = RepairDecision(
+                    state="FINALIZE_FAILED",
+                    reason_codes=reason_codes,
+                )
+                completed_progress = tuple(
+                    dict.fromkeys(
+                        event.stage.value
+                        for event in (
+                            WorkflowEvent.model_validate_json(line)
+                            for line in workflow.events_path.read_text(
+                                encoding="utf-8"
+                            ).splitlines()
+                            if line.strip()
+                        )
+                        if event.state == WorkflowEventState.COMPLETED
+                    )
+                )
+                preserved = tuple(
+                    sorted(
+                        path.relative_to(run_dir).as_posix()
+                        for path in run_dir.rglob("*")
+                        if path.is_file()
+                        and not path.is_symlink()
+                        and (
+                            path.name
+                            in {
+                                "run-facts.json",
+                                "public-validation.json",
+                                "static-inspection.json",
+                            }
+                            or path.name.startswith(
+                                "failure-classification-attempt-"
+                            )
+                            or ".foampilot/logs" in path.as_posix()
+                        )
+                    )
+                )
+                failure_report = build_failure_report(
+                    run_facts,
+                    classification,
+                    decision,
+                    progress=completed_progress,
+                    artifacts=preserved,
+                )
+                _write_json(run_dir / "failure-report.json", failure_report)
         if self.activity_reporter is not None:
             self.activity_reporter.emit(
                 kind="stage",

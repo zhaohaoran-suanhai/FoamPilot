@@ -168,7 +168,7 @@ def test_worker_pre_run_cancel_reconciles_as_legitimate_terminal(
     assert cli_called is False
     assert store.read_status().state == JobState.CANCELLED
     assert decision.state == RecoveryState.FINALIZED
-    assert decision.code == "JOB_CANCELLED_BEFORE_RUN"
+    assert decision.code == "USER_CANCELLED"
 
 
 def test_worker_persists_bootstrap_failure_when_input_changed(
@@ -338,14 +338,15 @@ def test_worker_terminal_status_failure_is_explicit_and_durable(
 
     monkeypatch.setattr(LocalJobStore, "update_status", fail_completed)
 
-    with pytest.raises(JobStatusWriteError, match="JOB_STATUS_WRITE_FAILED"):
-        run_local_job(
-            store.root,
-            cli_runner=lambda argv, *, activity_reporter: 0,
-        )
+    exit_code = run_local_job(
+        store.root,
+        cli_runner=lambda argv, *, activity_reporter: 0,
+    )
 
+    assert exit_code == 5
     assert attempts == 3
-    assert store.read_status().state == JobState.RUNNING
+    assert store.read_status().state == JobState.FAILED
+    assert store.read_status().terminal_code == "JOB_STATUS_WRITE_FAILED"
     failure = json.loads(
         (store.root / "worker-control-failure.json").read_text()
     )

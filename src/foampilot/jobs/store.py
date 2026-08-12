@@ -205,6 +205,31 @@ class LocalJobStore:
             _atomic_json(self.status_path, revised)
             return revised
 
+    def emergency_fail_status(self, *, occurred_at: datetime) -> JobStatus:
+        """Persist a terminal control-plane failure via the atomic primitive.
+
+        This intentionally bypasses ``update_status`` so a failing or
+        instrumented normal transition cannot strand the job in RUNNING.
+        The writer lock owner is the only caller.
+        """
+
+        with self._thread_lock:
+            current = self.read_status()
+            failed = JobStatus.model_validate(
+                current.model_copy(
+                    update={
+                        "revision": current.revision + 1,
+                        "state": JobState.FAILED,
+                        "current_child": None,
+                        "finished_at": occurred_at,
+                        "last_heartbeat_at": occurred_at,
+                        "terminal_code": "JOB_STATUS_WRITE_FAILED",
+                    }
+                ).model_dump(mode="python")
+            )
+            _atomic_json(self.status_path, failed)
+            return failed
+
     @property
     def cancel_requested(self) -> bool:
         return self.cancel_path.is_file() and not self.cancel_path.is_symlink()
