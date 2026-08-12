@@ -13,6 +13,20 @@ from .models import (
     WorkflowState,
 )
 from .store import WorkflowStore
+from .coordinator import (
+    WorkflowCoordinator,
+    WorkflowCoordinatorOutcome,
+    WorkflowCoordinatorSummary,
+)
+from .services import (
+    ArtifactSink,
+    CANONICAL_STAGE_DESCRIPTORS,
+    CANONICAL_STAGE_ORDER,
+    StageDescriptor,
+    StageOutcome,
+    StageService,
+    WorkflowContext,
+)
 
 
 def __getattr__(name: str):
@@ -54,6 +68,16 @@ __all__ = [
     "WorkflowStage",
     "WorkflowState",
     "WorkflowStore",
+    "ArtifactSink",
+    "CANONICAL_STAGE_DESCRIPTORS",
+    "CANONICAL_STAGE_ORDER",
+    "StageDescriptor",
+    "StageOutcome",
+    "StageService",
+    "WorkflowContext",
+    "WorkflowCoordinator",
+    "WorkflowCoordinatorOutcome",
+    "WorkflowCoordinatorSummary",
     "ConfirmationAnswer",
     "ConfirmationAnswers",
     "ConfirmationContinuation",
