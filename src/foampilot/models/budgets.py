@@ -13,6 +13,7 @@ class ModelStage(StrEnum):
     TASK_EXTRACTION = "task_extraction"
     INTENT_INTERPRETATION = "intent_interpretation"
     CASE_DESIGN = "case_design"
+    CASE_AUTHORING = "case_authoring"
     GENERATION = "generation"
     REPAIR = "repair"
     ROUTING = "routing"
