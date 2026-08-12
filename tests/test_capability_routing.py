@@ -85,6 +85,17 @@ def _geometry_task(prompt: str, *, mode: str, strategy: str) -> TaskSpec:
                 "purpose": "public routing geometry",
             }
         ]
+        if strategy == "provided":
+            payload["public_assets"].append(
+                {
+                    "path": "mesh/native",
+                    "sha256": "c" * 64,
+                    "purpose": "provided native mesh",
+                    "kind": "directory",
+                    "install_path": "constant/polyMesh",
+                    "bundle_manifest_sha256": "c" * 64,
+                }
+            )
     return TaskSpec.model_validate(payload)
 
 

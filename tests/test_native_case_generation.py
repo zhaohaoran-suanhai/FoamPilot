@@ -30,7 +30,14 @@ from foampilot.plans import (
     GeneratedFile,
     NativeCommand,
 )
-from foampilot.preprocessing import BoundingBox, GeometryFacts
+from foampilot.preprocessing import (
+    BoundingBox,
+    ExecutedMeshFacts,
+    GeometryFacts,
+    InputMeshFacts,
+    MeshCheckFact,
+    MeshQualityReport,
+)
 from foampilot.routing import CapabilityProfile
 from foampilot.tasks import TaskSpec
 
@@ -434,6 +441,77 @@ def test_bundle_prompt_contains_bounded_public_geometry_facts() -> None:
     assert '"face_count": 20' in prompt
     assert '"maximum"' in prompt
     assert "/tmp/" not in prompt
+
+
+def test_bundle_prompt_contains_compact_authoritative_mesh_facts() -> None:
+    model = RecordingModel([_plan()])
+    input_facts = InputMeshFacts(
+        bundle_manifest_sha256="a" * 64,
+        inspector_id="foampilot.mesh.poly-mesh",
+        inspector_version="1.0.0",
+        region=None,
+        declared_length_unit="m",
+        source_member_sha256={"points": "b" * 64},
+        points=12,
+        faces=11,
+        internal_faces=1,
+        cells=2,
+        bounding_box_m=BoundingBox(
+            minimum=(0, 0, 0),
+            maximum=(2, 1, 1),
+        ),
+        patches=(),
+        cell_zones=(),
+        face_zones=(),
+        point_zones=(),
+        dimensionality_observations=("empty patch frontAndBack",),
+        topology_observations=("owner count equals face count",),
+        warnings=(),
+    )
+    metrics = MeshQualityReport(
+        strategy="provided",
+        commands_completed=("inspect-provided-mesh",),
+        mesh_created=True,
+        check_mesh_passed=True,
+        cells=2,
+        faces=11,
+        points=12,
+        regions=1,
+        patches=(),
+        failed_requirements=(),
+        warnings=(),
+        evidence_files=(".foampilot/logs/check.log",),
+    )
+    executed = ExecutedMeshFacts(
+        mesh_check=MeshCheckFact(
+            executed=True,
+            executable_identity="checkMesh:trusted",
+            return_code=0,
+            timed_out=False,
+            mesh_ok=True,
+            evidence_paths=(".foampilot/logs/check.log",),
+        ),
+        metrics=metrics,
+    )
+
+    author_case_bundle(
+        _task(),
+        _environment("checkMesh", "icoFoam"),
+        _capability(),
+        model,
+        "public knowledge",
+        "portable skill",
+        input_mesh_facts=(input_facts,),
+        executed_mesh_facts=(executed,),
+        budget=_model_window(ModelStage.GENERATION),
+        trace=InMemoryModelTraceSink(),
+    )
+
+    prompt = model.requests[0].user_prompt
+    assert "AUTHORITATIVE INPUT MESH FACTS" in prompt
+    assert "PRE-AUTHORING EXECUTED MESH FACTS" in prompt
+    assert '"cells": 2' in prompt
+    assert "points\n(" not in prompt
 
 
 def test_bundle_prompt_keeps_diagnostics_outside_the_required_solve() -> None:

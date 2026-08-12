@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol, TYPE_CHECKING
+from typing import Protocol, TYPE_CHECKING, runtime_checkable
 
 from foampilot.extensions import CapabilityDescriptor
 
@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from foampilot.tasks import PublicAsset
 
 
+@runtime_checkable
 class AssetAdapter(Protocol):
     descriptor: CapabilityDescriptor
 

@@ -226,6 +226,40 @@ def test_plan_rejects_duplicate_paths_steps_and_public_asset_overlap(
     }
 
 
+def test_provided_mesh_bundle_members_are_immutable_to_the_model(
+    task: TaskSpec,
+) -> None:
+    payload = task.model_dump(mode="json")
+    payload["public_assets"] = [
+        {
+            "path": "mesh/native",
+            "sha256": "a" * 64,
+            "purpose": "provided native mesh",
+            "kind": "directory",
+            "install_path": "constant/polyMesh",
+            "bundle_manifest_sha256": "a" * 64,
+        }
+    ]
+    payload["mesh"] = {"strategy": "provided"}
+    task = TaskSpec.model_validate(payload)
+    plan = valid_plan().model_copy(deep=True)
+    plan.files.append(
+        GeneratedFile(
+            path="constant/polyMesh/points",
+            content="replacement",
+        )
+    )
+
+    issues = validate_execution_plan(
+        plan,
+        task,
+        {"blockMesh", "potentialFoam", "icoFoam"},
+    )
+
+    assert "PUBLIC_ASSET_OVERWRITE" in {item.code for item in issues}
+    assert "PROVIDED_MESH_REGENERATION" in {item.code for item in issues}
+
+
 def test_plan_rejects_unknown_executable_rank_host_and_timeout(
     task: TaskSpec,
 ) -> None:

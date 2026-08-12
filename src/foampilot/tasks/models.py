@@ -198,6 +198,35 @@ class TaskSpec(StrictModel):
                     "geometry asset must reference a declared public asset: "
                     + ", ".join(undeclared)
                 )
+            if self.geometry.mode == "openfoam_mesh":
+                referenced = {
+                    item.path for item in self.geometry.assets
+                    if item.format == "openfoam_mesh"
+                }
+                bundles = [
+                    item
+                    for item in self.public_assets
+                    if item.path in referenced
+                    and item.kind == "directory"
+                    and item.install_path is not None
+                    and PurePosixPath(item.install_path).name == "polyMesh"
+                ]
+                if len(bundles) != len(referenced):
+                    raise ValueError(
+                        "openfoam_mesh geometry requires each referenced "
+                        "asset to be an atomic polyMesh directory asset"
+                    )
+        if self.mesh is not None and self.mesh.strategy == "provided":
+            if not any(
+                item.kind == "directory"
+                and item.install_path is not None
+                and PurePosixPath(item.install_path).name == "polyMesh"
+                for item in self.public_assets
+            ):
+                raise ValueError(
+                    "provided mesh strategy requires an atomic polyMesh "
+                    "directory asset"
+                )
         check_names = [check.name for check in self.public_checks]
         if len(check_names) != len(set(check_names)):
             raise ValueError("duplicate public check names are not allowed")

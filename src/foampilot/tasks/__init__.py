@@ -1,6 +1,11 @@
 """Public task contracts."""
 
-from .io import load_task_spec, stage_public_assets
+from .io import (
+    inspect_public_assets,
+    load_task_spec,
+    snapshot_public_assets,
+    stage_public_assets,
+)
 from .geometry import (
     BoundaryLayerIntent,
     CellCountIntent,
@@ -38,5 +43,7 @@ __all__ = [
     "RegionRole",
     "TaskSpec",
     "load_task_spec",
+    "inspect_public_assets",
+    "snapshot_public_assets",
     "stage_public_assets",
 ]

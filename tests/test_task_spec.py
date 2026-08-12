@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 from pathlib import Path
+import shutil
 
 import pytest
 from pydantic import ValidationError
@@ -11,6 +12,10 @@ from foampilot.tasks import (
     load_task_spec,
     stage_public_assets,
 )
+from foampilot.cli.main import _declared_task_assets
+
+
+POLY_MESH_FIXTURE = Path(__file__).parent / "fixtures/poly_mesh/minimal"
 
 
 def _payload(**overrides: object) -> dict[str, object]:
@@ -150,8 +155,10 @@ def test_public_asset_is_hash_verified_before_staging(
 
     staged = stage_public_assets(task, source, destination)
 
-    assert staged == [destination / "inputs/geometry.stl"]
-    assert staged[0].read_bytes() == b"solid geometry\nendsolid\n"
+    assert [item.destination for item in staged] == [
+        destination / "inputs/geometry.stl"
+    ]
+    assert staged[0].destination.read_bytes() == b"solid geometry\nendsolid\n"
 
     asset.write_bytes(b"changed")
     with pytest.raises(ValueError, match="SHA256"):
@@ -242,6 +249,62 @@ def test_directory_asset_digest_and_install_path_are_strict() -> None:
                         "install_path": "../constant/polyMesh",
                     }
                 ]
+            )
+        )
+
+
+def test_directory_asset_is_staged_atomically_at_its_install_path(
+    tmp_path: Path,
+) -> None:
+    public_root = tmp_path / "public"
+    source = public_root / "mesh/native"
+    shutil.copytree(POLY_MESH_FIXTURE, source)
+    request = public_root / "request.txt"
+    request.write_text("provided mesh", encoding="utf-8")
+    declaration = _declared_task_assets(
+        request,
+        [],
+        public_root,
+        directory_paths=[Path("mesh/native")],
+        install_paths=[Path("constant/polyMesh")],
+    )[0]
+    task = TaskSpec.model_validate(
+        _payload(public_assets=[declaration.model_dump(mode="json")])
+    )
+
+    staged = stage_public_assets(task, public_root, tmp_path / "case")
+
+    assert len(staged) == 1
+    assert staged[0].bundle.manifest_sha256 == declaration.sha256
+    assert staged[0].destination == tmp_path / "case/constant/polyMesh"
+    assert (staged[0].destination / "cellZones").is_file()
+
+
+def test_openfoam_mesh_input_requires_an_atomic_directory_asset() -> None:
+    file_asset = {
+        "path": "mesh/constant/polyMesh/points",
+        "sha256": "a" * 64,
+        "purpose": "incomplete mesh file",
+    }
+
+    with pytest.raises(ValidationError, match="directory asset"):
+        TaskSpec.model_validate(
+            _payload(
+                public_assets=[file_asset],
+                geometry={
+                    "mode": "openfoam_mesh",
+                    "dimensionality": "three_d",
+                    "description": "native mesh",
+                    "length_unit": "m",
+                    "assets": [
+                        {
+                            "path": file_asset["path"],
+                            "format": "openfoam_mesh",
+                            "role": "poly_mesh_bundle",
+                        }
+                    ],
+                },
+                mesh={"strategy": "provided"},
             )
         )
 
@@ -337,7 +400,14 @@ def test_v2_accepts_parametric_surface_gmsh_and_provided_mesh_inputs() -> None:
         _payload(
             schema_version=2,
             public_assets=[
-                {**asset, "path": "mesh/constant/polyMesh/points"}
+                {
+                    "path": "mesh/native",
+                    "sha256": "a" * 64,
+                    "purpose": "native mesh bundle",
+                    "kind": "directory",
+                    "install_path": "constant/polyMesh",
+                    "bundle_manifest_sha256": "a" * 64,
+                }
             ],
             geometry={
                 **common_geometry,
@@ -345,9 +415,9 @@ def test_v2_accepts_parametric_surface_gmsh_and_provided_mesh_inputs() -> None:
                 "length_unit": "m",
                 "assets": [
                     {
-                        "path": "mesh/constant/polyMesh/points",
+                        "path": "mesh/native",
                         "format": "openfoam_mesh",
-                        "role": "poly_mesh_file",
+                        "role": "poly_mesh_bundle",
                     }
                 ],
                 "parameters": {},

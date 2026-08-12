@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from hashlib import sha256
 import json
 from pathlib import Path
 import time
@@ -37,6 +38,13 @@ from tests.test_native_case_generation import (
     _plan,
     _task,
 )
+from foampilot.assets import BundleMember, compute_bundle_manifest_sha256
+from foampilot.manifests import CasePatch
+from foampilot.preprocessing import ExecutedMeshFacts, MeshCheckFact, MeshQualityReport
+from foampilot.tasks import PublicAsset
+
+
+POLY_MESH_FIXTURE = Path(__file__).parent / "fixtures/poly_mesh/minimal"
 
 
 def _control_dict(*, delta_t: float = 0.01) -> str:
@@ -218,6 +226,150 @@ class MeshQualityRunner:
                 code="SANDBOX_SELECTED",
             ),
         )
+
+
+class ProvidedMeshRunner(SequencePlanRunner):
+    def __init__(self) -> None:
+        super().__init__([(0, "Time = 1\nEnd\n", "")])
+        self.probe_calls = 0
+
+    def probe_provided_mesh(self, **kwargs) -> ExecutedMeshFacts:
+        self.probe_calls += 1
+        case = Path(kwargs["case_root"])
+        assert (case / "constant/polyMesh/cellZones").is_file()
+        metrics = MeshQualityReport(
+            strategy="provided",
+            commands_completed=("inspect-provided-mesh",),
+            mesh_created=True,
+            check_mesh_passed=True,
+            cells=2,
+            faces=11,
+            points=12,
+            regions=1,
+            patches=("inlet", "outlet", "top", "bottom", "frontAndBack"),
+            failed_requirements=(),
+            warnings=(),
+            evidence_files=(".foampilot/logs/check.log",),
+        )
+        return ExecutedMeshFacts(
+            mesh_check=MeshCheckFact(
+                executed=True,
+                executable_identity="synthetic-checkMesh",
+                return_code=0,
+                timed_out=False,
+                mesh_ok=True,
+                evidence_paths=(".foampilot/logs/check.log",),
+            ),
+            metrics=metrics,
+        )
+
+
+def _provided_asset(root: Path) -> PublicAsset:
+    members = tuple(
+        BundleMember(
+            relative_path=path.relative_to(POLY_MESH_FIXTURE).as_posix(),
+            logical_name=path.relative_to(POLY_MESH_FIXTURE).as_posix(),
+            sha256=sha256(path.read_bytes()).hexdigest(),
+            bytes=path.stat().st_size,
+        )
+        for path in sorted(POLY_MESH_FIXTURE.rglob("*"))
+        if path.is_file()
+    )
+    values = {
+        "adapter_id": "foampilot.asset.openfoam-poly-mesh",
+        "kind": "openfoam_poly_mesh",
+        "source_path": "mesh/native",
+        "install_path": "constant/polyMesh",
+        "region": None,
+        "members": members,
+    }
+    manifest = compute_bundle_manifest_sha256(**values)
+    return PublicAsset(
+        path="mesh/native",
+        sha256=manifest,
+        purpose="provided native mesh",
+        kind="directory",
+        install_path="constant/polyMesh",
+        bundle_manifest_sha256=manifest,
+    )
+
+
+def _provided_task(root: Path):
+    payload = _task().model_dump(mode="json")
+    payload["public_assets"] = [_provided_asset(root).model_dump(mode="json")]
+    payload["geometry"] = {
+        "mode": "openfoam_mesh",
+        "dimensionality": "three_d",
+        "description": "synthetic native mesh",
+        "length_unit": "m",
+        "assets": [
+            {
+                "path": "mesh/native",
+                "format": "openfoam_mesh",
+                "role": "poly_mesh_bundle",
+            }
+        ],
+        "patch_roles": [],
+        "region_roles": [],
+    }
+    payload["mesh"] = {"strategy": "provided"}
+    return _task().model_validate(payload)
+
+
+def _provided_plan():
+    plan = _plan()
+    manifest = plan.manifest.model_copy(
+        update={
+            "mesh_family": "provided",
+            "patches": [
+                CasePatch(name=name, region="default", mesh_type=patch_type)
+                for name, patch_type in (
+                    ("inlet", "patch"),
+                    ("outlet", "patch"),
+                    ("top", "wall"),
+                    ("bottom", "wall"),
+                    ("frontAndBack", "empty"),
+                )
+            ],
+        }
+    )
+    return plan.model_copy(
+        update={
+            "manifest": manifest,
+            "commands": [plan.commands[-1]],
+        }
+    )
+
+
+def test_provided_mesh_facts_exist_before_first_model_call(
+    tmp_path: Path,
+) -> None:
+    public_root = tmp_path / "public"
+    import shutil
+
+    shutil.copytree(POLY_MESH_FIXTURE, public_root / "mesh/native")
+    runner = ProvidedMeshRunner()
+    model = RecordingModel([_provided_plan()])
+    agent = NativeAgent(
+        gateway=model,
+        runtime_config=_runtime_config(),
+        artifact_store=ArtifactStore(tmp_path / "runs"),
+        environment_snapshot=_environment("checkMesh", "icoFoam"),
+        runner=runner,
+    )
+
+    outcome = agent.solve(
+        _provided_task(public_root),
+        public_asset_root=public_root,
+    )
+
+    assert outcome.summary.native_status == "PUBLIC_VALIDATION_PASS"
+    assert runner.probe_calls == 1
+    assert (outcome.run_dir / "asset-bundles.json").is_file()
+    assert (outcome.run_dir / "input-mesh-facts.json").is_file()
+    assert (outcome.run_dir / "pre-authoring-mesh-facts.json").is_file()
+    assert "AUTHORITATIVE INPUT MESH FACTS" in model.requests[0].user_prompt
+    assert "points\n(" not in model.requests[0].user_prompt
 
 
 def _runtime_config() -> RuntimeConfig:

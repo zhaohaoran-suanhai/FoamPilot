@@ -56,11 +56,16 @@ from foampilot.performance import (
     prepare_repair_reuse,
 )
 from foampilot.preprocessing import (
+    ExecutedMeshFacts,
     GeometryFacts,
     GeometryProbeError,
+    InputMeshFacts,
     MeshQualityReport,
+    PolyMeshInspectionError,
     build_mesh_quality_report,
+    inspect_poly_mesh,
     probe_geometry,
+    probe_provided_mesh,
 )
 from foampilot.routing import (
     CapabilityProfile,
@@ -83,7 +88,11 @@ from foampilot.runtime import (
 )
 from foampilot.runtime.preflight import RuntimePreflightReport
 from foampilot.runtime.protection import runtime_protected_paths
-from foampilot.tasks import TaskSpec, stage_public_assets
+from foampilot.tasks import (
+    TaskSpec,
+    snapshot_public_assets,
+    stage_public_assets,
+)
 from foampilot.validation.models import (
     PublicValidationCheck,
     PublicValidationReport,
@@ -995,9 +1004,14 @@ class NativeAgent:
         parent_assets = parent / "public-assets"
         if effective_asset_root is None and parent_assets.is_dir():
             effective_asset_root = parent_assets
-        geometry_facts = probe_geometry(
-            task,
-            Path(effective_asset_root or parent),
+        geometry_facts = (
+            None
+            if task.geometry is not None
+            and task.geometry.mode == "openfoam_mesh"
+            else probe_geometry(
+                task,
+                Path(effective_asset_root or parent),
+            )
         )
         context = self._context(
             task,
@@ -1123,6 +1137,7 @@ class NativeAgent:
                         "miss"
                         if derived_cache_store is not None
                         and task.geometry is not None
+                        and task.geometry.mode != "openfoam_mesh"
                         else "disabled"
                     ),
                     mesh=(
@@ -1352,6 +1367,7 @@ class NativeAgent:
         )
 
         effective_public_asset_root: str | Path | None = public_asset_root
+        asset_bundles = []
         if task.public_assets:
             if public_asset_root is None:
                 return self._finish(
@@ -1364,7 +1380,7 @@ class NativeAgent:
                 )
             public_snapshot = run_dir / "public-assets"
             try:
-                stage_public_assets(
+                asset_bundles = snapshot_public_assets(
                     task,
                     public_asset_root,
                     public_snapshot,
@@ -1379,9 +1395,110 @@ class NativeAgent:
                     model_calls=model_calls,
                 )
             effective_public_asset_root = public_snapshot
+        _write_json(run_dir / "asset-bundles.json", asset_bundles)
+
+        input_mesh_facts: tuple[InputMeshFacts, ...] = ()
+        executed_mesh_facts: tuple[ExecutedMeshFacts, ...] = ()
+        if task.mesh is not None and task.mesh.strategy == "provided":
+            try:
+                mesh_bundles = tuple(
+                    bundle
+                    for bundle in asset_bundles
+                    if bundle.kind == "openfoam_poly_mesh"
+                )
+                if not mesh_bundles:
+                    raise ValueError("provided polyMesh bundle is missing")
+                assert effective_public_asset_root is not None
+                length_unit = (
+                    task.geometry.length_unit
+                    if task.geometry is not None
+                    else None
+                )
+                if length_unit is None:
+                    raise ValueError("provided mesh length unit is missing")
+                input_mesh_facts = tuple(
+                    inspect_poly_mesh(
+                        Path(effective_public_asset_root) / bundle.source_path,
+                        bundle,
+                        length_unit=length_unit,
+                    )
+                    for bundle in mesh_bundles
+                )
+                _write_json(
+                    run_dir / "input-mesh-facts.json",
+                    input_mesh_facts,
+                )
+                executed = []
+                for index, bundle in enumerate(mesh_bundles, start=1):
+                    probe_case = run_dir / f"pre-authoring-mesh-probe-{index:02d}"
+                    stage_public_assets(
+                        task.model_copy(
+                            update={
+                                "public_assets": [
+                                    asset
+                                    for asset in task.public_assets
+                                    if asset.path == bundle.source_path
+                                ]
+                            }
+                        ),
+                        effective_public_asset_root,
+                        probe_case,
+                    )
+                    if self.runner is not None and hasattr(
+                        self.runner,
+                        "probe_provided_mesh",
+                    ):
+                        fact = self.runner.probe_provided_mesh(
+                            case_root=probe_case,
+                            environment=environment,
+                            runtime_config=self.runtime_config,
+                            budget_seconds=min(
+                                task.resource_budget.max_wall_seconds,
+                                60,
+                            ),
+                        )
+                    else:
+                        fact = probe_provided_mesh(
+                            probe_case,
+                            environment,
+                            self.runtime_config,
+                            budget_seconds=min(
+                                task.resource_budget.max_wall_seconds,
+                                60,
+                            ),
+                        )
+                    executed.append(fact)
+                executed_mesh_facts = tuple(executed)
+                _write_json(
+                    run_dir / "pre-authoring-mesh-facts.json",
+                    executed_mesh_facts,
+                )
+                if any(
+                    item.mesh_check.mesh_ok is not True
+                    for item in executed_mesh_facts
+                ):
+                    raise ValueError("provided mesh did not pass checkMesh")
+            except (OSError, ValueError, PolyMeshInspectionError) as error:
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status="MESH_QUALITY_FAILED",
+                    attempts=attempts,
+                    message=f"Provided mesh preprocessing failed: {error}",
+                    model_calls=model_calls,
+                    primary_failure=FailureRecord(
+                        domain=FailureDomain.MESH,
+                        code=getattr(error, "code", "PROVIDED_MESH_INVALID"),
+                        detail=str(error),
+                        message="提供的原生 polyMesh 未通过生成前确定性检查。",
+                    ),
+                )
 
         geometry_facts: GeometryFacts | None = None
-        if task.geometry is not None:
+        if (
+            task.geometry is not None
+            and task.geometry.mode != "openfoam_mesh"
+        ):
             try:
                 geometry_key: str | None = None
                 if derived_cache_store is not None:
@@ -2042,6 +2159,8 @@ class NativeAgent:
                     context.knowledge_text,
                     context.skills_text,
                     geometry_facts=geometry_facts,
+                    input_mesh_facts=input_mesh_facts,
+                    executed_mesh_facts=executed_mesh_facts,
                     status_snapshot=author_status,
                     status_artifact=author_status_artifact,
                     budget=model_ledger.open_stage(
@@ -2347,6 +2466,11 @@ class NativeAgent:
                     mesh_key_result = mesh_cache_key(
                         task,
                         geometry_facts=geometry_facts,
+                        input_mesh_facts=(
+                            input_mesh_facts[0]
+                            if len(input_mesh_facts) == 1
+                            else None
+                        ),
                         plan=active_plan,
                         environment=environment,
                         public_asset_root=Path(
@@ -2703,6 +2827,57 @@ class NativeAgent:
                     run_result,
                     task.mesh,
                 )
+                if (
+                    task.mesh is not None
+                    and task.mesh.strategy == "provided"
+                    and len(executed_mesh_facts) == 1
+                ):
+                    probe_metrics = executed_mesh_facts[0].metrics
+                    mesh_quality = mesh_quality.model_copy(
+                        update={
+                            "commands_completed": tuple(
+                                dict.fromkeys(
+                                    [
+                                        *probe_metrics.commands_completed,
+                                        *mesh_quality.commands_completed,
+                                    ]
+                                )
+                            ),
+                            "check_mesh_passed": (
+                                probe_metrics.check_mesh_passed
+                            ),
+                            "cells": probe_metrics.cells,
+                            "faces": probe_metrics.faces,
+                            "points": probe_metrics.points,
+                            "regions": probe_metrics.regions,
+                            "max_non_orthogonality": (
+                                probe_metrics.max_non_orthogonality
+                            ),
+                            "max_skewness": probe_metrics.max_skewness,
+                            "negative_volume_count": (
+                                probe_metrics.negative_volume_count
+                            ),
+                            "failed_requirements": (
+                                probe_metrics.failed_requirements
+                            ),
+                            "warnings": tuple(
+                                dict.fromkeys(
+                                    [
+                                        *probe_metrics.warnings,
+                                        *mesh_quality.warnings,
+                                    ]
+                                )
+                            ),
+                            "evidence_files": tuple(
+                                dict.fromkeys(
+                                    [
+                                        *probe_metrics.evidence_files,
+                                        *mesh_quality.evidence_files,
+                                    ]
+                                )
+                            ),
+                        }
+                    )
                 _write_json(
                     attempt_root / "mesh-quality-report.json",
                     mesh_quality,

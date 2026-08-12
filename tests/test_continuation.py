@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 from pathlib import Path
+import shutil
 
 import pytest
 
@@ -14,6 +16,8 @@ from foampilot.plans import GeneratedFile
 from foampilot.runtime import RuntimeConfig
 from foampilot.workflow import ResumeCompatibilityError
 from foampilot.workflow.lineage import LineageRecord
+from foampilot.assets import BundleMember, compute_bundle_manifest_sha256
+from foampilot.workflow.lineage import build_resume_fingerprint
 
 from tests.test_native_agent_state_machine import (
     SequencePlanRunner,
@@ -24,6 +28,9 @@ from tests.test_native_agent_state_machine import (
     _transport_failure,
 )
 from tests.test_native_case_generation import RecordingModel, _plan
+
+
+POLY_MESH_FIXTURE = Path(__file__).parent / "fixtures/poly_mesh/minimal"
 
 
 def _agent(
@@ -273,6 +280,69 @@ def test_resume_rejects_changed_runtime_policy(tmp_path: Path) -> None:
             runner=SequencePlanRunner([]),
             runtime_config=changed_runtime,
         ).resume(parent.run_dir)
+
+
+def test_resume_fingerprint_rejects_changed_poly_mesh_zone_member(
+    tmp_path: Path,
+) -> None:
+    public_root = tmp_path / "public"
+    source = public_root / "mesh/native"
+    shutil.copytree(POLY_MESH_FIXTURE, source)
+    members = tuple(
+        BundleMember(
+            relative_path=path.relative_to(source).as_posix(),
+            logical_name=path.relative_to(source).as_posix(),
+            sha256=sha256(path.read_bytes()).hexdigest(),
+            bytes=path.stat().st_size,
+        )
+        for path in sorted(source.rglob("*"))
+        if path.is_file()
+    )
+    values = {
+        "adapter_id": "foampilot.asset.openfoam-poly-mesh",
+        "kind": "openfoam_poly_mesh",
+        "source_path": "mesh/native",
+        "install_path": "constant/polyMesh",
+        "region": None,
+        "members": members,
+    }
+    manifest = compute_bundle_manifest_sha256(**values)
+    payload = _task().model_dump(mode="json")
+    payload["public_assets"] = [
+        {
+            "path": "mesh/native",
+            "sha256": manifest,
+            "purpose": "provided native mesh",
+            "kind": "directory",
+            "install_path": "constant/polyMesh",
+            "bundle_manifest_sha256": manifest,
+        }
+    ]
+    task = _task().model_validate(payload)
+    environment = _environment("checkMesh", "icoFoam")
+    common = {
+        "task": task,
+        "environment": environment,
+        "runtime_config": _runtime_config(),
+        "model": "test-model",
+        "backend_id": "test-backend",
+        "backend_policy_sha256": "a" * 64,
+        "knowledge_ids": (),
+        "knowledge_text": "knowledge",
+        "skill_ids": (),
+        "skills_text": "skills",
+        "public_asset_root": public_root,
+    }
+
+    fingerprint = build_resume_fingerprint(**common)
+    assert fingerprint.public_assets_sha256 is not None
+    (source / "cellZones").write_text("changed\n", encoding="utf-8")
+
+    with pytest.raises(
+        ResumeCompatibilityError,
+        match="public_assets_sha256 changed",
+    ):
+        build_resume_fingerprint(**common)
 
 
 def test_rerun_changed_runtime_policy_is_explicitly_classified(

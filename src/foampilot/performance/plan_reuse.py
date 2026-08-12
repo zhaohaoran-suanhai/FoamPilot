@@ -111,14 +111,26 @@ def _step_log(
 
 def _validate_assets(task: TaskSpec, asset_root: Path) -> None:
     root = asset_root.resolve()
+    if any(asset.kind == "directory" for asset in task.public_assets):
+        from foampilot.tasks.io import inspect_public_assets
+
+        try:
+            inspect_public_assets(task, root)
+        except (OSError, TypeError, ValueError) as error:
+            raise PlanReuseError(
+                "PUBLIC_ASSET_SHA256_MISMATCH",
+                "public directory asset manifest changed",
+            ) from error
     for asset in task.public_assets:
         path = (root / asset.path).resolve()
-        if not path.is_relative_to(root) or not path.is_file():
+        if not path.is_relative_to(root) or not (
+            path.is_dir() if asset.kind == "directory" else path.is_file()
+        ):
             raise PlanReuseError(
                 "PUBLIC_ASSET_MISSING",
                 f"public asset is missing: {asset.path}",
             )
-        if _file_sha256(path) != asset.sha256:
+        if asset.kind == "file" and _file_sha256(path) != asset.sha256:
             raise PlanReuseError(
                 "PUBLIC_ASSET_SHA256_MISMATCH",
                 f"public asset bytes changed: {asset.path}",

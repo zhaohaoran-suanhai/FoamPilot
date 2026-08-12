@@ -17,7 +17,11 @@ from foampilot.models import (
 from foampilot.plans import ExecutionPlan, normalize_execution_plan_input
 from foampilot.routing import CapabilityProfile
 from foampilot.tasks import TaskSpec
-from foampilot.preprocessing import GeometryFacts
+from foampilot.preprocessing import (
+    ExecutedMeshFacts,
+    GeometryFacts,
+    InputMeshFacts,
+)
 
 from .prompts import bundle_request_text
 from .status import AgentStatusSnapshot
@@ -32,6 +36,8 @@ def author_case_bundle(
     skills_text: str,
     *,
     geometry_facts: GeometryFacts | None = None,
+    input_mesh_facts: tuple[InputMeshFacts, ...] = (),
+    executed_mesh_facts: tuple[ExecutedMeshFacts, ...] = (),
     status_snapshot: AgentStatusSnapshot | None = None,
     status_artifact: ModelContextArtifact | None = None,
     budget: ModelBudgetWindow,
@@ -46,6 +52,8 @@ def author_case_bundle(
         knowledge_text,
         skills_text,
         geometry_facts,
+        input_mesh_facts,
+        executed_mesh_facts,
         status_snapshot,
     )
     return gateway.generate_structured(
@@ -102,13 +110,25 @@ def materialize_case(
 
     root = Path(case_root).resolve()
     root.mkdir(parents=True, exist_ok=True)
-    public_paths = {asset.path for asset in task.public_assets}
+    public_paths = {
+        asset.install_path if asset.kind == "directory" else asset.path
+        for asset in task.public_assets
+    }
     existing = {
         path.relative_to(root).as_posix()
         for path in root.rglob("*")
         if path.is_file()
     }
-    unexpected = existing - public_paths
+    expected_existing = {
+        path
+        for path in existing
+        if any(
+            path == public_path or path.startswith(f"{public_path}/")
+            for public_path in public_paths
+            if public_path is not None
+        )
+    }
+    unexpected = existing - expected_existing
     if unexpected:
         raise ValueError(
             "case directory is non-empty: " + ", ".join(sorted(unexpected))
@@ -122,7 +142,12 @@ def materialize_case(
             )
         if generated.path in seen:
             raise ValueError(f"duplicate generated file: {generated.path}")
-        if generated.path in public_paths:
+        if any(
+            generated.path == public_path
+            or generated.path.startswith(f"{public_path}/")
+            for public_path in public_paths
+            if public_path is not None
+        ):
             raise ValueError(
                 f"generated file overlaps public asset: {generated.path}"
             )

@@ -280,3 +280,69 @@ def test_mesh_cache_key_changes_when_mesh_dictionary_changes(
 
     assert first_key.cacheable and second_key.cacheable
     assert first_key.key != second_key.key
+
+
+def test_provided_mesh_cache_key_does_not_require_a_mesh_command(
+    tmp_path: Path,
+) -> None:
+    from foampilot.performance import mesh_cache_key
+    from foampilot.preprocessing import BoundingBox, InputMeshFacts
+
+    payload = _task().model_dump(mode="json")
+    payload["mesh"] = {"strategy": "provided"}
+    payload["public_assets"] = [
+        {
+            "path": "mesh/native",
+            "sha256": "a" * 64,
+            "purpose": "provided mesh",
+            "kind": "directory",
+            "install_path": "constant/polyMesh",
+            "bundle_manifest_sha256": "a" * 64,
+        }
+    ]
+    task = _task().model_validate(payload)
+    facts = InputMeshFacts(
+        bundle_manifest_sha256="a" * 64,
+        inspector_id="foampilot.mesh.poly-mesh",
+        inspector_version="1.0.0",
+        region=None,
+        declared_length_unit="m",
+        source_member_sha256={"points": "b" * 64},
+        points=8,
+        faces=6,
+        internal_faces=0,
+        cells=1,
+        bounding_box_m=BoundingBox(
+            minimum=(0, 0, 0),
+            maximum=(1, 1, 1),
+        ),
+        patches=(),
+        cell_zones=(),
+        face_zones=(),
+        point_zones=(),
+        dimensionality_observations=(),
+        topology_observations=(),
+        warnings=(),
+    )
+    plan = _plan().model_copy(
+        update={
+            "commands": [
+                command
+                for command in _plan().commands
+                if command.stage != "mesh"
+            ]
+        }
+    )
+
+    key = mesh_cache_key(
+        task,
+        geometry_facts=None,
+        input_mesh_facts=facts,
+        plan=plan,
+        environment=_environment("checkMesh", "icoFoam"),
+        public_asset_root=tmp_path,
+    )
+
+    assert key.cacheable is True
+    assert key.key is not None
+    assert key.reason_code is None

@@ -11,6 +11,11 @@ from foampilot.plans import NativeCommand
 from foampilot.runtime import PlanRunResult, PlanStepResult
 
 from tests.test_native_agent_state_machine import _runtime_config
+from tests.test_native_agent_state_machine import (
+    POLY_MESH_FIXTURE,
+    ProvidedMeshRunner,
+    _provided_task,
+)
 from tests.test_native_case_generation import (
     RecordingModel,
     _environment,
@@ -74,6 +79,15 @@ class VerifiedPlanRunner:
             steps=steps,
             **synthetic_execution_evidence(protected_paths),
         )
+
+
+class VerifiedPlanRunnerWithProbe(VerifiedPlanRunner):
+    def __init__(self) -> None:
+        super().__init__()
+        self._probe = ProvidedMeshRunner()
+
+    def probe_provided_mesh(self, **kwargs):
+        return self._probe.probe_provided_mesh(**kwargs)
 
 
 def _verified_plan():
@@ -160,17 +174,18 @@ def test_exact_verified_plan_reuse_executes_without_model_request(
 def test_verified_plan_reuse_accepts_provided_mesh_without_mesh_command(
     tmp_path: Path,
 ) -> None:
-    task_payload = _task().model_dump(mode="json")
-    task_payload["mesh"] = {
-        "strategy": "provided",
-        "quality": {"require_check_mesh_pass": True},
-    }
-    task = type(_task()).model_validate(task_payload)
-    plan = _verified_plan().model_copy(
+    public_root = tmp_path / "public"
+    shutil.copytree(POLY_MESH_FIXTURE, public_root / "mesh/native")
+    task = _provided_task(public_root)
+    original = _verified_plan()
+    plan = original.model_copy(
         update={
+            "manifest": original.manifest.model_copy(
+                update={"mesh_family": "provided"}
+            ),
             "commands": [
                 command
-                for command in _verified_plan().commands
+                for command in original.commands
                 if command.stage != "mesh"
             ]
         }
@@ -181,8 +196,8 @@ def test_verified_plan_reuse_accepts_provided_mesh_without_mesh_command(
         runtime_config=_runtime_config(),
         artifact_store=store,
         environment_snapshot=_environment("checkMesh", "icoFoam"),
-        runner=VerifiedPlanRunner(),
-    ).solve(task)
+        runner=VerifiedPlanRunnerWithProbe(),
+    ).solve(task, public_asset_root=public_root)
     assert source.status == "PUBLIC_VALIDATION_PASS"
 
     outcome = NativeAgent(
@@ -190,8 +205,12 @@ def test_verified_plan_reuse_accepts_provided_mesh_without_mesh_command(
         runtime_config=_runtime_config(),
         artifact_store=store,
         environment_snapshot=_environment("checkMesh", "icoFoam"),
-        runner=VerifiedPlanRunner(),
-    ).solve(task, reuse_verified_plan=source.run_dir)
+        runner=VerifiedPlanRunnerWithProbe(),
+    ).solve(
+        task,
+        public_asset_root=public_root,
+        reuse_verified_plan=source.run_dir,
+    )
 
     assert outcome.status == "PUBLIC_VALIDATION_PASS"
     assert json.loads(

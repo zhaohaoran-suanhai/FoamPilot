@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from foampilot.environment import EnvironmentSnapshot
 from foampilot.plans import ExecutionPlan
-from foampilot.preprocessing import GeometryFacts, MeshQualityReport
+from foampilot.preprocessing import GeometryFacts, InputMeshFacts, MeshQualityReport
 from foampilot.tasks import TaskSpec
 
 
@@ -54,6 +54,24 @@ def _asset_observations(task: TaskSpec, root: Path) -> list[dict[str, str]]:
     }
     observations: list[dict[str, str]] = []
     for asset in task.public_assets:
+        if asset.kind == "directory":
+            observations.append(
+                {
+                    "path": asset.path,
+                    "sha256": asset.sha256,
+                    "role": (
+                        declared_geometry[asset.path].role
+                        if asset.path in declared_geometry
+                        else "public_asset"
+                    ),
+                    "format": (
+                        declared_geometry[asset.path].format
+                        if asset.path in declared_geometry
+                        else "other"
+                    ),
+                }
+            )
+            continue
         path = (directory / asset.path).resolve()
         if not path.is_relative_to(directory) or not path.is_file():
             raise ValueError(f"public asset is missing: {asset.path}")
@@ -160,13 +178,17 @@ def mesh_cache_key(
     task: TaskSpec,
     *,
     geometry_facts: GeometryFacts | None,
+    input_mesh_facts: InputMeshFacts | None = None,
     plan: ExecutionPlan,
     environment: EnvironmentSnapshot,
     public_asset_root: str | Path,
 ) -> MeshKeyResult:
     """Return a conservative mesh key or an auditable uncacheable reason."""
 
-    dependencies, reason = _mesh_dependency_files(plan)
+    provided = task.mesh is not None and task.mesh.strategy == "provided"
+    dependencies, reason = (
+        ([], None) if provided else _mesh_dependency_files(plan)
+    )
     if reason is not None:
         return MeshKeyResult(False, None, reason)
     mesh_commands = [
@@ -178,8 +200,10 @@ def mesh_cache_key(
         for item in plan.commands
         if item.stage == "mesh"
     ]
-    if not mesh_commands:
+    if not mesh_commands and not provided:
         return MeshKeyResult(False, None, "MESH_COMMAND_MISSING")
+    if provided and input_mesh_facts is None:
+        return MeshKeyResult(False, None, "INPUT_MESH_FACTS_MISSING")
     mesh_intent = (
         task.mesh.model_dump(exclude={"quality"}, mode="json")
         if task.mesh is not None
@@ -202,6 +226,11 @@ def mesh_cache_key(
             "geometry_facts": (
                 geometry_facts.model_dump(mode="json")
                 if geometry_facts is not None
+                else None
+            ),
+            "input_mesh_facts": (
+                input_mesh_facts.model_dump(mode="json")
+                if input_mesh_facts is not None
                 else None
             ),
             "mesh_intent": mesh_intent,

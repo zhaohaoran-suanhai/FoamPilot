@@ -80,6 +80,7 @@ def test_first_party_registry_does_not_load_entry_points() -> None:
 
     assert registry.extension_ids() == (
         "foampilot.asset.openfoam-poly-mesh",
+        "foampilot.asset.public-file",
     )
     assert registry.entry_points_enabled is False
 

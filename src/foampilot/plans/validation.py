@@ -79,7 +79,10 @@ def validate_execution_plan(
 
     issues: list[PlanIssue] = []
     file_paths = [item.path for item in plan.files]
-    public_assets = {item.path for item in task.public_assets}
+    public_assets = {
+        item.install_path if item.kind == "directory" else item.path
+        for item in task.public_assets
+    }
 
     if len(file_paths) != len(set(file_paths)):
         issues.append(
@@ -107,7 +110,12 @@ def validate_execution_plan(
                     "generated files must use safe relative paths",
                 )
             )
-        if generated.path in public_assets:
+        if any(
+            generated.path == asset_path
+            or generated.path.startswith(f"{asset_path}/")
+            for asset_path in public_assets
+            if asset_path is not None
+        ):
             issues.append(
                 _issue(
                     "PUBLIC_ASSET_OVERWRITE",
@@ -115,6 +123,14 @@ def validate_execution_plan(
                     "generated files must not overwrite public assets",
                 )
             )
+            if task.mesh is not None and task.mesh.strategy == "provided":
+                issues.append(
+                    _issue(
+                        "PROVIDED_MESH_REGENERATION",
+                        f"{location}.path",
+                        "provided mesh members are system-owned and immutable",
+                    )
+                )
         if any(
             protected in generated.content
             for protected in task.protected_paths
@@ -150,6 +166,18 @@ def validate_execution_plan(
 
     for index, command in enumerate(plan.commands):
         location = f"commands[{index}]"
+        if (
+            task.mesh is not None
+            and task.mesh.strategy == "provided"
+            and command.stage == "mesh"
+        ):
+            issues.append(
+                _issue(
+                    "PROVIDED_MESH_REGENERATION",
+                    location,
+                    "provided mesh plans must not contain mesh-generation commands",
+                )
+            )
         if command.executable in _MPI_LAUNCHERS:
             issues.append(
                 _issue(

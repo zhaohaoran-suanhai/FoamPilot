@@ -124,19 +124,42 @@ def _public_assets_sha256(
         if public_asset_root is not None
         else None
     )
-    entries: list[dict[str, str]] = []
+    if root is not None and any(
+        asset.kind == "directory" for asset in task.public_assets
+    ):
+        from foampilot.tasks.io import inspect_public_assets
+
+        try:
+            inspect_public_assets(task, root)
+        except (OSError, TypeError, ValueError) as error:
+            raise ResumeCompatibilityError("public_assets_sha256") from error
+    entries: list[dict[str, object]] = []
     for asset in sorted(task.public_assets, key=lambda item: item.path):
         if root is not None:
             path = (root / asset.path).resolve()
-            if not path.is_relative_to(root) or not path.is_file():
+            if not path.is_relative_to(root):
                 raise ResumeCompatibilityError("public_assets_sha256")
-            if _file_sha256(path) != asset.sha256:
+            if asset.kind == "file":
+                if not path.is_file() or _file_sha256(path) != asset.sha256:
+                    raise ResumeCompatibilityError("public_assets_sha256")
+            elif not path.is_dir():
                 raise ResumeCompatibilityError("public_assets_sha256")
         entries.append(
             {
                 "path": asset.path,
                 "sha256": asset.sha256,
                 "purpose": asset.purpose,
+                "kind": asset.kind,
+                "install_path": asset.install_path,
+                "bundle_manifest_sha256": asset.bundle_manifest_sha256,
+                "inspector": (
+                    {
+                        "id": "foampilot.mesh.poly-mesh",
+                        "version": "1.0.0",
+                    }
+                    if asset.kind == "directory"
+                    else None
+                ),
             }
         )
     return _hash_json(entries)

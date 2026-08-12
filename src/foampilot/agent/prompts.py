@@ -7,7 +7,11 @@ import json
 from foampilot.environment import EnvironmentSnapshot
 from foampilot.routing import CapabilityProfile
 from foampilot.tasks import TaskSpec
-from foampilot.preprocessing import GeometryFacts
+from foampilot.preprocessing import (
+    ExecutedMeshFacts,
+    GeometryFacts,
+    InputMeshFacts,
+)
 from .status import AgentStatusSnapshot
 
 
@@ -49,6 +53,8 @@ def bundle_request_text(
     knowledge_text: str,
     skills_text: str,
     geometry_facts: GeometryFacts | None = None,
+    input_mesh_facts: tuple[InputMeshFacts, ...] = (),
+    executed_mesh_facts: tuple[ExecutedMeshFacts, ...] = (),
     status_snapshot: AgentStatusSnapshot | None = None,
 ) -> tuple[str, str]:
     sections = [
@@ -66,6 +72,25 @@ def bundle_request_text(
             1,
             "公开几何事实（PUBLIC GEOMETRY FACTS）\n"
             + _json(geometry_facts.model_dump(mode="json")),
+        )
+    if input_mesh_facts:
+        sections.insert(
+            1,
+            "权威输入网格事实（AUTHORITATIVE INPUT MESH FACTS）\n"
+            + _json(
+                [item.model_dump(mode="json") for item in input_mesh_facts]
+            ),
+        )
+    if executed_mesh_facts:
+        sections.insert(
+            2,
+            "生成前执行网格事实（PRE-AUTHORING EXECUTED MESH FACTS）\n"
+            + _json(
+                [
+                    item.model_dump(mode="json")
+                    for item in executed_mesh_facts
+                ]
+            ),
         )
     if status_snapshot is not None:
         sections.append(
