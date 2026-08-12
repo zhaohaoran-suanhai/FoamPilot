@@ -45,4 +45,18 @@ def __getattr__(name: str):
             "ObservationPlanner": ObservationPlanner,
             "ObservationPlanningError": ObservationPlanningError,
         }[name]
+    if name in {
+        "CompiledObservationFragments",
+        "ObservationConfigFragment",
+        "compile_foundation10_observations",
+        "inject_observation_fragments",
+    }:
+        from .openfoam10 import (
+            CompiledObservationFragments,
+            ObservationConfigFragment,
+            compile_foundation10_observations,
+            inject_observation_fragments,
+        )
+
+        return locals()[name]
     raise AttributeError(name)

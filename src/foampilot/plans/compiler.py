@@ -14,6 +14,7 @@ from .validation import validate_execution_plan
 
 if TYPE_CHECKING:
     from foampilot.authoring import CaseBundle
+    from foampilot.observations import ObservationPlan
 
 
 class PlanCompilationError(ValueError):
@@ -31,6 +32,7 @@ def compile_execution_plan(
     environment: EnvironmentSnapshot,
     task: TaskSpec,
     registry: CapabilityRegistry,
+    observation_plan: ObservationPlan | None = None,
 ) -> ExecutionPlan:
     """Compose extension fragments and run the canonical plan safety policy."""
 
@@ -74,12 +76,28 @@ def compile_execution_plan(
             ", ".join(missing_paths),
         )
 
+    observation_commands = ()
+    if observation_plan is not None:
+        from foampilot.observations import compile_foundation10_observations
+
+        observation_commands = compile_foundation10_observations(
+            observation_plan
+        ).commands
+        unavailable = sorted(
+            set(command.executable for command in observation_commands)
+            - set(environment.available_executable_names)
+        )
+        if unavailable:
+            _raise(
+                "OBSERVATION_EXECUTABLE_UNAVAILABLE",
+                ", ".join(unavailable),
+            )
     plan = ExecutionPlan(
         compiled_from_design_sha256=design.design_sha256,
         compiler_identities=fragments.contributor_identities,
         manifest=bundle.manifest,
         files=bundle.files,
-        commands=list(fragments.commands),
+        commands=[*fragments.commands, *observation_commands],
     )
     issues = validate_execution_plan(
         plan,
