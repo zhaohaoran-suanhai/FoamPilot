@@ -1,4 +1,8 @@
-"""Agent-owned plan contracts and deterministic validation."""
+"""System-compiled plan contracts and deterministic validation.
+
+The historical v3 reader intentionally lives in ``foampilot.plans.legacy``
+and is not re-exported into the canonical authoring surface.
+"""
 
 from .models import (
     CommandStage,

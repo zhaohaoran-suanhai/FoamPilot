@@ -4,14 +4,16 @@ from hashlib import sha256
 from pathlib import Path
 import shutil
 
+import pytest
 import yaml
 
+import foampilot.plans as public_plans
 from foampilot.artifacts import ArtifactStore
 from foampilot.inspection import InspectionReport, inspect_native_case
-from foampilot.plans import (
-    ExecutionPlan,
-    normalize_execution_plan,
-    validate_execution_plan,
+from foampilot.plans import validate_execution_plan
+from foampilot.plans.legacy import (
+    LegacyExecutionPlanV3,
+    load_legacy_execution_plan_v3_for_replay,
 )
 from foampilot.runtime import PlanRunResult
 from foampilot.tasks import TaskSpec
@@ -34,6 +36,14 @@ EXPECTED_KINDS = {
 
 def _index() -> dict:
     return yaml.safe_load(INDEX.read_text(encoding="utf-8"))
+
+
+def _fixture_file_hash(fixture: dict, relative_path: str) -> str:
+    return next(
+        item["sha256"]
+        for item in fixture["files"]
+        if item["path"] == relative_path
+    )
 
 
 def test_replay_index_has_six_owned_fixture_kinds() -> None:
@@ -62,8 +72,12 @@ def test_replay_fixture_and_generator_hashes_match_index() -> None:
 def test_synthetic_artifacts_replay_current_typed_readers() -> None:
     for fixture in _index()["fixtures"]:
         root = FIXTURE_ROOT / fixture["fixture_id"]
-        plan = ExecutionPlan.model_validate_json(
-            (root / "execution-plan.json").read_text(encoding="utf-8")
+        plan = load_legacy_execution_plan_v3_for_replay(
+            root / "execution-plan.json",
+            expected_sha256=_fixture_file_hash(
+                fixture,
+                "execution-plan.json",
+            ),
         )
         task = TaskSpec.model_validate_json(
             (root / "task.json").read_text(encoding="utf-8")
@@ -88,24 +102,26 @@ def test_synthetic_cases_replay_policy_and_semantic_inspection(
         root = FIXTURE_ROOT / fixture["fixture_id"]
         copied_case = tmp_path / fixture["fixture_id"]
         shutil.copytree(root / "case", copied_case)
-        plan = ExecutionPlan.model_validate_json(
-            (root / "execution-plan.json").read_text(encoding="utf-8")
+        plan = load_legacy_execution_plan_v3_for_replay(
+            root / "execution-plan.json",
+            expected_sha256=_fixture_file_hash(
+                fixture,
+                "execution-plan.json",
+            ),
         )
         task = TaskSpec.model_validate_json(
             (root / "task.json").read_text(encoding="utf-8")
         )
         available = {command.executable for command in plan.commands}
-        normalized = normalize_execution_plan(plan, task, available)
-
         assert validate_execution_plan(
-            normalized.plan,
+            plan,
             task,
             available,
         ) == []
         inspection = inspect_native_case(
             case_root=copied_case,
             task=task,
-            plan=normalized.plan,
+            plan=plan,
             available_executables=available,
         )
         codes = {issue.code for issue in inspection.issues}
@@ -149,3 +165,24 @@ def test_fixtures_contain_no_external_source_paths() -> None:
     assert "/home/" not in text
     assert "tutorial" not in text
     assert "source_manifest_sha256" not in text
+
+
+def test_legacy_replay_reader_requires_exact_manifest_hash() -> None:
+    fixture = _index()["fixtures"][0]
+    path = FIXTURE_ROOT / fixture["fixture_id"] / "execution-plan.json"
+
+    with pytest.raises(ValueError, match="LEGACY_PLAN_HASH_MISMATCH"):
+        load_legacy_execution_plan_v3_for_replay(
+            path,
+            expected_sha256="0" * 64,
+        )
+
+    plan = load_legacy_execution_plan_v3_for_replay(
+        path,
+        expected_sha256=_fixture_file_hash(fixture, "execution-plan.json"),
+    )
+    assert isinstance(plan, LegacyExecutionPlanV3)
+    assert not hasattr(
+        public_plans,
+        "load_legacy_execution_plan_v3_for_replay",
+    )

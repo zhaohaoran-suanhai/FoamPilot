@@ -1,4 +1,8 @@
-"""对模型原始计划输出执行保守、可审计的局部规范化。"""
+"""Temporary Phase 2 plan-response normalization bridge.
+
+Canonical Phase 3 authoring parses :class:`CaseBundle` and never calls this
+module. It remains private to the old bridge until that caller is removed.
+"""
 
 from __future__ import annotations
 

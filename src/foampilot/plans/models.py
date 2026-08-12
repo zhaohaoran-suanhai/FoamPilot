@@ -1,4 +1,4 @@
-"""Minimal model-authored case-bundle contracts."""
+"""System-owned native execution plan contracts."""
 
 from __future__ import annotations
 
@@ -47,7 +47,9 @@ class NativeCommand(StrictModel):
 
 
 class ExecutionPlan(StrictModel):
-    schema_version: Literal[3] = 3
+    schema_version: Literal[4] = 4
+    compiled_from_design_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    compiler_identities: dict[str, str] = Field(min_length=1)
     manifest: CaseManifest
     files: list[GeneratedFile] = Field(min_length=1)
     commands: list[NativeCommand] = Field(min_length=1)

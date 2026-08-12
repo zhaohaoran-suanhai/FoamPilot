@@ -54,7 +54,12 @@ def task() -> TaskSpec:
 
 def valid_plan() -> ExecutionPlan:
     return ExecutionPlan(
-        schema_version=3,
+        schema_version=4,
+        compiled_from_design_sha256="a" * 64,
+        compiler_identities={
+            "foampilot.mesh.block-mesh": "1.0.0/protocol-1",
+            "foampilot.solver.foundation10-ico": "1.0.0/protocol-1",
+        },
         manifest=CaseManifest(
             solver_executable="icoFoam",
             solver_family="incompressible-laminar",
@@ -125,6 +130,23 @@ def valid_plan() -> ExecutionPlan:
             ),
         ],
     )
+
+
+def test_execution_plan_v4_requires_design_and_compiler_identity() -> None:
+    payload = valid_plan().model_dump(mode="json")
+    payload.pop("compiled_from_design_sha256")
+    payload.pop("compiler_identities")
+
+    with pytest.raises(ValidationError):
+        ExecutionPlan.model_validate(payload)
+
+
+def test_canonical_execution_plan_rejects_legacy_v3() -> None:
+    payload = valid_plan().model_dump(mode="json")
+    payload["schema_version"] = 3
+
+    with pytest.raises(ValidationError, match="schema_version"):
+        ExecutionPlan.model_validate(payload)
 
 
 def test_plan_accepts_arbitrary_installed_command_sequence(
