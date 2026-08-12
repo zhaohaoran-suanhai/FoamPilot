@@ -106,3 +106,17 @@ def test_repository_documents_portable_runtime_and_isolation() -> None:
     ):
         assert token in combined
     assert "audited host 与 bubblewrap 不具有相同安全性" in combined
+
+
+def test_quickstart_documents_poly_mesh_as_one_directory_asset() -> None:
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "docs/independent-agent-quickstart.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--asset-dir" in text
+    assert "--asset-install-path" in text
+    assert "asset-bundles.json" in text
+    assert "input-mesh-facts.json" in text
+    assert "pre-authoring-mesh-facts.json" in text
+    assert "constant/polyMesh/points" not in text

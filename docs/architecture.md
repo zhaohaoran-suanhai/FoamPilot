@@ -8,8 +8,10 @@ FoamPilot 只支持一条从公开 TaskSpec 到证据限定结果的规范求解
 - `taskbuilder`：从自然语言和显式公开附件 metadata 提取带来源事实，检查缺失信息并确定性
   编译 TaskSpec；
 - `tasks`：严格校验公开要求与资源预算；
-- `preprocessing`：在路由前探测几何 hash、单位、bounds、surface/patch/region 事实，并从原生
-  日志生成 MeshQualityReport；
+- `assets`/`extensions`：通过关闭动态 entry point 的第一方注册表验证并原子 staging 文件或
+  OpenFOAM `polyMesh` 目录资产；
+- `preprocessing`：在路由前探测几何事实；对 provided 原生网格生成带 bundle manifest 的
+  `InputMeshFacts`，再通过系统固定命令生成 `ExecutedMeshFacts`；
 - `knowledge`：包含来源信息的已审查 Foundation OpenFOAM v10 知识；
 - `skills`：用于算例编写和特定 solver family 的可移植行为指导；
 - `routing`：基于证据选择 solver family，并由系统计算 confidence；
@@ -43,6 +45,10 @@ executable 和已审查 solver-family metadata。只有 candidate set 含糊时�
 patch/region role 或 mesh strategy 不得由 probe 猜测；必要的外部网格程序未被环境发现时在零
 generation 调用处结束。进入 native execution 后，每个 attempt 生成独立的
 `mesh-quality-report.json`，把日志观测值与 TaskSpec 阈值分开保存。
+
+provided 原生网格走单独的确定性路径：`OpenFOAMMeshBundle -> InputMeshFacts ->` 系统受控
+`checkMesh -> ExecutedMeshFacts`。目录 manifest、成员 hash、inspector identity 进入续跑和
+缓存指纹。模型收到紧凑 patch/zone/count/bounds 事实，但永远不拥有网格生成命令或成员写权限。
 
 ContextAssembler 随后在 solver-family、mesh、boundary、physics/transport、
 startup/numerics、可选 parallel 与可选 repair-error 槽位中各选择至多一条知识。缺少匹配

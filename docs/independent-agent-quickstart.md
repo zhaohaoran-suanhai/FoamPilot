@@ -113,6 +113,37 @@ foampilot task compile task-draft.yaml \
 模型进程、网络或服务暂时不可用时，`draft` 返回退出码 3、稳定 backend code、中文 message 和
 recovery，不会把问题记为 OpenFOAM failure。
 
+已有 Foundation OpenFOAM 原生网格必须把完整 `polyMesh` 目录声明为一个原子资产；不要逐个
+声明 points、faces、owner、neighbour 或 zone 文件：
+
+```bash
+foampilot task draft \
+  --request-file request.md \
+  --asset-dir mesh/openfoam/constant/polyMesh \
+  --asset-install-path constant/polyMesh \
+  --asset-root . \
+  --output task-draft.yaml \
+  --backend auto \
+  --model-name gpt-5.6-sol \
+  --json
+```
+
+编译后的 TaskSpec 使用 `geometry.mode: openfoam_mesh` 和 `mesh.strategy: provided`。系统验证
+必需成员和可选 zones，记录整个目录的 manifest/hash，并原子化安装到声明的 case 相对位置。
+在首次模型生成前，`PolyMeshInspector` 产生紧凑的 `input-mesh-facts.json`，系统受控
+`checkMesh` 产生 `pre-authoring-mesh-facts.json`；`asset-bundles.json` 保存资产清单。模型只
+看到结构化点/面/单元数量、bounds、patch 和 zone 事实，不能读取或覆盖原始网格成员。完整
+手写示例见 `examples/tasks/provided-poly-mesh.yaml`，求解时需传入 `--public-asset-root`：
+
+```bash
+foampilot solve examples/tasks/provided-poly-mesh.yaml \
+  --public-asset-root . \
+  --run-root /tmp/foampilot-native-runs \
+  --backend auto \
+  --model-name gpt-5.6-sol \
+  --json
+```
+
 TaskSpec 生成后进入与手写任务完全相同的规范路径：
 
 ```bash
@@ -250,6 +281,9 @@ continuation 数量、传输尝试预算以及当前 OpenFOAM 能力。strict co
 task.yaml
 environment.json
 geometry-facts.json              # 几何任务存在
+asset-bundles.json                # 公开资产的原子 manifest
+input-mesh-facts.json             # provided polyMesh 的生成前静态权威事实
+pre-authoring-mesh-facts.json     # provided polyMesh 的受控 checkMesh 事实
 capability-profile.json
 agent-context.json
 resume-compatibility.json

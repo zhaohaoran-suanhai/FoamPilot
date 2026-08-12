@@ -143,6 +143,24 @@ TaskBuilder 只提取带来源的事实并使用低风险确定性默认值。�
 终止时间或工程容差时不会猜测，也不会进入 case generation。当前 CLI 是三个可审计步骤，
 尚未提供多轮聊天或交互式澄清表单。
 
+已有 OpenFOAM 原生网格应作为完整目录资产声明，而不是拆成多个文件：
+
+```bash
+foampilot task draft \
+  --request-file request.md \
+  --asset-dir mesh/openfoam/constant/polyMesh \
+  --asset-install-path constant/polyMesh \
+  --asset-root . \
+  --output task-draft.yaml \
+  --backend auto \
+  --json
+```
+
+provided 路径会在模型调用前固化 `asset-bundles.json`、`input-mesh-facts.json` 和
+`pre-authoring-mesh-facts.json`；系统读取 patch/zone/count/bounds 并运行受控 `checkMesh`，
+模型只负责基于这些权威事实编写 case，不能重新生成或覆盖网格。示例见
+`examples/tasks/provided-poly-mesh.yaml`。
+
 校验公开 TaskSpec：
 
 ```bash
