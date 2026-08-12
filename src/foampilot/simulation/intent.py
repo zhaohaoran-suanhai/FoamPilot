@@ -62,7 +62,7 @@ class SimulationIntent(StrictModel):
     def validate_unique_facts(self) -> Self:
         paths = [item.field_path for item in self.facts]
         if len(paths) != len(set(paths)):
-            raise ValueError("simulation intent fact paths must be unique")
+            raise ValueError("duplicate simulation intent fact paths are not allowed")
         question_ids = [item.question_id for item in self.uncertainties]
         if len(question_ids) != len(set(question_ids)):
             raise ValueError("simulation intent question IDs must be unique")

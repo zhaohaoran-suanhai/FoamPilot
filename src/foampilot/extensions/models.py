@@ -41,6 +41,22 @@ class SupportedTarget(StrictFrozenModel):
         return self.distribution == distribution and version in self.versions
 
 
+class RequiredFact(StrictFrozenModel):
+    field_path: str = Field(
+        pattern=r"^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z0-9][A-Za-z0-9_-]*)*$"
+    )
+    impact: Literal["low", "medium", "high"]
+    description: str = Field(min_length=1)
+
+    @field_validator("description")
+    @classmethod
+    def normalize_description(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("required fact description must not be blank")
+        return normalized
+
+
 class CapabilityDescriptor(StrictFrozenModel):
     extension_id: str
     extension_version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")
@@ -49,6 +65,7 @@ class CapabilityDescriptor(StrictFrozenModel):
     supported_targets: tuple[SupportedTarget, ...] = Field(min_length=1)
     required_executables: tuple[str, ...] = ()
     input_contracts: tuple[str, ...] = ()
+    required_facts: tuple[RequiredFact, ...] = ()
     output_contracts: tuple[str, ...] = ()
     compatible_extensions: tuple[str, ...] = ()
     incompatible_extensions: tuple[str, ...] = ()
@@ -117,6 +134,9 @@ class CapabilityDescriptor(StrictFrozenModel):
             raise ValueError(
                 "an extension cannot be both compatible and incompatible"
             )
+        paths = [item.field_path for item in self.required_facts]
+        if len(paths) != len(set(paths)):
+            raise ValueError("duplicate required fact paths are not allowed")
         return self
 
     def supports_target(self, distribution: str, version: str) -> bool:
@@ -126,4 +146,4 @@ class CapabilityDescriptor(StrictFrozenModel):
         )
 
 
-__all__ = ["CapabilityDescriptor", "SupportedTarget"]
+__all__ = ["CapabilityDescriptor", "RequiredFact", "SupportedTarget"]

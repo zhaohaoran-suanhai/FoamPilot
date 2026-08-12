@@ -1,6 +1,6 @@
 """Trusted extension contracts and deterministic capability registry."""
 
-from .models import CapabilityDescriptor, SupportedTarget
+from .models import CapabilityDescriptor, RequiredFact, SupportedTarget
 from .registry import (
     CapabilityRegistrationError,
     CapabilityRegistry,
@@ -12,5 +12,6 @@ __all__ = [
     "CapabilityRegistrationError",
     "CapabilityRegistry",
     "CapabilityResolutionError",
+    "RequiredFact",
     "SupportedTarget",
 ]
