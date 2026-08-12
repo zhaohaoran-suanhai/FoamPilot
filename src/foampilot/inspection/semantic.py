@@ -1,4 +1,4 @@
-"""High-confidence cross-file semantic inspection for ExecutionPlan v3."""
+"""High-confidence cross-file semantic inspection for compiled plans."""
 
 from __future__ import annotations
 

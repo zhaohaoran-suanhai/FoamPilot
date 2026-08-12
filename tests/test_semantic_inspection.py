@@ -198,7 +198,9 @@ def _plan(
             )
         )
     return ExecutionPlan(
-        schema_version=3,
+        schema_version=4,
+        compiled_from_design_sha256="a" * 64,
+        compiler_identities={"test.semantic": "1.0.0/protocol-1"},
         manifest=_manifest(solver=solver),
         files=files,
         commands=commands,
@@ -417,9 +419,11 @@ def test_region_aware_manifest_accepts_fluid_solid_cht_layout(
             ),
         ],
         patches=[],
-    )
+        )
     plan = ExecutionPlan(
-        schema_version=3,
+        schema_version=4,
+        compiled_from_design_sha256="a" * 64,
+        compiler_identities={"test.semantic": "1.0.0/protocol-1"},
         manifest=manifest,
         files=[
             GeneratedFile(
