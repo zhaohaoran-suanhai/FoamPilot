@@ -26,6 +26,10 @@ NativeStatus = Literal[
     "INITIALIZATION_FAILED",
     "SOLVER_FAILED",
     "POSTPROCESS_FAILED",
+    "ACCEPTANCE_FAILED",
+    "ACCEPTANCE_INCOMPLETE",
+    "RUN_COMPLETED",
+    # Read-only compatibility values for pre-contract-first summaries.
     "PUBLIC_VALIDATION_FAILED",
     "PUBLIC_VALIDATION_PASS",
 ]
@@ -41,6 +45,9 @@ AttemptStatus = Literal[
     "INITIALIZATION_FAILED",
     "SOLVER_FAILED",
     "POSTPROCESS_FAILED",
+    "ACCEPTANCE_FAILED",
+    "ACCEPTANCE_INCOMPLETE",
+    "RUN_COMPLETED",
     "PUBLIC_VALIDATION_FAILED",
     "PUBLIC_VALIDATION_PASS",
     "CANCELLED",
@@ -48,6 +55,17 @@ AttemptStatus = Literal[
 
 # Kept as an import alias for callers that only type native attempt results.
 NativeAgentStatus = AttemptStatus
+
+
+SUCCESSFUL_NATIVE_STATUSES = frozenset(
+    {"RUN_COMPLETED", "PUBLIC_VALIDATION_PASS"}
+)
+
+
+def is_successful_native_status(status: str | None) -> bool:
+    """Accept current execution success plus the historical status alias."""
+
+    return status in SUCCESSFUL_NATIVE_STATUSES
 
 
 class AttemptSummary(StrictModel):

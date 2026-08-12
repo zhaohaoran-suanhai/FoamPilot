@@ -220,7 +220,7 @@ def test_numerical_repair_reuses_mesh_and_keeps_parent_immutable(
         runner=runner,
     ).solve(_task())
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    assert outcome.status == "RUN_COMPLETED"
     assert runner.calls == [
         ["blockMesh", "checkMesh", "icoFoam"],
         ["checkMesh", "icoFoam"],

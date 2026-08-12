@@ -15,11 +15,10 @@ from foampilot.models import (
     ModelRequest,
     ModelTraceSink,
 )
-from foampilot.evidence import RunFacts
+from foampilot.evidence import RunAssessment, RunFacts
 from foampilot.plans import ExecutionPlan
 from foampilot.preprocessing import GeometryFacts, MeshQualityReport
 from foampilot.tasks import TaskSpec
-from foampilot.validation.models import PublicValidationReport
 
 from .failure import NativeFailureClassification
 from .repair_scope import RepairScope
@@ -44,7 +43,7 @@ class RepairStop(StrictModel):
 
 
 def failure_fingerprint(
-    report: PublicValidationReport,
+    report: RunAssessment,
     *,
     run_facts: RunFacts,
 ) -> str:

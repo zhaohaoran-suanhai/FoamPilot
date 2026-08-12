@@ -6,6 +6,8 @@ from .models import (
     NativeAgentStatus,
     NativeStatus,
     RunSummary,
+    SUCCESSFUL_NATIVE_STATUSES,
+    is_successful_native_status,
 )
 from .store import ArtifactStore, redact_text
 
@@ -16,5 +18,7 @@ __all__ = [
     "NativeAgentStatus",
     "NativeStatus",
     "RunSummary",
+    "SUCCESSFUL_NATIVE_STATUSES",
+    "is_successful_native_status",
     "redact_text",
 ]

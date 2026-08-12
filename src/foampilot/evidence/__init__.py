@@ -14,6 +14,7 @@ from .models import (
 )
 from .metrics import MetricPoint, MetricsProjection, MetricsWriter
 from .telemetry import IncrementalOpenFOAMLogParser, ResidualMetric
+from .assessment import RunAssessment, assess_native_run, assessment_for_inspection
 
 __all__ = [
     "ContinuityFact",
@@ -33,6 +34,9 @@ __all__ = [
     "ResidualFact",
     "ResidualMetric",
     "RunFacts",
+    "RunAssessment",
+    "assess_native_run",
+    "assessment_for_inspection",
     "SolverProgressFact",
     "OpenFOAM10EvidenceExtractor",
 ]

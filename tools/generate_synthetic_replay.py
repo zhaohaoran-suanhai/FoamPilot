@@ -16,12 +16,12 @@ import yaml
 
 from foampilot.agent.generation import materialize_case
 from foampilot.inspection import inspect_native_case
-from foampilot.plans import ExecutionPlan
+from foampilot.plans.legacy import LegacyExecutionPlanV3
 from foampilot.runtime import PlanRunResult, PlanStepResult
 from foampilot.tasks import TaskSpec
-from foampilot.validation import (
-    PublicValidationCheck,
-    PublicValidationReport,
+from foampilot.validation.legacy import (
+    LegacyPublicValidationCheck,
+    LegacyPublicValidationReport,
 )
 
 
@@ -342,9 +342,9 @@ def _commands(spec: SyntheticFixtureSpec) -> list[dict]:
     return commands
 
 
-def _plan(spec: SyntheticFixtureSpec) -> ExecutionPlan:
+def _plan(spec: SyntheticFixtureSpec) -> LegacyExecutionPlanV3:
     files = _case_files(spec)
-    return ExecutionPlan.model_validate(
+    return LegacyExecutionPlanV3.model_validate(
         {
             "schema_version": 3,
             "manifest": _manifest(spec, files),
@@ -357,7 +357,7 @@ def _plan(spec: SyntheticFixtureSpec) -> ExecutionPlan:
     )
 
 
-def _task(spec: SyntheticFixtureSpec, plan: ExecutionPlan) -> TaskSpec:
+def _task(spec: SyntheticFixtureSpec, plan: LegacyExecutionPlanV3) -> TaskSpec:
     return TaskSpec.model_validate(
         {
             "schema_version": 3,
@@ -442,9 +442,9 @@ def generate_fixture(
         raise RuntimeError(
             f"synthetic inspection expectation mismatch: {spec.fixture_id}"
         )
-    validation = PublicValidationReport(
+    validation = LegacyPublicValidationReport(
         checks=[
-            PublicValidationCheck(
+            LegacyPublicValidationCheck(
                 name="synthetic-static-inspection",
                 passed=inspection.passed,
                 detail=(

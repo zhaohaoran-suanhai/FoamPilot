@@ -153,7 +153,7 @@ def test_natural_language_compiles_and_uses_canonical_real_solver(
         artifact_store=store,
     ).solve(compilation.task)
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS", outcome.summary
+    assert outcome.status == "RUN_COMPLETED", outcome.summary
     assert (outcome.run_dir / "geometry-facts.json").is_file()
     assert (
         outcome.run_dir / "attempt-01/mesh-quality-report.json"

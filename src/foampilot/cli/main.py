@@ -24,7 +24,7 @@ from foampilot.agent import (
     NativeAgent,
 )
 from foampilot.assets import BundleMember, compute_bundle_manifest_sha256
-from foampilot.artifacts import ArtifactStore
+from foampilot.artifacts import ArtifactStore, is_successful_native_status
 from foampilot.environment import discover_environment
 from foampilot.inspection import inspect_native_case
 from foampilot.improvement import (
@@ -1185,7 +1185,7 @@ def _native_solve(arguments: argparse.Namespace) -> int:
 def _native_outcome_exit_code(outcome) -> int:
     if outcome.summary.workflow_state == "CANCELLED":
         return 130
-    if outcome.summary.native_status == "PUBLIC_VALIDATION_PASS":
+    if is_successful_native_status(outcome.summary.native_status):
         return 0
     if (
         outcome.summary.workflow_state == "DEFERRED"
@@ -1336,7 +1336,9 @@ def _report(arguments: argparse.Namespace) -> int:
     )
     if problems:
         return 4
-    if summary.status in {"PASS", "PUBLIC_VALIDATION_PASS"}:
+    if summary.status == "PASS" or is_successful_native_status(
+        summary.native_status
+    ):
         return 0
     if (
         summary.workflow_state == "DEFERRED"

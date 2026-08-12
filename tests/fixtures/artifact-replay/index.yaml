@@ -3,7 +3,7 @@ fixtures:
 - fixture_id: fp-single-box
   kind: single_region_success
   source_kind: synthetic_foampilot
-  generator_sha256: d63028033efb2d12876767b3e3f3e4792cf9f98f19108bfaa2ec43009a8c08bb
+  generator_sha256: ed885d0414616c55b534ef230d74a09fd870d593c66082508127f8a9f035816e
   expected:
     native_status: PUBLIC_VALIDATION_PASS
   files:
@@ -67,7 +67,7 @@ fixtures:
 - fixture_id: fp-mpi-duct
   kind: mpi_success
   source_kind: synthetic_foampilot
-  generator_sha256: d63028033efb2d12876767b3e3f3e4792cf9f98f19108bfaa2ec43009a8c08bb
+  generator_sha256: ed885d0414616c55b534ef230d74a09fd870d593c66082508127f8a9f035816e
   expected:
     native_status: PUBLIC_VALIDATION_PASS
   files:
@@ -146,7 +146,7 @@ fixtures:
 - fixture_id: fp-included-field
   kind: include_success
   source_kind: synthetic_foampilot
-  generator_sha256: d63028033efb2d12876767b3e3f3e4792cf9f98f19108bfaa2ec43009a8c08bb
+  generator_sha256: ed885d0414616c55b534ef230d74a09fd870d593c66082508127f8a9f035816e
   expected:
     native_status: PUBLIC_VALIDATION_PASS
   files:
@@ -213,7 +213,7 @@ fixtures:
 - fixture_id: fp-heated-slot
   kind: buoyant_success
   source_kind: synthetic_foampilot
-  generator_sha256: d63028033efb2d12876767b3e3f3e4792cf9f98f19108bfaa2ec43009a8c08bb
+  generator_sha256: ed885d0414616c55b534ef230d74a09fd870d593c66082508127f8a9f035816e
   expected:
     native_status: PUBLIC_VALIDATION_PASS
   files:
@@ -280,7 +280,7 @@ fixtures:
 - fixture_id: fp-coupled-blocks
   kind: multi_region_success
   source_kind: synthetic_foampilot
-  generator_sha256: d63028033efb2d12876767b3e3f3e4792cf9f98f19108bfaa2ec43009a8c08bb
+  generator_sha256: ed885d0414616c55b534ef230d74a09fd870d593c66082508127f8a9f035816e
   expected:
     native_status: PUBLIC_VALIDATION_PASS
   files:
@@ -347,7 +347,7 @@ fixtures:
 - fixture_id: fp-bad-dimension
   kind: known_failure
   source_kind: synthetic_foampilot
-  generator_sha256: d63028033efb2d12876767b3e3f3e4792cf9f98f19108bfaa2ec43009a8c08bb
+  generator_sha256: ed885d0414616c55b534ef230d74a09fd870d593c66082508127f8a9f035816e
   expected:
     native_status: STATIC_INSPECTION_FAILED
   files:

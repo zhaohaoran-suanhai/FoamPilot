@@ -113,7 +113,7 @@ def test_performance_summary_is_recomputed_from_run_evidence(
         ),
         _event(
             14,
-            WorkflowStage.PUBLIC_VALIDATION_COMPLETE,
+            WorkflowStage.RUN_ASSESSED,
             WorkflowEventState.COMPLETED,
             19,
             attempt=1,

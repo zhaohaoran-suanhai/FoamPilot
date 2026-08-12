@@ -7,9 +7,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from foampilot.inspection import InspectionReport
-from foampilot.evidence import NativeErrorFact, RunFacts
+from foampilot.evidence import NativeErrorFact, RunAssessment, RunFacts
 from foampilot.plans import ExecutionPlan
-from foampilot.validation.models import PublicValidationReport
 from foampilot.workflow import FailureDomain, FailureRecord
 
 
@@ -32,7 +31,7 @@ class FailureEvidence(StrictModel):
     kind: Literal[
         "inspection_issue",
         "run_fact",
-        "public_report",
+        "run_assessment",
         "prior_failure",
     ]
     value: str = Field(min_length=1)
@@ -73,21 +72,17 @@ class FailureClassificationError(ValueError):
 
 
 _LAYER_FACTS: dict[str, tuple[FailureDomain, str | None]] = {
-    "REQUEST_INCOMPLETE": (FailureDomain.TASK, None),
     "ENVIRONMENT_BLOCKED": (FailureDomain.ENVIRONMENT, None),
-    "PLAN_INVALID": (FailureDomain.PLAN, None),
-    "CASE_GENERATION_FAILED": (FailureDomain.CASE, None),
     "STATIC_INSPECTION_FAILED": (FailureDomain.INSPECTION, None),
     "MESH_FAILED": (FailureDomain.MESH, "mesh"),
     "MESH_QUALITY_FAILED": (FailureDomain.MESH, "check"),
     "INITIALIZATION_FAILED": (FailureDomain.INITIALIZATION, "initialize"),
     "SOLVER_FAILED": (FailureDomain.SOLVER, "solve"),
     "POSTPROCESS_FAILED": (FailureDomain.POSTPROCESS, "postprocess"),
-    "PUBLIC_VALIDATION_FAILED": (FailureDomain.VALIDATION, None),
 }
 
 def _base_facts(
-    report: PublicValidationReport,
+    report: RunAssessment,
 ) -> tuple[FailureDomain, str | None]:
     if report.failure_layer is None:
         raise FailureClassificationError("passing report cannot be classified")
@@ -156,7 +151,7 @@ def _resolve_declared_paths(
 def validate_failure_classification(
     classification: NativeFailureClassification,
     *,
-    report: PublicValidationReport,
+    report: RunAssessment,
 ) -> None:
     domain, stage = _base_facts(report)
     if classification.domain != domain:
@@ -172,13 +167,13 @@ def validate_failure_classification(
         and classification.failed_step_id != report.failed_step_id
     ):
         raise FailureClassificationError(
-            "classification step conflicts with public report"
+            "classification step conflicts with run assessment"
         )
 
 
 def classify_native_failure(
     *,
-    report: PublicValidationReport,
+    report: RunAssessment,
     plan: ExecutionPlan,
     run_facts: RunFacts,
     inspection: InspectionReport | None = None,
@@ -316,8 +311,8 @@ def classify_native_failure(
             evidence=[
                 *evidence,
                 FailureEvidence(
-                    kind="public_report",
-                    value=(report.feedback() or report.failure_layer)[:500],
+                    kind="run_assessment",
+                    value=report.detail[:500],
                 ),
             ],
             scope_hints=FailureScopeHints(commands=commands),

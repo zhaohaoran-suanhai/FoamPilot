@@ -23,12 +23,19 @@ from foampilot.artifacts import (
     NativeAgentStatus,
     NativeStatus,
     RunSummary,
+    is_successful_native_status,
 )
 from foampilot.environment import (
     EnvironmentSnapshot,
     discover_environment,
 )
-from foampilot.evidence import EvidenceExtractorRegistry, RunFacts
+from foampilot.evidence import (
+    EvidenceExtractorRegistry,
+    RunAssessment,
+    RunFacts,
+    assess_native_run,
+    assessment_for_inspection,
+)
 from foampilot.extensions import (
     CapabilityDescriptor,
     CapabilityRegistry,
@@ -136,11 +143,6 @@ from foampilot.tasks import (
     snapshot_public_assets,
     stage_public_assets,
 )
-from foampilot.validation.models import (
-    PublicValidationCheck,
-    PublicValidationReport,
-)
-from foampilot.validation.native import validate_native_run
 from foampilot.workflow import (
     FailureDomain,
     FailureRecord,
@@ -483,8 +485,9 @@ _NATIVE_STATUSES: set[str] = {
     "INITIALIZATION_FAILED",
     "SOLVER_FAILED",
     "POSTPROCESS_FAILED",
-    "PUBLIC_VALIDATION_FAILED",
-    "PUBLIC_VALIDATION_PASS",
+    "ACCEPTANCE_FAILED",
+    "ACCEPTANCE_INCOMPLETE",
+    "RUN_COMPLETED",
 }
 
 
@@ -781,7 +784,7 @@ def _failure_record(
     message: str,
     attempts: list[AttemptSummary],
 ) -> FailureRecord | None:
-    if status in {"PUBLIC_VALIDATION_PASS", "PLAN_READY"}:
+    if is_successful_native_status(status) or status == "PLAN_READY":
         return None
     domains = {
         "REQUEST_INCOMPLETE": FailureDomain.TASK,
@@ -800,7 +803,8 @@ def _failure_record(
         "INITIALIZATION_FAILED": FailureDomain.INITIALIZATION,
         "SOLVER_FAILED": FailureDomain.SOLVER,
         "POSTPROCESS_FAILED": FailureDomain.POSTPROCESS,
-        "PUBLIC_VALIDATION_FAILED": FailureDomain.VALIDATION,
+        "ACCEPTANCE_FAILED": FailureDomain.VALIDATION,
+        "ACCEPTANCE_INCOMPLETE": FailureDomain.VALIDATION,
     }
     return FailureRecord(
         domain=domains.get(status, FailureDomain.LEGACY),
@@ -908,75 +912,23 @@ def _generation_trace(
     }
 
 
-def _status_for_report(
-    report: PublicValidationReport,
+def _status_for_assessment(
+    report: RunAssessment,
 ) -> NativeAgentStatus:
-    if report.passed:
-        return "PUBLIC_VALIDATION_PASS"
+    if report.ok:
+        return "RUN_COMPLETED"
     if report.failure_layer == "ENVIRONMENT_BLOCKED":
         return "BLOCKED_ENVIRONMENT"
     if report.failure_layer is None:
-        return "PUBLIC_VALIDATION_FAILED"
+        return "SOLVER_FAILED"
     return report.failure_layer
-
-
-def _with_mesh_quality(
-    report: PublicValidationReport,
-    quality: MeshQualityReport,
-) -> PublicValidationReport:
-    check = PublicValidationCheck(
-        name="mesh-quality-intent",
-        passed=quality.passed,
-        detail=(
-            "Mesh observations satisfy the declared MeshIntent."
-            if quality.passed
-            else "Mesh observations do not satisfy the declared MeshIntent: "
-            + ", ".join(quality.failed_requirements)
-        ),
-        observed={
-            "check_mesh_passed": quality.check_mesh_passed,
-            "cells": quality.cells,
-            "max_non_orthogonality": quality.max_non_orthogonality,
-            "max_skewness": quality.max_skewness,
-            "failed_requirements": ",".join(quality.failed_requirements),
-        },
-        limits={},
-    )
-    failure_layer = report.failure_layer
-    if (
-        not quality.passed
-        and failure_layer in {None, "PUBLIC_VALIDATION_FAILED"}
-    ):
-        failure_layer = "MESH_QUALITY_FAILED"
-    return report.model_copy(
-        update={
-            "checks": [*report.checks, check],
-            "failure_layer": failure_layer,
-        }
-    )
 
 
 def _inspection_validation_report(
     inspection: InspectionReport,
-) -> PublicValidationReport:
-    return PublicValidationReport(
-        checks=[
-            PublicValidationCheck(
-                name=f"static:{issue.code}",
-                passed=False,
-                detail=(
-                    f"{issue.code} at {issue.path or '<case>'}: "
-                    f"{issue.detail}"
-                ),
-                observed={
-                    "code": issue.code,
-                    "path": issue.path,
-                },
-            )
-            for issue in inspection.issues
-        ],
-        failure_layer="STATIC_INSPECTION_FAILED",
-    )
+) -> RunAssessment:
+    issue = inspection.issues[0]
+    return assessment_for_inspection(issue.code)
 
 
 class NativeAgent:
@@ -1039,7 +991,7 @@ class NativeAgent:
         )
         active_workflow_state = workflow_state or (
             WorkflowState.COMPLETED
-            if status == "PUBLIC_VALIDATION_PASS"
+            if is_successful_native_status(status)
             else WorkflowState.FAILED
         )
         if primary_failure is None and (
@@ -1131,7 +1083,8 @@ class NativeAgent:
                             path.name
                             in {
                                 "run-facts.json",
-                                "public-validation.json",
+                                "run-assessment.json",
+                                "result-report.json",
                                 "static-inspection.json",
                             }
                             or path.name.startswith(
@@ -1639,13 +1592,13 @@ class NativeAgent:
                 reused_evidence_paths.append(
                     "continuation-evidence/execution-plan.json"
                 )
-                if _continuation.public_validation_path is not None:
-                    validation_copy = evidence_root / "public-validation.json"
+                if _continuation.run_assessment_path is not None:
+                    validation_copy = evidence_root / "run-assessment.json"
                     validation_copy.write_bytes(
-                        _continuation.public_validation_path.read_bytes()
+                        _continuation.run_assessment_path.read_bytes()
                     )
                     reused_evidence_paths.append(
-                        "continuation-evidence/public-validation.json"
+                        "continuation-evidence/run-assessment.json"
                     )
                 if _continuation.run_facts_path is not None:
                     facts_copy = evidence_root / "run-facts.json"
@@ -2773,11 +2726,11 @@ class NativeAgent:
             == WorkflowStage.MODEL_REPAIR_STARTED
         ):
             parent_plan = load_parent_plan(_continuation)
-            assert _continuation.public_validation_path is not None
+            assert _continuation.run_assessment_path is not None
             assert _continuation.active_plan_path is not None
             assert _continuation.run_facts_path is not None
-            report = PublicValidationReport.model_validate_json(
-                _continuation.public_validation_path.read_text(
+            report = RunAssessment.model_validate_json(
+                _continuation.run_assessment_path.read_text(
                     encoding="utf-8"
                 )
             )
@@ -2902,7 +2855,7 @@ class NativeAgent:
                     capability,
                     repair=True,
                     repair_evidence=(
-                        report.feedback() + "\n" + log_text
+                        report.detail + "\n" + log_text
                     ),
                     geometry_facts=geometry_facts,
                 )
@@ -2952,7 +2905,7 @@ class NativeAgent:
                     domain=classification.domain,
                     code=classification.code,
                     step_id=classification.failed_step_id,
-                    detail=report.feedback(),
+                    detail=report.detail,
                     evidence_paths=[classification_name, scope_name],
                 )
                 repair_status = build_agent_status_snapshot(
@@ -4163,13 +4116,12 @@ class NativeAgent:
                         )
                     ],
                 )
-                report = validate_native_run(
-                    task,
+                report = assess_native_run(
                     run_facts,
-                    case_root,
+                    mesh_quality=(
+                        mesh_quality if task.mesh is not None else None
+                    ),
                 )
-                if task.mesh is not None:
-                    report = _with_mesh_quality(report, mesh_quality)
                 log_text = json.dumps(
                     run_facts.model_dump(mode="json"),
                     ensure_ascii=False,
@@ -4209,38 +4161,52 @@ class NativeAgent:
                     ensure_ascii=False,
                     sort_keys=True,
                 )
-            contract_pipeline.evaluate_after_evidence(
-                contracts=planning_contracts,
-                run_facts=run_facts,
-                case_root=case_root,
-                attempt_root=attempt_root,
-                attempt_number=attempt_number,
-            )
             _write_json(
-                attempt_root / "public-validation.json",
+                attempt_root / "run-assessment.json",
                 report,
             )
             validation_checkpoint = workflow.checkpoint(
-                f"public-validation-attempt-{attempt_number:02d}",
+                f"run-assessment-attempt-{attempt_number:02d}",
                 report,
             )
             _record_event(
                 workflow,
-                stage=WorkflowStage.PUBLIC_VALIDATION_COMPLETE,
+                stage=WorkflowStage.RUN_ASSESSED,
                 state=WorkflowEventState.COMPLETED,
                 attempt=attempt_number,
                 evidence_paths=[
                     (
                         f"attempt-{attempt_number:02d}/"
-                        "public-validation.json"
+                        "run-assessment.json"
                     ),
                     validation_checkpoint.relative_to(
                         run_dir
                     ).as_posix(),
                 ],
             )
-            status = _status_for_report(report)
-            if report.passed:
+            try:
+                public_results = contract_pipeline.evaluate_after_evidence(
+                    contracts=planning_contracts,
+                    run_facts=run_facts,
+                    case_root=case_root,
+                    attempt_root=attempt_root,
+                    attempt_number=attempt_number,
+                )
+            except ContractStageError as error:
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status=error.failure.code,
+                    attempts=attempts,
+                    message=f"Result processing failed: {error}",
+                    model_calls=model_calls,
+                    primary_failure=error.failure,
+                )
+            status = _status_for_assessment(report)
+            if report.ok and public_results.report.verdict in {
+                "PASS",
+                "NOT_REQUESTED",
+            }:
                 attempts.append(
                     AttemptSummary(
                         attempt=attempt_number,
@@ -4252,8 +4218,56 @@ class NativeAgent:
                     task=task,
                     status=status,
                     attempts=attempts,
-                    message="All evaluator-owned public checks pass.",
+                    message=(
+                        "Native execution completed and explicit acceptance "
+                        "conditions passed."
+                    ),
                     model_calls=model_calls,
+                )
+            if report.ok:
+                attempts.append(
+                    AttemptSummary(
+                        attempt=attempt_number,
+                        status=(
+                            "ACCEPTANCE_FAILED"
+                            if public_results.report.verdict == "FAIL"
+                            else "ACCEPTANCE_INCOMPLETE"
+                        ),
+                    )
+                )
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status=(
+                        "ACCEPTANCE_FAILED"
+                        if public_results.report.verdict == "FAIL"
+                        else "ACCEPTANCE_INCOMPLETE"
+                    ),
+                    attempts=attempts,
+                    message=(
+                        "Explicit acceptance conditions failed or could not "
+                        "be evaluated; see result-report.json."
+                    ),
+                    model_calls=model_calls,
+                    primary_failure=FailureRecord(
+                        domain=FailureDomain.VALIDATION,
+                        code=(
+                            "ACCEPTANCE_FAILED"
+                            if public_results.report.verdict == "FAIL"
+                            else "ACCEPTANCE_EVIDENCE_INCOMPLETE"
+                        ),
+                        detail=(
+                            "; ".join(
+                                item.detail
+                                for item in public_results.report.conditions
+                                if item.status != "PASS"
+                            )
+                            or "explicit acceptance evidence is incomplete"
+                        ),
+                        message="显式验收条件未通过或证据不足。",
+                        recovery="查看 result-report.json 的条件状态与缺失证据。",
+                        evidence_paths=["result-report.json"],
+                    ),
                 )
 
             fingerprint = failure_fingerprint(
@@ -4288,7 +4302,7 @@ class NativeAgent:
                     workflow_state=WorkflowState.FAILED,
                     primary_failure=_failure_record(
                         status=status,
-                        message=report.feedback(),
+                        message=report.detail,
                         attempts=attempts,
                     ),
                     terminal_blocker=FailureRecord(
@@ -4307,7 +4321,7 @@ class NativeAgent:
                 domain=classification.domain,
                 code=classification.code,
                 step_id=classification.failed_step_id,
-                detail=report.feedback(),
+                detail=report.detail,
                 evidence_paths=[classification_name],
             )
 
@@ -4397,7 +4411,7 @@ class NativeAgent:
                     capability,
                     repair=True,
                     repair_evidence=(
-                        report.feedback() + "\n" + log_text
+                        report.detail + "\n" + log_text
                     ),
                     geometry_facts=geometry_facts,
                 )
@@ -4442,9 +4456,9 @@ class NativeAgent:
                     {
                         "failed_step_id": report.failed_step_id,
                         "failure_fingerprint": fingerprint,
-                        "public_validation_path": (
+                        "run_assessment_path": (
                             f"attempt-{attempt_number:02d}/"
-                            "public-validation.json"
+                            "run-assessment.json"
                         ),
                         "run_facts_path": (
                             f"attempt-{attempt_number:02d}/run-facts.json"

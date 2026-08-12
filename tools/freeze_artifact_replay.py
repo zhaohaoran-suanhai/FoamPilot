@@ -160,8 +160,11 @@ def freeze_fixture(
         "static-inspection.json": (
             attempt_root / "static-inspection.json"
         ),
-        "public-validation.json": (
-            attempt_root / "public-validation.json"
+        "run-assessment.json": (
+            attempt_root / "run-assessment.json"
+        ),
+        "result-report.json": (
+            attempt_root / "result-report.json"
         ),
         "run-result.json": attempt_root / "run-result.json",
     }

@@ -155,7 +155,7 @@ def test_repair_status_uses_plan_regions_failure_and_remaining_budget(
     store = WorkflowStore(run_dir=tmp_path)
     _record(
         store,
-        WorkflowStage.PUBLIC_VALIDATION_COMPLETE,
+        WorkflowStage.RUN_ASSESSED,
         WorkflowEventState.COMPLETED,
         attempt=1,
     )
@@ -222,7 +222,7 @@ def test_repair_status_accepts_descriptive_solver_family_extension(
     store = WorkflowStore(run_dir=tmp_path)
     _record(
         store,
-        WorkflowStage.PUBLIC_VALIDATION_COMPLETE,
+        WorkflowStage.RUN_ASSESSED,
         WorkflowEventState.COMPLETED,
         attempt=1,
     )

@@ -1,29 +1,17 @@
-"""Golden-free physics checks and native public validation."""
+"""Historical validation-artifact compatibility only.
 
-from .models import PublicValidationCheck, PublicValidationReport
-from .native import validate_native_run
-from .policies import BuoyantPolicy, ShockTubePolicy
-from .public_checks import (
-    PublicCheck,
-    PublicCheckReport,
-    ShockTubeRunEvidence,
-    TimeControlEvidence,
-    check_buoyant_run,
-    check_shock_tube_run,
-    parse_time_control,
+Canonical runs use :mod:`foampilot.evidence.assessment` and
+:mod:`foampilot.acceptance`.
+"""
+
+from .legacy import (
+    LegacyFailureLayer,
+    LegacyPublicValidationCheck,
+    LegacyPublicValidationReport,
 )
 
 __all__ = [
-    "BuoyantPolicy",
-    "PublicCheck",
-    "PublicCheckReport",
-    "PublicValidationCheck",
-    "PublicValidationReport",
-    "ShockTubePolicy",
-    "ShockTubeRunEvidence",
-    "TimeControlEvidence",
-    "check_buoyant_run",
-    "check_shock_tube_run",
-    "parse_time_control",
-    "validate_native_run",
+    "LegacyFailureLayer",
+    "LegacyPublicValidationCheck",
+    "LegacyPublicValidationReport",
 ]

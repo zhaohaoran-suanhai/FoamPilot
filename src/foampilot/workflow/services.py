@@ -138,6 +138,11 @@ CANONICAL_STAGE_DESCRIPTORS: tuple[StageDescriptor, ...] = (
         output_artifact="run-facts.json",
     ),
     StageDescriptor(
+        stage=WorkflowStage.RUN_ASSESSED,
+        input_artifacts=("run-facts.json",),
+        output_artifact="run-assessment.json",
+    ),
+    StageDescriptor(
         stage=WorkflowStage.POSTPROCESSED,
         input_artifacts=("run-facts.json",),
         output_artifact="derived-metrics.json",

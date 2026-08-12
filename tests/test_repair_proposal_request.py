@@ -64,7 +64,7 @@ def _status() -> AgentStatusSnapshot:
         {
             "source_event_sequence": 9,
             "current_stage": "repair",
-            "last_completed_stage": "PUBLIC_VALIDATION_COMPLETE",
+            "last_completed_stage": "RUN_ASSESSED",
             "attempt": {"current": 1, "maximum": 2},
             "capability": {
                 "solver_family": "incompressible-laminar",

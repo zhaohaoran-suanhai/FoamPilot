@@ -81,6 +81,9 @@ def test_contract_stages_have_the_required_causal_order() -> None:
         WorkflowStage.CASE_AUTHORED
     )
     assert stages.index(WorkflowStage.EXTRACTING_EVIDENCE) < stages.index(
+        WorkflowStage.RUN_ASSESSED
+    )
+    assert stages.index(WorkflowStage.RUN_ASSESSED) < stages.index(
         WorkflowStage.POSTPROCESSED
     )
     assert stages.index(WorkflowStage.POSTPROCESSED) < stages.index(

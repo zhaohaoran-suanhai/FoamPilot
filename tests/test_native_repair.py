@@ -1,26 +1,17 @@
 from __future__ import annotations
 
 from foampilot.agent.repair import failure_fingerprint, should_stop_repair
-from foampilot.validation.models import (
-    PublicValidationCheck,
-    PublicValidationReport,
-)
+from foampilot.evidence import RunAssessment
 from tests.test_failure_classifier import _facts
 
 
-def _report() -> PublicValidationReport:
-    return PublicValidationReport(
-        checks=[
-            PublicValidationCheck(
-                name="completion",
-                passed=False,
-                detail="solver did not end normally",
-                observed={"normal_end": False},
-                limits={"normal_end": True},
-            )
-        ],
+def _report() -> RunAssessment:
+    return RunAssessment(
+        ok=False,
         failure_layer="SOLVER_FAILED",
         failed_step_id="solve",
+        reason_codes=("NORMAL_SOLVER_END_MISSING",),
+        detail="solver did not end normally",
     )
 
 

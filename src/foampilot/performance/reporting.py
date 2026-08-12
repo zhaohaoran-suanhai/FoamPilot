@@ -138,12 +138,17 @@ def _materialization_seconds(events: list[WorkflowEvent]) -> float:
 
 def _validation_seconds(events: list[WorkflowEvent]) -> float:
     total = 0.0
-    for finish in (
+    finish_events = [
         item
         for item in events
-        if item.stage == WorkflowStage.PUBLIC_VALIDATION_COMPLETE
+        if item.stage
+        in {
+            WorkflowStage.RUN_ASSESSED,
+            WorkflowStage.PUBLIC_VALIDATION_COMPLETE,
+        }
         and item.state == WorkflowEventState.COMPLETED
-    ):
+    ]
+    for finish in finish_events:
         candidates = [
             item
             for item in events

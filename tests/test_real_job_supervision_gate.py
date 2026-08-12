@@ -53,7 +53,7 @@ def test_real_detached_job_reuses_verified_plan_and_finalizes(
         runtime_config=runtime,
         artifact_store=source_store,
     ).solve(load_task_spec(task_path))
-    assert source.status == "PUBLIC_VALIDATION_PASS", source.summary
+    assert source.status == "RUN_COMPLETED", source.summary
 
     job_root = project / "runs/job-real-detached"
     job_root.mkdir(parents=True)
@@ -104,7 +104,7 @@ def test_real_detached_job_reuses_verified_plan_and_finalizes(
     assert status.run_dir is not None
     run_dir = job_root / status.run_dir
     summary = ArtifactStore.read_summary(run_dir)
-    assert summary.native_status == "PUBLIC_VALIDATION_PASS"
+    assert summary.native_status == "RUN_COMPLETED"
     assert ArtifactStore(job_root).verify(run_dir) == []
     events = [
         json.loads(line)
@@ -136,7 +136,7 @@ def test_real_rerun_executes_cold_solver_and_preserves_parent(
         runtime_config=runtime,
         artifact_store=parent_store,
     ).solve(task)
-    assert parent.status == "PUBLIC_VALIDATION_PASS", parent.summary
+    assert parent.status == "RUN_COMPLETED", parent.summary
     parent_manifest = (
         parent.run_dir / ArtifactStore.manifest_name
     ).read_bytes()
@@ -148,7 +148,7 @@ def test_real_rerun_executes_cold_solver_and_preserves_parent(
         artifact_store=child_store,
     ).rerun(parent.run_dir)
 
-    assert child.status == "PUBLIC_VALIDATION_PASS", child.summary
+    assert child.status == "RUN_COMPLETED", child.summary
     assert parent_store.verify(parent.run_dir) == []
     assert child_store.verify(child.run_dir) == []
     assert (

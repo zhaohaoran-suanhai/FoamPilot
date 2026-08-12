@@ -464,7 +464,7 @@ def test_provided_mesh_facts_exist_before_first_model_call(
         public_asset_root=public_root,
     )
 
-    assert outcome.summary.native_status == "PUBLIC_VALIDATION_PASS"
+    assert outcome.summary.native_status == "RUN_COMPLETED"
     assert runner.probe_calls == 1
     assert (outcome.run_dir / "asset-bundles.json").is_file()
     assert (outcome.run_dir / "input-mesh-facts.json").is_file()
@@ -492,7 +492,7 @@ def _agent(
     )
 
 
-def test_native_agent_reaches_public_validation_pass(
+def test_native_agent_reaches_run_completed(
     tmp_path: Path,
 ) -> None:
     plan = _plan()
@@ -507,7 +507,7 @@ def test_native_agent_reaches_public_validation_pass(
         runner=runner,
     ).solve(_task())
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    assert outcome.status == "RUN_COMPLETED"
     run_dir = outcome.run_dir
     assert (run_dir / "task.yaml").is_file()
     assert (run_dir / "environment.json").is_file()
@@ -538,9 +538,8 @@ def test_native_agent_reaches_public_validation_pass(
     assert (
         run_dir / "attempt-01/case/system/controlDict"
     ).is_file()
-    assert (
-        run_dir / "attempt-01/public-validation.json"
-    ).is_file()
+    assert (run_dir / "attempt-01/run-assessment.json").is_file()
+    assert not (run_dir / "attempt-01/public-validation.json").exists()
     for name in (
         "acceptance-plan.json",
         "observation-plan.json",
@@ -588,6 +587,9 @@ def test_native_agent_reaches_public_validation_pass(
         "CASE_AUTHORED"
     )
     assert stage_names.index("EXTRACTING_EVIDENCE") < stage_names.index(
+        "RUN_ASSESSED"
+    )
+    assert stage_names.index("RUN_ASSESSED") < stage_names.index(
         "POSTPROCESSED"
     )
     assert stage_names.index("POSTPROCESSED") < stage_names.index(
@@ -607,7 +609,7 @@ def test_ready_design_is_frozen_before_case_author_call(
         runner=SequencePlanRunner([(0, "Time = 1\nEnd\n", "")]),
     ).solve(_task())
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    assert outcome.status == "RUN_COMPLETED"
     for name in (
         "simulation-intent.json",
         "resolved-requirements.json",
@@ -658,7 +660,7 @@ def test_non_empty_acceptance_contract_is_evaluated_from_run_facts(
             encoding="utf-8"
         )
     )
-    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    assert outcome.status == "RUN_COMPLETED"
     assert result["verdict"] == "PASS"
     assert result["conditions"][0]["status"] == "PASS"
     assert result["conditions"][0]["observed_value"] == pytest.approx(3e-8)
@@ -668,6 +670,47 @@ def test_non_empty_acceptance_contract_is_evaluated_from_run_facts(
     assert author_payload["observation_plan"]["items"][0][
         "required_for_condition_ids"
     ] == ["continuity-limit"]
+
+
+def test_failed_acceptance_is_separate_from_successful_execution(
+    tmp_path: Path,
+) -> None:
+    model = AcceptanceIntentModel([_plan()])
+    runner = SequencePlanRunner(
+        [
+            (
+                0,
+                "Time = 1\n"
+                "time step continuity errors : sum local = 1e-04, "
+                "global = -2e-04, cumulative = 3e-04\nEnd\n",
+                "",
+            )
+        ]
+    )
+
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=model,
+        runner=runner,
+    ).solve(_task())
+
+    assessment = json.loads(
+        (outcome.run_dir / "attempt-01/run-assessment.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    result = json.loads(
+        (outcome.run_dir / "result-report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert outcome.status == "ACCEPTANCE_FAILED"
+    assert outcome.summary.workflow_state == "FAILED"
+    assert assessment["ok"] is True
+    assert result["verdict"] == "FAIL"
+    assert result["conditions"][0]["status"] == "FAIL"
+    assert runner.calls == 1
+    assert not (outcome.run_dir / "repair-proposal-attempt-01.json").exists()
 
 
 class ConfirmationDesignModel(RecordingModel):
@@ -1078,7 +1121,7 @@ def test_native_agent_persists_mesh_quality_report(
 
     outcome = agent.solve(task)
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    assert outcome.status == "RUN_COMPLETED"
     quality_path = outcome.run_dir / "attempt-01/mesh-quality-report.json"
     quality = json.loads(quality_path.read_text(encoding="utf-8"))
     assert quality["check_mesh_passed"] is True
@@ -1143,7 +1186,7 @@ def test_native_agent_ignores_model_authored_mpi_launcher(
         runner=runner,
     ).solve(_task())
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    assert outcome.status == "RUN_COMPLETED"
     bundle = json.loads(
         (outcome.run_dir / "case-bundle.json").read_text(
             encoding="utf-8"
@@ -1192,7 +1235,7 @@ def test_native_agent_ignores_model_authored_optional_utility(
 
     outcome = agent.solve(_task())
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    assert outcome.status == "RUN_COMPLETED"
     bundle = json.loads(
         (outcome.run_dir / "case-bundle.json").read_text(
             encoding="utf-8"
@@ -1281,7 +1324,7 @@ def test_native_agent_applies_one_evidence_scoped_repair(
         runner=runner,
     ).solve(_task())
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    assert outcome.status == "RUN_COMPLETED"
     assert len(outcome.summary.attempts) == 2
     assert (
         outcome.run_dir
@@ -1366,7 +1409,7 @@ def test_native_agent_rejects_undeclared_dynamic_code_during_repair(
         runner=runner,
     ).solve(_task())
 
-    assert outcome.status == "PUBLIC_VALIDATION_FAILED"
+    assert outcome.status == "SOLVER_FAILED"
     assert "UNDECLARED_SEMANTIC_CHANGE" in outcome.summary.message
     assert not (outcome.run_dir / "attempt-02/execution-plan.json").exists()
     assert [report.risk_level for report in runner.risk_reports] == ["low"]
@@ -1415,8 +1458,11 @@ functions
     )
     assert runner.calls == 0
     assert (
-        outcome.run_dir / "attempt-01/public-validation.json"
+        outcome.run_dir / "attempt-01/run-assessment.json"
     ).is_file()
+    assert not (
+        outcome.run_dir / "attempt-01/public-validation.json"
+    ).exists()
     assert not (
         outcome.run_dir / "repair-proposal-attempt-01.json"
     ).exists()

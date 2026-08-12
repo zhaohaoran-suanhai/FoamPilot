@@ -24,7 +24,7 @@ def test_real_foundation10_solve_uses_compiled_v4_plan(tmp_path: Path) -> None:
         artifact_store=ArtifactStore(tmp_path / "runs"),
     ).solve(_task())
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    assert outcome.status == "RUN_COMPLETED"
     bundle = json.loads(
         (outcome.run_dir / "case-bundle.json").read_text(encoding="utf-8")
     )

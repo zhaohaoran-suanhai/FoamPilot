@@ -107,7 +107,7 @@ def test_resume_repair_creates_child_and_preserves_parent(
     assert child.summary.parent_run is not None
     assert child.summary.parent_run.run_id == parent.run_dir.name
     assert child.summary.workflow_state == "COMPLETED"
-    assert child.summary.native_status == "PUBLIC_VALIDATION_PASS"
+    assert child.summary.native_status == "RUN_COMPLETED"
 
 
 def test_strict_resume_supports_an_external_job_artifact_root(
@@ -428,7 +428,7 @@ def test_resume_generation_reissues_generation_and_enters_solver(
     ).resume(parent.run_dir)
 
     assert parent.summary.native_status is None
-    assert child.summary.native_status == "PUBLIC_VALIDATION_PASS"
+    assert child.summary.native_status == "RUN_COMPLETED"
     assert child.summary.parent_run is not None
     assert (
         json.loads(

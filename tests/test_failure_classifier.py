@@ -10,10 +10,11 @@ from foampilot.agent.failure import (
     validate_failure_classification,
 )
 from foampilot.inspection import InspectionIssue, InspectionReport
-from foampilot.evidence import NativeErrorFact, RawCommandEvidence, RunFacts
-from foampilot.validation.models import (
-    PublicValidationCheck,
-    PublicValidationReport,
+from foampilot.evidence import (
+    NativeErrorFact,
+    RawCommandEvidence,
+    RunAssessment,
+    RunFacts,
 )
 from foampilot.workflow import FailureDomain, FailureRecord
 
@@ -75,18 +76,14 @@ def _report(
     *,
     detail: str = "native execution failed",
     step_id: str | None = "solve-a",
-) -> PublicValidationReport:
-    return PublicValidationReport.model_validate(
+) -> RunAssessment:
+    return RunAssessment.model_validate(
         {
-            "checks": [
-                {
-                    "name": "completion",
-                    "passed": False,
-                    "detail": detail,
-                }
-            ],
+            "ok": False,
             "failure_layer": layer,
             "failed_step_id": step_id,
+            "reason_codes": ("FIXTURE_FAILURE",),
+            "detail": detail,
         }
     )
 
@@ -205,7 +202,6 @@ def test_classifies_common_solver_failures_without_model_call(
         ("INITIALIZATION_FAILED", FailureDomain.INITIALIZATION, "initialize"),
         ("SOLVER_FAILED", FailureDomain.SOLVER, "solve"),
         ("POSTPROCESS_FAILED", FailureDomain.POSTPROCESS, "postprocess"),
-        ("PUBLIC_VALIDATION_FAILED", FailureDomain.VALIDATION, None),
     ],
 )
 def test_unknown_failure_keeps_public_layer_without_guessing(
@@ -310,7 +306,7 @@ def test_classification_validation_rejects_domain_conflict() -> None:
             "confidence": "low",
             "failed_stage": "solve",
             "failed_step_id": "mesh",
-            "evidence": [{"kind": "public_report", "value": "failed"}],
+            "evidence": [{"kind": "run_assessment", "value": "failed"}],
             "scope_hints": {
                 "files": [],
                 "dictionary_blocks": [],

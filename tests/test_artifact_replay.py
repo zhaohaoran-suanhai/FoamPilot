@@ -17,7 +17,7 @@ from foampilot.plans.legacy import (
 )
 from foampilot.runtime import PlanRunResult
 from foampilot.tasks import TaskSpec
-from foampilot.validation import PublicValidationReport
+from foampilot.validation.legacy import LegacyPublicValidationReport
 
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -87,7 +87,7 @@ def test_synthetic_artifacts_replay_current_typed_readers() -> None:
         InspectionReport.model_validate_json(
             (root / "static-inspection.json").read_text(encoding="utf-8")
         )
-        PublicValidationReport.model_validate_json(
+        LegacyPublicValidationReport.model_validate_json(
             (root / "public-validation.json").read_text(encoding="utf-8")
         )
         PlanRunResult.model_validate_json(

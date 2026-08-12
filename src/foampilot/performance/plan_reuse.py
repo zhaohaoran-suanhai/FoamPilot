@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 
 from foampilot.authoring import CaseBundle
-from foampilot.artifacts import ArtifactStore
+from foampilot.artifacts import ArtifactStore, is_successful_native_status
 from foampilot.environment import EnvironmentSnapshot
 from foampilot.evidence import RunFacts
 from foampilot.extensions import CapabilityRegistry
@@ -65,7 +65,7 @@ class VerifiedPlanSource:
     acceptance_plan: AcceptancePlan
     observation_plan: ObservationPlan
     capability: CapabilityProfile
-    public_validation_pass: bool
+    source_execution_accepted: bool
 
     def record(self) -> dict[str, object]:
         return {
@@ -76,7 +76,7 @@ class VerifiedPlanSource:
             "source_attempt": self.source_attempt,
             "task_sha256": self.task_sha256,
             "plan_sha256": self.plan_sha256,
-            "source_public_validation_pass": self.public_validation_pass,
+            "source_execution_accepted": self.source_execution_accepted,
         }
 
 
@@ -425,8 +425,8 @@ def load_verified_plan_source(
             acceptance_plan=acceptance_plan,
             observation_plan=observation_plan,
             capability=capability,
-            public_validation_pass=(
-                summary.native_status == "PUBLIC_VALIDATION_PASS"
+            source_execution_accepted=is_successful_native_status(
+                summary.native_status
             ),
         )
     raise PlanReuseError(

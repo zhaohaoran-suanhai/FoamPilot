@@ -122,7 +122,7 @@ def _source_run(tmp_path: Path):
         ),
         runner=VerifiedPlanRunner(),
     ).solve(_task())
-    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    assert outcome.status == "RUN_COMPLETED"
     assert store.verify(outcome.run_dir) == []
     return store, outcome, model
 
@@ -145,7 +145,7 @@ def test_exact_verified_plan_reuse_executes_without_model_request(
         runner=warm_runner,
     ).solve(_task(), reuse_verified_plan=source.run_dir)
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    assert outcome.status == "RUN_COMPLETED"
     assert len(source_model.requests) == 1
     assert len(warm_runner.calls) == 1
     assert not (outcome.run_dir / "model-attempts.jsonl").exists()
@@ -161,6 +161,8 @@ def test_exact_verified_plan_reuse_executes_without_model_request(
     )
     assert reuse["status"] == "hit"
     assert reuse["source_run_id"] == source.run_dir.name
+    assert reuse["source_execution_accepted"] is True
+    assert "source_public_validation_pass" not in reuse
     performance = json.loads(
         (outcome.run_dir / "performance-summary.json").read_text(
             encoding="utf-8"
@@ -198,7 +200,7 @@ def test_verified_plan_reuse_accepts_provided_mesh_without_mesh_command(
         environment_snapshot=_environment("checkMesh", "icoFoam"),
         runner=VerifiedPlanRunnerWithProbe(),
     ).solve(task, public_asset_root=public_root)
-    assert source.status == "PUBLIC_VALIDATION_PASS"
+    assert source.status == "RUN_COMPLETED"
 
     outcome = NativeAgent(
         gateway=None,
@@ -212,7 +214,7 @@ def test_verified_plan_reuse_accepts_provided_mesh_without_mesh_command(
         reuse_verified_plan=source.run_dir,
     )
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    assert outcome.status == "RUN_COMPLETED"
     assert json.loads(
         (outcome.run_dir / "plan-reuse.json").read_text(encoding="utf-8")
     )["status"] == "hit"

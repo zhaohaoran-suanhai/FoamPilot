@@ -9,7 +9,11 @@ from typing import Any
 
 import numpy as np
 
-from foampilot.artifacts import ArtifactStore, NativeAgentOutcome
+from foampilot.artifacts import (
+    ArtifactStore,
+    NativeAgentOutcome,
+    is_successful_native_status,
+)
 from foampilot.performance import PerformanceSummary
 
 from .models import (
@@ -84,7 +88,7 @@ def classify_qualification(
         item.domain == FailureDomain.ENVIRONMENT for item in failures
     ):
         return "BLOCKED_ENVIRONMENT"
-    if summary.native_status != "PUBLIC_VALIDATION_PASS":
+    if not is_successful_native_status(summary.native_status):
         return "FAIL_AGENT"
     if manifest_issues:
         return "FAIL_AGENT"
@@ -408,8 +412,8 @@ def qualification_result(
         solver_normal_completion=metadata[
             "solver_normal_completion"
         ],
-        public_validation_pass=(
-            outcome.summary.native_status == "PUBLIC_VALIDATION_PASS"
+        public_validation_pass=is_successful_native_status(
+            outcome.summary.native_status
         ),
         physics_qualification_pass=physics_pass,
         time_to_first_openfoam_command=metadata[

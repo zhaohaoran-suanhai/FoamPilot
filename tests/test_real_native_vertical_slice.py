@@ -52,7 +52,7 @@ def test_real_frozen_plan_executes_with_requested_runtime_policy(
         artifact_store=store,
     ).solve(load_task_spec(TASKS[0]))
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS", outcome.summary
+    assert outcome.status == "RUN_COMPLETED", outcome.summary
     assert store.verify(outcome.run_dir) == []
     policy = json.loads(
         (outcome.run_dir / "execution-policy.json").read_text(
@@ -129,7 +129,7 @@ def test_real_preferred_fallback_allows_low_risk_and_blocks_dynamic_code(
         runtime_config=runtime,
         artifact_store=low_store,
     ).solve(task)
-    assert low.status == "PUBLIC_VALIDATION_PASS", low.summary
+    assert low.status == "RUN_COMPLETED", low.summary
     low_policy = json.loads(
         (low.run_dir / "execution-policy.json").read_text(encoding="utf-8")
     )
@@ -216,7 +216,7 @@ def test_real_model_authors_and_solves_native_case(
         artifact_store=ArtifactStore(tmp_path / "runs"),
     ).solve(load_task_spec(task_path))
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS", outcome.summary
+    assert outcome.status == "RUN_COMPLETED", outcome.summary
     assert ArtifactStore(tmp_path / "runs").verify(outcome.run_dir) == []
     assert not (outcome.run_dir / "attempt-01/case/Allrun").exists()
     trace = (

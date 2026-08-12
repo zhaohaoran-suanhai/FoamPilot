@@ -203,7 +203,7 @@ def test_mesh_cache_skips_generator_but_rechecks_mesh_and_solver(
         runner=cold_runner,
     ).solve(_mesh_task(), derived_cache=cache_root)
 
-    assert cold.status == "PUBLIC_VALIDATION_PASS"
+    assert cold.status == "RUN_COMPLETED"
     assert cold_runner.calls == [["blockMesh", "checkMesh", "icoFoam"]]
     assert list((cache_root / "mesh").iterdir())
 
@@ -216,7 +216,7 @@ def test_mesh_cache_skips_generator_but_rechecks_mesh_and_solver(
         runner=warm_runner,
     ).solve(_mesh_task(), derived_cache=cache_root)
 
-    assert warm.status == "PUBLIC_VALIDATION_PASS"
+    assert warm.status == "RUN_COMPLETED"
     assert warm_runner.calls == [["checkMesh", "icoFoam"]]
     assert (
         warm.run_dir / "attempt-01/case/constant/polyMesh/points"

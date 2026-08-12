@@ -291,7 +291,7 @@ class ContinuationInput(StrictModel):
     ]
     parent_summary: RunSummary
     active_plan_path: Path | None = None
-    public_validation_path: Path | None = None
+    run_assessment_path: Path | None = None
     run_facts_path: Path | None = None
     transport_attempts_used: int = Field(ge=0, le=7)
     continuation_index_for_stage: int = Field(ge=1, le=2)
@@ -554,7 +554,7 @@ def prepare_continuation(
         copied_evidence = parent / "continuation-evidence"
         if copied_evidence.is_dir():
             active_plan_path = copied_evidence / "execution-plan.json"
-            validation_path = copied_evidence / "public-validation.json"
+            validation_path = copied_evidence / "run-assessment.json"
             run_facts_path = copied_evidence / "run-facts.json"
         else:
             evidence_run = parent
@@ -576,7 +576,7 @@ def prepare_continuation(
                 evidence_summary = parent_store.read_summary(evidence_run)
             attempt_root = evidence_run / f"attempt-{attempt:02d}"
             active_plan_path = attempt_root / "execution-plan.json"
-            validation_path = attempt_root / "public-validation.json"
+            validation_path = attempt_root / "run-assessment.json"
             run_facts_path = attempt_root / "run-facts.json"
         if (
             not active_plan_path.is_file()
@@ -591,7 +591,7 @@ def prepare_continuation(
         from_stage=from_stage,
         parent_summary=summary,
         active_plan_path=active_plan_path,
-        public_validation_path=validation_path,
+        run_assessment_path=validation_path,
         run_facts_path=run_facts_path,
         transport_attempts_used=transport_attempts,
         continuation_index_for_stage=continuation_index,

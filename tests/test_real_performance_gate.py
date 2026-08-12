@@ -51,7 +51,7 @@ def test_verified_plan_and_mesh_cache_reach_real_solver_quickly(
         artifact_store=store,
     ).solve(task, derived_cache=cache)
 
-    assert cold.status == "PUBLIC_VALIDATION_PASS", cold.summary
+    assert cold.status == "RUN_COMPLETED", cold.summary
     assert len(model.requests) == 1
     assert store.verify(cold.run_dir) == []
 
@@ -65,7 +65,7 @@ def test_verified_plan_and_mesh_cache_reach_real_solver_quickly(
         derived_cache=cache,
     )
 
-    assert warm.status == "PUBLIC_VALIDATION_PASS", warm.summary
+    assert warm.status == "RUN_COMPLETED", warm.summary
     assert store.verify(warm.run_dir) == []
     performance = PerformanceSummary.model_validate_json(
         (warm.run_dir / "performance-summary.json").read_text(encoding="utf-8")

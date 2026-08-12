@@ -13,7 +13,11 @@ from pathlib import Path
 import yaml
 
 from foampilot.agent import NativeAgent
-from foampilot.artifacts import ArtifactStore, NativeAgentOutcome
+from foampilot.artifacts import (
+    ArtifactStore,
+    NativeAgentOutcome,
+    is_successful_native_status,
+)
 from foampilot.models import (
     ModelGateway,
 )
@@ -166,7 +170,7 @@ def qualify_outcome(
     message = outcome.summary.message
     if (
         evaluation_level == "physics_qualification"
-        and outcome.status == "PUBLIC_VALIDATION_PASS"
+        and is_successful_native_status(outcome.summary.native_status)
         and not manifest_issues
     ):
         case_dir = native_case_dir(outcome)
