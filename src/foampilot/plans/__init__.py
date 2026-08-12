@@ -18,7 +18,6 @@ from .normalizer import (
     normalize_execution_plan,
 )
 from .input_normalizer import normalize_execution_plan_input
-from .compiler import PlanCompilationError, compile_execution_plan
 from .validation import validate_execution_plan
 
 __all__ = [
@@ -36,3 +35,16 @@ __all__ = [
     "normalize_execution_plan_input",
     "validate_execution_plan",
 ]
+
+
+def __getattr__(name: str):
+    """Keep environment discovery independent from the plan compiler."""
+
+    if name in {"PlanCompilationError", "compile_execution_plan"}:
+        from .compiler import PlanCompilationError, compile_execution_plan
+
+        return {
+            "PlanCompilationError": PlanCompilationError,
+            "compile_execution_plan": compile_execution_plan,
+        }[name]
+    raise AttributeError(name)

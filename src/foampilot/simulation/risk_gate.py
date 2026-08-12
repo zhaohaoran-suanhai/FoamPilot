@@ -9,6 +9,7 @@ from typing import Literal, Self
 from pydantic import Field, model_validator
 
 from foampilot.extensions import CapabilityRegistry
+from foampilot.repair.models import NumericalRepairEnvelope
 
 from .design import CaseDesignProposal
 from .intent import SimulationIntent
@@ -84,6 +85,9 @@ class CaseDesign(StrictModel):
     proposal_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     confirmation_ids: tuple[str, ...]
     extension_identities: dict[str, str]
+    numerical_repair_envelope: NumericalRepairEnvelope = Field(
+        default_factory=NumericalRepairEnvelope
+    )
     design_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
@@ -289,6 +293,7 @@ def freeze_case_design(
     decision: RiskDecision,
     intent: SimulationIntent,
     confirmation_ids: tuple[str, ...] = (),
+    numerical_repair_envelope: NumericalRepairEnvelope | None = None,
 ) -> CaseDesign:
     """Freeze a proposal only when the exact gated content is ready."""
 
@@ -305,12 +310,15 @@ def freeze_case_design(
         "proposal_sha256": proposal_sha256,
         "confirmation_ids": tuple(sorted(confirmation_ids)),
         "extension_identities": decision.required_extension_identities,
+        "numerical_repair_envelope": (
+            numerical_repair_envelope or NumericalRepairEnvelope()
+        ),
     }
     canonical = json.dumps(
         {
             key: (
                 value.model_dump(mode="json")
-                if isinstance(value, CaseDesignProposal)
+                if isinstance(value, (CaseDesignProposal, NumericalRepairEnvelope))
                 else value
             )
             for key, value in payload.items()

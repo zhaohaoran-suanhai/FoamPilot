@@ -6,13 +6,6 @@ from .registry import (
     CapabilityRegistry,
     CapabilityResolutionError,
 )
-from .planning import (
-    ComposedPlanFragments,
-    PlanContext,
-    PlanContributionError,
-    PlanFragment,
-)
-
 __all__ = [
     "CapabilityDescriptor",
     "CapabilityRegistrationError",
@@ -25,3 +18,28 @@ __all__ = [
     "RequiredFact",
     "SupportedTarget",
 ]
+
+
+def __getattr__(name: str):
+    """Load planning contracts only for planning callers."""
+
+    if name in {
+        "ComposedPlanFragments",
+        "PlanContext",
+        "PlanContributionError",
+        "PlanFragment",
+    }:
+        from .planning import (
+            ComposedPlanFragments,
+            PlanContext,
+            PlanContributionError,
+            PlanFragment,
+        )
+
+        return {
+            "ComposedPlanFragments": ComposedPlanFragments,
+            "PlanContext": PlanContext,
+            "PlanContributionError": PlanContributionError,
+            "PlanFragment": PlanFragment,
+        }[name]
+    raise AttributeError(name)
