@@ -7,6 +7,7 @@ import json
 from foampilot.environment import EnvironmentSnapshot
 from foampilot.routing import CapabilityProfile
 from foampilot.tasks import TaskSpec
+from foampilot.simulation.risk_gate import CaseDesign
 from foampilot.preprocessing import (
     ExecutedMeshFacts,
     GeometryFacts,
@@ -18,6 +19,8 @@ from .status import AgentStatusSnapshot
 _BUNDLE_SYSTEM = """你是一个 OpenFOAM 工程 Agent。
 从空算例目录开始，返回完成公开任务所需的全部原生 OpenFOAM 文件和全部 typed command。
 根据物理问题选择已安装 solver、mesh workflow、initialization utility、数值设置与控制参数。
+如果请求中包含 FROZEN CASE DESIGN，则它是唯一设计权威：必须逐项实现，禁止重新选择或修改
+solver、物理模型、材料、边界、初始条件、时间、数值设置、区域语义或扩展决策。
 只生成求解该算例必需的文件和命令。不要仅为制造评测证据而添加 function object、sampling、
 extrema 或 residualControl。求解成功后，由 evaluator 从 solver log 和写出字段计算观测量。
 不要假设能够访问 tutorial、golden result、私有 evaluator、shell 或确定性 case renderer。
@@ -56,6 +59,7 @@ def bundle_request_text(
     input_mesh_facts: tuple[InputMeshFacts, ...] = (),
     executed_mesh_facts: tuple[ExecutedMeshFacts, ...] = (),
     status_snapshot: AgentStatusSnapshot | None = None,
+    case_design: CaseDesign | None = None,
 ) -> tuple[str, str]:
     sections = [
             "公开任务（PUBLIC TASK）\n" + _json(task.agent_payload()),
@@ -96,6 +100,12 @@ def bundle_request_text(
         sections.append(
             "确定性 Agent 状态（DETERMINISTIC AGENT STATUS）\n"
             + _json(status_snapshot.model_dump(mode="json"))
+        )
+    if case_design is not None:
+        sections.insert(
+            1,
+            "已冻结算例设计（FROZEN CASE DESIGN；不得修改）\n"
+            + _json(case_design.model_dump(mode="json")),
         )
     user = "\n\n".join(sections)
     for protected in task.protected_paths:

@@ -362,7 +362,7 @@ def design_case(
     if len(user_prompt.encode("utf-8")) > _DESIGN_REQUEST_LIMIT_BYTES:
         raise ValueError("design context exceeds the model request budget")
     request = ModelRequest(
-        purpose="design-simulation-case",
+        purpose="design-openfoam-case",
         system_prompt=(
             "Design one coherent CFD case from the frozen facts. Return only a "
             "CaseDesignProposal. Do not write native OpenFOAM file content, "

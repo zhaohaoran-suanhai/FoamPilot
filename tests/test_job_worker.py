@@ -93,6 +93,22 @@ def test_worker_updates_heartbeat_activity_and_terminal_status(
     assert [item["state"] for item in events] == ["started", "completed"]
 
 
+def test_worker_preserves_confirmation_required_as_normal_cli_terminal(
+    tmp_path: Path,
+) -> None:
+    store = _job(tmp_path, operation="solve")
+
+    exit_code = run_local_job(
+        store.root,
+        cli_runner=lambda argv, *, activity_reporter: 4,
+    )
+
+    status = store.read_status()
+    assert exit_code == 4
+    assert status.state == JobState.COMPLETED
+    assert status.terminal_code == "CLI_EXIT_4"
+
+
 def test_worker_cancel_request_is_observed_and_terminal_once(
     tmp_path: Path,
 ) -> None:

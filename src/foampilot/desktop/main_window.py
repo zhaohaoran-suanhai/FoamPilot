@@ -95,6 +95,81 @@ def _yaml_value(value: object) -> str:
     return rendered.removesuffix("\n...")
 
 
+def _design_questions_text(payload: dict[str, object]) -> str:
+    """Render the public design gate without inventing an override path."""
+
+    state = _text(payload.get("state"))
+    lines = [f"设计门禁：{state}"]
+    reason_codes = payload.get("reason_codes")
+    if isinstance(reason_codes, list) and reason_codes:
+        lines.append(
+            "原因代码：" + ", ".join(str(item) for item in reason_codes)
+        )
+
+    raw_questions: list[object] = []
+    questions = payload.get("questions")
+    if isinstance(questions, list):
+        raw_questions.extend(questions)
+    gaps = payload.get("requirement_gaps")
+    if isinstance(gaps, list):
+        raw_questions.extend(gaps)
+    conflicts = payload.get("requirement_conflicts")
+    if isinstance(conflicts, list):
+        raw_questions.extend(conflicts)
+
+    if not raw_questions:
+        lines.append("没有可展示的问题；请查看 summary.json 中的恢复说明。")
+        return "\n".join(lines)
+
+    for index, raw in enumerate(raw_questions, start=1):
+        if not isinstance(raw, dict):
+            lines.extend(("", f"{index}. 无法解析的问题记录：{raw!r}"))
+            continue
+        field_path = raw.get("field_path", raw.get("path", "not available"))
+        kind = _text(raw.get("kind"))
+        impact = _text(raw.get("impact"))
+        prompt = raw.get("prompt_zh") or raw.get("description")
+        reason = raw.get("reason_zh") or raw.get("detail")
+        lines.extend(
+            (
+                "",
+                f"{index}. 字段：{field_path}",
+                f"   类型：{kind}；影响：{impact}",
+                f"   问题：{_text(prompt)}",
+                f"   原因：{_text(reason)}",
+            )
+        )
+        candidates = raw.get("candidates")
+        if isinstance(candidates, list) and candidates:
+            lines.append("   可逐项确认的候选：")
+            for candidate in candidates:
+                if not isinstance(candidate, dict):
+                    lines.append(f"   - {_text(candidate)}")
+                    continue
+                candidate_id = _text(candidate.get("candidate_id"))
+                value = _yaml_value(candidate.get("value"))
+                rationale = candidate.get("rationale")
+                suffix = (
+                    f"；说明：{rationale}" if rationale is not None else ""
+                )
+                lines.append(
+                    f"   - 候选 {candidate_id}：{value}{suffix}"
+                )
+        elif kind == "information_required":
+            lines.append("   需要用户提供具体信息；此项不能跳过。")
+        elif kind == "conflict":
+            lines.append("   需要用户解决权威事实冲突；此项不能跳过。")
+
+    lines.extend(
+        (
+            "",
+            "FoamPilot 只接受逐字段、逐候选的具体确认；"
+            "高影响事实不能整体放行。",
+        )
+    )
+    return "\n".join(lines)
+
+
 class _RunLoadSignals(QObject):
     succeeded = Signal(int, object, object)
     failed = Signal(int, object, object)
@@ -1522,7 +1597,13 @@ class FoamPilotMainWindow(QMainWindow):
 
     def _render_initial_report(self, snapshot: RunSnapshot) -> None:
         self.report_viewer.clear()
+        if snapshot.design_questions is not None:
+            self.report_viewer.setPlainText(
+                _design_questions_text(snapshot.design_questions)
+            )
+            return
         priorities = (
+            "risk-decision.json",
             "public-validation.json",
             "qualification-report.json",
             "summary.json",

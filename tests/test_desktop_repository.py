@@ -116,6 +116,51 @@ def test_open_finalized_run_builds_verified_snapshot(tmp_path: Path) -> None:
     }
 
 
+def test_open_projects_design_questions_with_concrete_candidates(
+    tmp_path: Path,
+) -> None:
+    store = ArtifactStore(tmp_path / "runs")
+    run_dir = store.create_run()
+    payload = {
+        "schema_version": 1,
+        "state": "CONFIRMATION_REQUIRED",
+        "questions": [
+            {
+                "question_id": "confirm-materials-fluid-nu",
+                "field_path": "materials.fluid.nu",
+                "impact": "high",
+                "kind": "confirmable",
+                "prompt_zh": "是否确认运动黏度？",
+                "reason_zh": "该值只来自模型推断。",
+                "candidates": [
+                    {
+                        "candidate_id": "nu-water",
+                        "value": {"value": 1e-6, "unit": "m2/s"},
+                        "rationale": "具体工程候选",
+                        "evidence": [
+                            {"kind": "model_reason", "detail": "candidate"}
+                        ],
+                    }
+                ],
+                "conflicting_evidence": [],
+            }
+        ],
+    }
+    (run_dir / "questions.json").write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+    store.finalize(run_dir)
+
+    snapshot = RunRepository().open(run_dir)
+
+    assert snapshot.design_questions == payload
+    text = RunRepository().read_text(snapshot, "questions.json")
+    assert "materials.fluid.nu" in text
+    assert "m2/s" in text
+    assert "accept_all" not in text
+
+
 def test_open_active_run_tolerates_malformed_event(tmp_path: Path) -> None:
     run_dir = tmp_path / "run-active"
     run_dir.mkdir()

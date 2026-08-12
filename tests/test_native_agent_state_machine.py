@@ -41,6 +41,12 @@ from tests.test_native_case_generation import (
 from foampilot.assets import BundleMember, compute_bundle_manifest_sha256
 from foampilot.manifests import CasePatch
 from foampilot.preprocessing import ExecutedMeshFacts, MeshCheckFact, MeshQualityReport
+from foampilot.simulation import (
+    FactEvidence,
+    ResolvedValue,
+    SimulationIntent,
+)
+from foampilot.simulation.design import CaseDesignProposal, ExtensionDecision
 from foampilot.tasks import PublicAsset
 from tests.support.tasks import replace_explicit_fact
 
@@ -463,6 +469,143 @@ def test_native_agent_reaches_public_validation_pass(
     assert '"stage":"OPENFOAM_STEP_STARTED"' in workflow_events
     assert '"stage":"OPENFOAM_STEP_COMPLETE"' in workflow_events
     assert '"stage":"ROUTING_READY"' in workflow_events
+
+
+def test_ready_design_is_frozen_before_legacy_author_call(
+    tmp_path: Path,
+) -> None:
+    model = RecordingModel([_plan()])
+
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=model,
+        runner=SequencePlanRunner([(0, "Time = 1\nEnd\n", "")]),
+    ).solve(_task())
+
+    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    for name in (
+        "simulation-intent.json",
+        "resolved-requirements.json",
+        "case-design-proposal.json",
+        "risk-decision.json",
+        "case-design.json",
+    ):
+        assert (outcome.run_dir / name).is_file()
+    assert [item.purpose for item in model.all_requests[:3]] == [
+        "interpret-simulation-intent",
+        "design-openfoam-case",
+        "author-openfoam-case-bundle",
+    ]
+    assert "FROZEN CASE DESIGN" in model.requests[0].user_prompt
+
+
+class ConfirmationDesignModel(RecordingModel):
+    def generate_structured(
+        self,
+        request,
+        schema,
+        *,
+        budget,
+        trace,
+        output_normalizer=None,
+    ):
+        if schema is CaseDesignProposal:
+            self.all_requests.append(request)
+            return __import__("foampilot.models", fromlist=["ModelResult"]).ModelResult(
+                value=CaseDesignProposal(
+                    solver_family=ResolvedValue(
+                        field_path="solver.family",
+                        value="icoFoam",
+                        source="user_text",
+                        impact="high",
+                        evidence=(
+                            FactEvidence(kind="user_quote", detail="icoFoam"),
+                        ),
+                        confirmed=True,
+                    ),
+                    physical_models=(),
+                    materials=(
+                        ResolvedValue(
+                            field_path="materials.fluid.nu",
+                            value={"value": 1e-6, "unit": "m2/s"},
+                            source="model_inference",
+                            impact="high",
+                            evidence=(
+                                FactEvidence(
+                                    kind="model_reason",
+                                    detail="water-like candidate",
+                                ),
+                            ),
+                            confirmed=False,
+                        ),
+                    ),
+                    boundary_designs=(),
+                    initial_conditions=(),
+                    time_design=(),
+                    numerical_design=(),
+                    region_models=(),
+                    extension_decisions=(
+                        ExtensionDecision(
+                            extension_id="foampilot.bridge.solver.icofoam",
+                            schema_version=1,
+                            values=(),
+                            provenance=(
+                                FactEvidence(
+                                    kind="model_reason",
+                                    detail="registered bridge capability",
+                                ),
+                            ),
+                        ),
+                    ),
+                    uncertainties=(),
+                    alternatives=(),
+                    reasoning_evidence=(
+                        FactEvidence(
+                            kind="model_reason",
+                            detail="candidate design",
+                        ),
+                    ),
+                    capability_conflicts=(),
+                ),
+                logical_request_id="design-confirmation",
+                backend_id=self.primary_backend_id,
+                model=self.primary_model,
+                transport_attempts=1,
+                backend_switches=0,
+                elapsed_seconds=0,
+            )
+        return super().generate_structured(
+            request,
+            schema,
+            budget=budget,
+            trace=trace,
+            output_normalizer=output_normalizer,
+        )
+
+
+def test_confirmation_required_makes_zero_author_calls(
+    tmp_path: Path,
+) -> None:
+    model = ConfirmationDesignModel([_plan()])
+
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=model,
+        runner=SequencePlanRunner([]),
+    ).solve(_task())
+
+    assert outcome.status == "CONFIRMATION_REQUIRED"
+    assert outcome.summary.workflow_state == "DEFERRED"
+    assert outcome.summary.primary_failure is not None
+    assert outcome.summary.primary_failure.code == "CONFIRMATION_REQUIRED"
+    assert [item.purpose for item in model.all_requests] == [
+        "interpret-simulation-intent",
+        "design-openfoam-case",
+    ]
+    assert model.requests == []
+    assert (outcome.run_dir / "questions.json").is_file()
+    assert not (outcome.run_dir / "case-design.json").exists()
+    assert not list(outcome.run_dir.glob("attempt-*"))
 
 
 def test_native_agent_uses_live_runner_events_without_replaying(
@@ -1415,9 +1558,10 @@ def test_native_agent_preserves_invalid_plan_issues_without_json_crash(
         runner=SequencePlanRunner([]),
     ).solve(_task())
 
-    assert outcome.status == "PLAN_INVALID"
-    assert (outcome.run_dir / "execution-plan.json").is_file()
-    assert (outcome.run_dir / "plan-issues.json").is_file()
+    assert outcome.status == "CASE_DESIGN_CONTRADICTED"
+    assert (outcome.run_dir / "case-design.json").is_file()
+    assert (outcome.run_dir / "design-conformance.json").is_file()
+    assert not (outcome.run_dir / "execution-plan.json").exists()
     assert ArtifactStore(tmp_path / "runs").verify(outcome.run_dir) == []
 
 

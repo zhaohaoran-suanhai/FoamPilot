@@ -38,6 +38,8 @@ _DEFAULT_COMMANDS = (
     "resume",
     "rerun",
     "report",
+    "questions",
+    "confirm",
 )
 
 
@@ -216,6 +218,8 @@ class DesktopJobController(QObject):
             return JobOperation.RESUME
         if arguments and arguments[0] == "rerun":
             return JobOperation.RERUN
+        if arguments and arguments[0] == "confirm":
+            return JobOperation.CONFIRM
         return None
 
     def _bind_store(self, store: LocalJobStore) -> None:

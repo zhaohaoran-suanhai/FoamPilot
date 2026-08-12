@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from collections.abc import Sequence
 from datetime import datetime, timezone
@@ -26,6 +27,11 @@ from foampilot.artifacts import (
 from foampilot.environment import (
     EnvironmentSnapshot,
     discover_environment,
+)
+from foampilot.extensions import (
+    CapabilityDescriptor,
+    CapabilityRegistry,
+    SupportedTarget,
 )
 from foampilot.inspection import InspectionReport, inspect_native_case
 from foampilot.knowledge import load_knowledge_corpus
@@ -71,6 +77,16 @@ from foampilot.routing import (
     CapabilityProfile,
     RoutingError,
     route_capability,
+)
+from foampilot.simulation import (
+    CaseDesign,
+    ResolvedRequirements,
+    SimulationIntent,
+    design_case,
+    evaluate_design_risk,
+    freeze_case_design,
+    interpret_intent,
+    resolve_requirements,
 )
 from foampilot.runtime import (
     ExecutionPolicyDecision,
@@ -449,6 +465,82 @@ _NATIVE_STATUSES: set[str] = {
 }
 
 
+def _legacy_capability_registry(
+    capability: CapabilityProfile,
+    task: TaskSpec,
+) -> CapabilityRegistry:
+    """Expose the routed solver as one closed Phase-2 bridge extension."""
+
+    if not capability.solver_executable:
+        raise ValueError("routed capability has no solver executable")
+    token = re.sub(
+        r"[^a-z0-9]+",
+        "-",
+        capability.solver_executable.casefold(),
+    ).strip("-")
+    if not token:
+        raise ValueError("routed solver executable has no stable identity")
+    registry = CapabilityRegistry()
+    registry.register(
+        CapabilityDescriptor(
+            extension_id=f"foampilot.bridge.solver.{token}",
+            extension_version="1.0.0",
+            protocol_version=1,
+            capability_kinds=(f"solver:{token}",),
+            supported_targets=(
+                SupportedTarget(
+                    distribution="foundation",
+                    versions=(task.openfoam_target.version,),
+                ),
+            ),
+            required_executables=(capability.solver_executable,),
+            input_contracts=("foampilot.simulation.CaseDesignProposal:1",),
+            output_contracts=("foampilot.simulation.CaseDesign:1",),
+        ),
+        capability,
+    )
+    return registry
+
+
+def _legacy_plan_design_conflicts(
+    plan: ExecutionPlan,
+    design: CaseDesign,
+) -> tuple[str, ...]:
+    """Guard the temporary old author bridge against frozen-design drift."""
+
+    conflicts: list[str] = []
+    proposed = design.proposal
+    solver = str(proposed.solver_family.value)
+    if plan.manifest.solver_executable != solver:
+        conflicts.append(
+            "solver executable contradicts frozen design: "
+            f"{plan.manifest.solver_executable} != {solver}"
+        )
+    values = {item.field_path: item.value for item in proposed.iter_values()}
+    regime = values.get("physics.regime")
+    if regime is not None and plan.manifest.regime != regime:
+        conflicts.append(
+            "flow regime contradicts frozen design: "
+            f"{plan.manifest.regime} != {regime}"
+        )
+    physics = values.get("physics.family")
+    if physics is not None and plan.manifest.physics_family != physics:
+        conflicts.append(
+            "physics family contradicts frozen design: "
+            f"{plan.manifest.physics_family} != {physics}"
+        )
+    regions = {item.name: item.kind for item in plan.manifest.regions}
+    for path, value in values.items():
+        parts = path.split(".")
+        if len(parts) >= 3 and parts[0] == "regions" and parts[2] == "role":
+            if regions.get(parts[1]) != value:
+                conflicts.append(
+                    "region role contradicts frozen design: "
+                    f"{parts[1]}={regions.get(parts[1])!r} != {value!r}"
+                )
+    return tuple(conflicts)
+
+
 def _failure_record(
     *,
     status: str,
@@ -459,6 +551,9 @@ def _failure_record(
         return None
     domains = {
         "REQUEST_INCOMPLETE": FailureDomain.TASK,
+        "INFORMATION_REQUIRED": FailureDomain.DESIGN,
+        "CONFIRMATION_REQUIRED": FailureDomain.DESIGN,
+        "CAPABILITY_UNAVAILABLE": FailureDomain.DESIGN,
         "ROUTING_UNRESOLVED": FailureDomain.TASK,
         "BLOCKED_ENVIRONMENT": FailureDomain.ENVIRONMENT,
         "PLAN_INVALID": FailureDomain.PLAN,
@@ -1755,6 +1850,371 @@ class NativeAgent:
             evidence_paths=["agent-context.json"],
         )
 
+        case_design: CaseDesign | None = None
+        selected_registry: CapabilityRegistry | None = None
+        if verified_source is None:
+            if _continuation is not None:
+                parent_design = _continuation.parent_run / "case-design.json"
+                if not parent_design.is_file():
+                    return self._finish(
+                        run_dir=run_dir,
+                        task=task,
+                        status="CASE_DESIGN_CHECKPOINT_MISSING",
+                        attempts=attempts,
+                        message=(
+                            "Strict continuation has no frozen CaseDesign "
+                            "checkpoint."
+                        ),
+                        model_calls=model_calls,
+                        primary_failure=FailureRecord(
+                            domain=FailureDomain.DESIGN,
+                            code="CASE_DESIGN_CHECKPOINT_MISSING",
+                            detail=(
+                                "parent generation/repair continuation does "
+                                "not contain case-design.json"
+                            ),
+                            message="父运行缺少冻结算例设计，不能严格恢复。",
+                            recovery="使用 rerun 启动新的完整设计与求解。",
+                        ),
+                    )
+                try:
+                    case_design = CaseDesign.model_validate_json(
+                        parent_design.read_text(encoding="utf-8")
+                    )
+                    for name in (
+                        "simulation-intent.json",
+                        "resolved-requirements.json",
+                        "case-design-proposal.json",
+                        "risk-decision.json",
+                        "case-design.json",
+                    ):
+                        source = _continuation.parent_run / name
+                        if not source.is_file():
+                            raise ValueError(
+                                f"parent design checkpoint is missing {name}"
+                            )
+                        (run_dir / name).write_bytes(source.read_bytes())
+                except (OSError, ValueError) as error:
+                    return self._finish(
+                        run_dir=run_dir,
+                        task=task,
+                        status="CASE_DESIGN_CHECKPOINT_INVALID",
+                        attempts=attempts,
+                        message=f"Frozen CaseDesign cannot be reused: {error}",
+                        model_calls=model_calls,
+                        primary_failure=FailureRecord(
+                            domain=FailureDomain.DESIGN,
+                            code="CASE_DESIGN_CHECKPOINT_INVALID",
+                            detail=str(error),
+                            message="父运行的冻结算例设计证据不完整或无效。",
+                            recovery="检查父 run manifest，或使用 rerun。",
+                        ),
+                    )
+            else:
+                if self.gateway is None:
+                    raise ValueError("live design requires a model gateway")
+                try:
+                    selected_registry = _legacy_capability_registry(
+                        capability,
+                        task,
+                    )
+                    descriptors = tuple(
+                        selected_registry.descriptor(extension_id)
+                        for extension_id in selected_registry.extension_ids()
+                    )
+                    _record_event(
+                        workflow,
+                        stage=WorkflowStage.INTERPRETING_INTENT,
+                        state=WorkflowEventState.STARTED,
+                    )
+                    model_calls += 1
+                    intent = interpret_intent(
+                        execution_task,
+                        asset_facts=tuple(asset_bundles),
+                        mesh_facts=input_mesh_facts,
+                        capability_kinds=tuple(
+                            kind
+                            for descriptor in descriptors
+                            for kind in descriptor.capability_kinds
+                        ),
+                        gateway=self.gateway,
+                        budget=model_ledger.open_stage(
+                            ModelStage.INTENT_INTERPRETATION,
+                            request_timeout_seconds=120,
+                            stage_deadline_seconds=150,
+                            max_transport_attempts=2,
+                        ),
+                        trace=model_trace,
+                    )
+                    _write_json(run_dir / "simulation-intent.json", intent)
+                    workflow.checkpoint("simulation-intent", intent)
+                    _record_event(
+                        workflow,
+                        stage=WorkflowStage.INTERPRETING_INTENT,
+                        state=WorkflowEventState.COMPLETED,
+                        evidence_paths=["simulation-intent.json"],
+                    )
+
+                    _record_event(
+                        workflow,
+                        stage=WorkflowStage.RESOLVING_REQUIREMENTS,
+                        state=WorkflowEventState.STARTED,
+                    )
+                    requirements = resolve_requirements(
+                        intent=intent,
+                        mesh_facts=input_mesh_facts,
+                        executed_mesh_facts=executed_mesh_facts,
+                        capabilities=descriptors,
+                    )
+                    _write_json(
+                        run_dir / "resolved-requirements.json",
+                        requirements,
+                    )
+                    workflow.checkpoint(
+                        "resolved-requirements",
+                        requirements,
+                    )
+                    _record_event(
+                        workflow,
+                        stage=WorkflowStage.RESOLVING_REQUIREMENTS,
+                        state=WorkflowEventState.COMPLETED,
+                        evidence_paths=["resolved-requirements.json"],
+                    )
+                    hard_intent_questions = tuple(
+                        item
+                        for item in intent.uncertainties
+                        if item.kind in {"information_required", "conflict"}
+                    )
+                    hard_requirement_gaps = tuple(
+                        item
+                        for item in requirements.gaps
+                        if item.kind == "information_required"
+                    )
+                    if (
+                        hard_intent_questions
+                        or hard_requirement_gaps
+                        or requirements.conflicts
+                    ):
+                        question_payload = {
+                            "schema_version": 1,
+                            "state": "INFORMATION_REQUIRED",
+                            "questions": [
+                                item.model_dump(mode="json")
+                                for item in hard_intent_questions
+                            ],
+                            "requirement_gaps": [
+                                item.model_dump(mode="json")
+                                for item in hard_requirement_gaps
+                            ],
+                            "requirement_conflicts": [
+                                item.model_dump(mode="json")
+                                for item in requirements.conflicts
+                            ],
+                        }
+                        _write_json(run_dir / "questions.json", question_payload)
+                        _record_event(
+                            workflow,
+                            stage=WorkflowStage.WAITING_FOR_INFORMATION,
+                            state=WorkflowEventState.DEFERRED,
+                            detail=(
+                                "Required design facts are missing or conflicting."
+                            ),
+                            evidence_paths=["questions.json"],
+                        )
+                        return self._finish(
+                            run_dir=run_dir,
+                            task=task,
+                            status="INFORMATION_REQUIRED",
+                            attempts=attempts,
+                            message=(
+                                "Simulation design needs additional concrete "
+                                "information before authoring."
+                            ),
+                            model_calls=model_calls,
+                            workflow_state=WorkflowState.DEFERRED,
+                            primary_failure=FailureRecord(
+                                domain=FailureDomain.DESIGN,
+                                code="INFORMATION_REQUIRED",
+                                detail=(
+                                    "one or more high-impact facts are missing "
+                                    "or conflicting"
+                                ),
+                                message="算例设计缺少必要的具体信息。",
+                                recovery=(
+                                    "查看 questions.json，补充其中列出的字段后"
+                                    "以新任务重新求解。"
+                                ),
+                                evidence_paths=[
+                                    "simulation-intent.json",
+                                    "resolved-requirements.json",
+                                    "questions.json",
+                                ],
+                            ),
+                        )
+
+                    _record_event(
+                        workflow,
+                        stage=WorkflowStage.DESIGNING_CASE,
+                        state=WorkflowEventState.STARTED,
+                    )
+                    model_calls += 1
+                    proposal = design_case(
+                        task=execution_task,
+                        intent=intent,
+                        requirements=requirements,
+                        mesh_facts=input_mesh_facts,
+                        registry=selected_registry,
+                        context=context,
+                        available_executables=tuple(
+                            environment.available_executable_names
+                        ),
+                        gateway=self.gateway,
+                        budget=model_ledger.open_stage(
+                            ModelStage.CASE_DESIGN,
+                            request_timeout_seconds=180,
+                            stage_deadline_seconds=240,
+                            max_transport_attempts=2,
+                        ),
+                        trace=model_trace,
+                    )
+                    _write_json(
+                        run_dir / "case-design-proposal.json",
+                        proposal,
+                    )
+                    workflow.checkpoint("case-design-proposal", proposal)
+                    _record_event(
+                        workflow,
+                        stage=WorkflowStage.DESIGNING_CASE,
+                        state=WorkflowEventState.COMPLETED,
+                        evidence_paths=["case-design-proposal.json"],
+                    )
+                    decision = evaluate_design_risk(
+                        intent=intent,
+                        requirements=requirements,
+                        proposal=proposal,
+                        registry=selected_registry,
+                    )
+                    _write_json(run_dir / "risk-decision.json", decision)
+                    workflow.checkpoint("risk-decision", decision)
+                    if decision.state != "READY_TO_AUTHOR":
+                        if decision.questions:
+                            _write_json(
+                                run_dir / "questions.json",
+                                decision,
+                            )
+                        waiting_stage = (
+                            WorkflowStage.WAITING_FOR_CONFIRMATION
+                            if decision.state == "CONFIRMATION_REQUIRED"
+                            else WorkflowStage.WAITING_FOR_INFORMATION
+                        )
+                        _record_event(
+                            workflow,
+                            stage=waiting_stage,
+                            state=WorkflowEventState.DEFERRED,
+                            detail=decision.state,
+                            evidence_paths=[
+                                "risk-decision.json",
+                                *(
+                                    ["questions.json"]
+                                    if decision.questions
+                                    else []
+                                ),
+                            ],
+                        )
+                        return self._finish(
+                            run_dir=run_dir,
+                            task=task,
+                            status=decision.state,
+                            attempts=attempts,
+                            message=(
+                                "Simulation design did not pass the authoring "
+                                f"gate: {decision.state}."
+                            ),
+                            model_calls=model_calls,
+                            workflow_state=WorkflowState.DEFERRED,
+                            primary_failure=FailureRecord(
+                                domain=FailureDomain.DESIGN,
+                                code=decision.state,
+                                detail="; ".join(decision.reason_codes),
+                                message=(
+                                    "需要逐字段确认具体工程值。"
+                                    if decision.state
+                                    == "CONFIRMATION_REQUIRED"
+                                    else (
+                                        "当前受信任能力无法实现该设计。"
+                                        if decision.state
+                                        == "CAPABILITY_UNAVAILABLE"
+                                        else "算例设计需要补充信息。"
+                                    )
+                                ),
+                                recovery=(
+                                    "运行 foampilot questions 查看字段、原因和候选；"
+                                    "使用 foampilot confirm 提交逐字段确认。"
+                                    if decision.state
+                                    == "CONFIRMATION_REQUIRED"
+                                    else "查看 risk-decision.json 和 questions.json。"
+                                ),
+                                evidence_paths=[
+                                    "case-design-proposal.json",
+                                    "risk-decision.json",
+                                    *(
+                                        ["questions.json"]
+                                        if decision.questions
+                                        else []
+                                    ),
+                                ],
+                            ),
+                        )
+                    case_design = freeze_case_design(
+                        proposal=proposal,
+                        decision=decision,
+                        intent=intent,
+                    )
+                    _write_json(run_dir / "case-design.json", case_design)
+                    workflow.checkpoint("case-design", case_design)
+                except OperationCancelled:
+                    return self._finish_cancelled(
+                        run_dir=run_dir,
+                        task=task,
+                        attempts=attempts,
+                        model_calls=model_calls,
+                        stage="case-design",
+                    )
+                except GatewayRequestError as error:
+                    return self._finish(
+                        run_dir=run_dir,
+                        task=task,
+                        status="DEFERRED",
+                        attempts=attempts,
+                        message=f"Design model transport is unavailable: {error}",
+                        model_calls=model_calls,
+                        workflow_state=WorkflowState.DEFERRED,
+                        terminal_blocker=_backend_blocker(error),
+                        resume=ResumeMetadata(
+                            allowed=False,
+                            reason=(
+                                "intent/design has no strict continuation path; "
+                                "rerun when the backend is available"
+                            ),
+                        ),
+                    )
+                except (LineageBudgetExhausted, OSError, ValueError) as error:
+                    return self._finish(
+                        run_dir=run_dir,
+                        task=task,
+                        status="CASE_DESIGN_FAILED",
+                        attempts=attempts,
+                        message=f"Case design failed: {error}",
+                        model_calls=model_calls,
+                        primary_failure=FailureRecord(
+                            domain=FailureDomain.DESIGN,
+                            code="CASE_DESIGN_FAILED",
+                            detail=str(error),
+                            message="算例设计阶段失败。",
+                            recovery="查看结构化设计产物与模型 trace 后修正输入。",
+                        ),
+                    )
+
         if self.gateway is not None:
             fingerprint = build_resume_fingerprint(
                 task=task,
@@ -2163,6 +2623,7 @@ class NativeAgent:
                     executed_mesh_facts=executed_mesh_facts,
                     status_snapshot=author_status,
                     status_artifact=author_status_artifact,
+                    case_design=case_design,
                     budget=model_ledger.open_stage(
                         ModelStage.GENERATION,
                         request_timeout_seconds=(
@@ -2175,6 +2636,46 @@ class NativeAgent:
                     ),
                     trace=model_trace,
                 )
+                assert case_design is not None
+                design_conflicts = _legacy_plan_design_conflicts(
+                    plan,
+                    case_design,
+                )
+                if design_conflicts:
+                    _write_json(
+                        run_dir / "design-conformance.json",
+                        {
+                            "schema_version": 1,
+                            "passed": False,
+                            "conflicts": design_conflicts,
+                            "design_sha256": case_design.design_sha256,
+                        },
+                    )
+                    return self._finish(
+                        run_dir=run_dir,
+                        task=task,
+                        status="CASE_DESIGN_CONTRADICTED",
+                        attempts=attempts,
+                        message=(
+                            "Temporary author bridge contradicted the frozen "
+                            "CaseDesign."
+                        ),
+                        model_calls=model_calls,
+                        primary_failure=FailureRecord(
+                            domain=FailureDomain.DESIGN,
+                            code="CASE_DESIGN_CONTRADICTED",
+                            detail="; ".join(design_conflicts),
+                            message="生成的 case 与冻结设计不一致，未执行。",
+                            recovery=(
+                                "检查 case-design.json 与 design-conformance.json；"
+                                "不得放宽 RiskGate。"
+                            ),
+                            evidence_paths=[
+                                "case-design.json",
+                                "design-conformance.json",
+                            ],
+                        ),
+                    )
             except OperationCancelled:
                 return self._finish_cancelled(
                     run_dir=run_dir,

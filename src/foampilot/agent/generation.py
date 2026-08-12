@@ -16,6 +16,7 @@ from foampilot.models import (
 )
 from foampilot.plans import ExecutionPlan, normalize_execution_plan_input
 from foampilot.routing import CapabilityProfile
+from foampilot.simulation.risk_gate import CaseDesign
 from foampilot.tasks import TaskSpec
 from foampilot.preprocessing import (
     ExecutedMeshFacts,
@@ -40,6 +41,7 @@ def author_case_bundle(
     executed_mesh_facts: tuple[ExecutedMeshFacts, ...] = (),
     status_snapshot: AgentStatusSnapshot | None = None,
     status_artifact: ModelContextArtifact | None = None,
+    case_design: CaseDesign | None = None,
     budget: ModelBudgetWindow,
     trace: ModelTraceSink,
 ) -> ExecutionPlan:
@@ -55,6 +57,7 @@ def author_case_bundle(
         input_mesh_facts,
         executed_mesh_facts,
         status_snapshot,
+        case_design,
     )
     return gateway.generate_structured(
         ModelRequest(

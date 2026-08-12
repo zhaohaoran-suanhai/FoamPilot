@@ -78,3 +78,4 @@ class RunSnapshot(FrozenModel):
     execution_risk: dict[str, object] | None = None
     execution_policy: dict[str, object] | None = None
     sandbox_probe: dict[str, object] | None = None
+    design_questions: dict[str, object] | None = None

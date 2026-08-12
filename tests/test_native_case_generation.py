@@ -19,6 +19,8 @@ from foampilot.models import (
     ModelStage,
     ModelContextArtifact,
 )
+from foampilot.simulation import FactEvidence, ResolvedValue, SimulationIntent
+from foampilot.simulation.design import CaseDesignProposal, ExtensionDecision
 from foampilot.manifests import (
     CaseField,
     CaseManifest,
@@ -47,6 +49,7 @@ class RecordingModel:
     def __init__(self, replies: list[BaseModel | Exception]) -> None:
         self.replies = replies
         self.requests: list[ModelRequest] = []
+        self.all_requests: list[ModelRequest] = []
         self.budgets = []
 
     primary_backend_id = "recording"
@@ -63,10 +66,93 @@ class RecordingModel:
         output_normalizer=None,
     ):
         del trace, output_normalizer
-        self.requests.append(request)
-        self.budgets.append(budget)
-        assert budget.stage in {ModelStage.GENERATION, ModelStage.REPAIR}
-        reply = self.replies.pop(0)
+        self.all_requests.append(request)
+        if schema is SimulationIntent:
+            assert budget.stage == ModelStage.INTENT_INTERPRETATION
+            payload = __import__("json").loads(request.user_prompt)
+            request_text = str(payload["request_text"])
+            solver = next(
+                (
+                    request_text[index : index + len(candidate)]
+                    for candidate in (
+                        kind.partition(":")[2]
+                        for kind in payload["available_capability_kinds"]
+                        if kind.startswith("solver:")
+                    )
+                    for index in range(len(request_text))
+                    if request_text[index : index + len(candidate)].casefold()
+                    == candidate.casefold()
+                ),
+                None,
+            )
+            reply = SimulationIntent(
+                facts=(
+                    ResolvedValue(
+                        field_path="solver.family",
+                        value=solver,
+                        source="user_text",
+                        impact="high",
+                        evidence=(
+                            FactEvidence(kind="user_quote", detail=solver),
+                        ),
+                        confirmed=True,
+                    ),
+                )
+                if solver is not None
+                else (),
+            )
+        elif schema is CaseDesignProposal:
+            assert budget.stage == ModelStage.CASE_DESIGN
+            payload = __import__("json").loads(request.user_prompt)
+            requirements = payload["ResolvedRequirements"]["resolved"]
+            solver_fact = next(
+                item for item in requirements
+                if item["field_path"] == "solver.family"
+            )
+            descriptor = next(
+                item for item in payload["capability_registry"]
+                if any(
+                    kind.startswith("solver:")
+                    for kind in item["capability_kinds"]
+                )
+            )
+            reply = CaseDesignProposal(
+                solver_family=ResolvedValue.model_validate(solver_fact),
+                physical_models=(),
+                materials=(),
+                boundary_designs=(),
+                initial_conditions=(),
+                time_design=(),
+                numerical_design=(),
+                region_models=(),
+                extension_decisions=(
+                    ExtensionDecision(
+                        extension_id=descriptor["extension_id"],
+                        schema_version=descriptor["protocol_version"],
+                        values=(),
+                        provenance=(
+                            FactEvidence(
+                                kind="test_fixture",
+                                detail="scripted registered extension",
+                            ),
+                        ),
+                    ),
+                ),
+                uncertainties=(),
+                alternatives=(),
+                reasoning_evidence=(
+                    FactEvidence(
+                        kind="test_fixture",
+                        detail="scripted coherent case design",
+                    ),
+                ),
+                capability_conflicts=(),
+            )
+        else:
+            self.requests.append(request)
+            self.budgets.append(budget)
+            assert budget.stage in {ModelStage.GENERATION, ModelStage.REPAIR}
+            reply = self.replies.pop(0)
         if isinstance(reply, Exception):
             raise reply
         assert isinstance(reply, schema)

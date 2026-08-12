@@ -265,3 +265,39 @@ def test_questions_and_confirm_cli_round_trip(tmp_path: Path, capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "READY_TO_AUTHOR"
     assert Path(payload["run_dir"]).is_dir()
+
+
+def test_questions_cli_reads_information_required_without_confirmation_parent(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    store = ArtifactStore(tmp_path / "runs")
+    run_dir = store.create_run()
+    (run_dir / "questions.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "state": "INFORMATION_REQUIRED",
+                "questions": [],
+                "requirement_gaps": [
+                    {
+                        "field_path": "geometry.length_unit",
+                        "impact": "high",
+                        "kind": "information_required",
+                        "code": "REQUIRED_FACT_MISSING",
+                        "description": "Physical length unit",
+                        "candidates": [],
+                    }
+                ],
+                "requirement_conflicts": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    store.finalize(run_dir)
+
+    assert main(["questions", str(run_dir), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["status"] == "INFORMATION_REQUIRED"
+    assert payload["requirement_gaps"][0]["field_path"] == "geometry.length_unit"

@@ -104,6 +104,15 @@ def test_controller_rejects_unregistered_command() -> None:
         controller.start_cli(["solve", "task.yaml"])
 
 
+def test_controller_allows_concrete_confirmation_but_has_no_generic_override() -> None:
+    controller = DesktopJobController()
+
+    assert "confirm" in controller.allowed_commands
+    assert "continue" not in controller.allowed_commands
+    assert "accept-all" not in controller.allowed_commands
+    assert controller._job_operation(("confirm", "run", "--answers", "a.yaml")) == "confirm"
+
+
 def test_controller_decodes_activity_and_preserves_invalid_stderr(qtbot) -> None:
     controller = _python_controller()
     event = ActivityEvent(

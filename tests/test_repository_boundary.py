@@ -14,6 +14,8 @@ SUPPORTED_COMMANDS = (
     "rerun",
     "inspect",
     "report",
+    "questions",
+    "confirm",
     "preflight",
     "desktop",
     "model",
@@ -95,5 +97,7 @@ def test_cli_exposes_the_foampilot_command_surface(capsys) -> None:
     assert "preflight" in output
     assert "desktop" in output
     assert "task" in output
+    assert "questions" in output
+    assert "confirm" in output
     assert "casespec" not in output
     assert "agent" not in output

@@ -629,24 +629,42 @@ def _job(arguments: argparse.Namespace) -> int:
 
 
 def _questions(arguments: argparse.Namespace) -> int:
-    from foampilot.workflow.confirmation import load_confirmation_parent
-
-    parent = load_confirmation_parent(arguments.run_dir)
+    run_dir = arguments.run_dir.resolve()
+    store = ArtifactStore(run_dir.parent)
+    problems = store.verify(run_dir)
+    if problems:
+        raise ValueError("PARENT_MANIFEST_INVALID: " + "; ".join(problems))
+    raw = json.loads(
+        (run_dir / "questions.json").read_text(encoding="utf-8")
+    )
+    if not isinstance(raw, dict):
+        raise ValueError("questions.json root must be a mapping")
+    raw_questions = raw.get("questions", [])
+    requirement_gaps = raw.get("requirement_gaps", [])
+    requirement_conflicts = raw.get("requirement_conflicts", [])
+    if not all(
+        isinstance(value, list)
+        for value in (
+            raw_questions,
+            requirement_gaps,
+            requirement_conflicts,
+        )
+    ):
+        raise ValueError("questions.json lists are invalid")
     payload = {
-        "status": parent.decision.state,
-        "run_dir": str(parent.run_dir),
-        "proposal_sha256": parent.decision.proposal_sha256,
-        "questions": [
-            item.model_dump(mode="json")
-            for item in parent.decision.questions
-        ],
+        "status": str(raw.get("state", "INFORMATION_REQUIRED")),
+        "run_dir": str(run_dir),
+        "proposal_sha256": raw.get("proposal_sha256"),
+        "questions": raw_questions,
+        "requirement_gaps": requirement_gaps,
+        "requirement_conflicts": requirement_conflicts,
     }
     _emit(
         payload,
         as_json=arguments.json,
         human=(
-            f"{parent.decision.state}: "
-            f"{len(parent.decision.questions)} question(s)."
+            f"{payload['status']}: "
+            f"{len(raw_questions) + len(requirement_gaps)} question(s)."
         ),
     )
     return 0

@@ -9,6 +9,7 @@ import sys
 import threading
 
 from PySide6.QtCore import QObject, QSettings, Qt, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
     QInputDialog,
@@ -305,6 +306,102 @@ def test_open_verified_run_renders_read_only_snapshot(
     window.file_tree.setCurrentItem(item)
     qtbot.waitUntil(lambda: "Time = 0.03" in window.file_viewer.toPlainText())
     assert "Time = 0.03" in window.log_viewer.toPlainText()
+
+
+def test_pending_design_renders_fields_reasons_and_candidates_without_override(
+    qtbot,
+    tmp_path: Path,
+) -> None:
+    store = ArtifactStore(tmp_path / "runs")
+    run_dir = store.create_run()
+    (run_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                **_summary(),
+                "workflow_state": "DEFERRED",
+                "native_status": None,
+                "last_completed_stage": "DESIGNING_CASE",
+                "attempts": [],
+                "primary_failure": {
+                    "domain": "design",
+                    "code": "INFORMATION_REQUIRED",
+                    "retryable": False,
+                    "detail": "design facts are unresolved",
+                    "message": "算例设计缺少必要信息。",
+                    "recovery": "逐项补充或确认后创建子运行。",
+                    "evidence_paths": ["questions.json"],
+                },
+                "message": "Simulation design needs concrete information.",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "questions.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "state": "INFORMATION_REQUIRED",
+                "reason_codes": [
+                    "REQUIRED_INFORMATION_MISSING_OR_CONFLICTING"
+                ],
+                "questions": [
+                    {
+                        "question_id": "confirm-nu",
+                        "field_path": "materials.fluid.nu",
+                        "impact": "high",
+                        "kind": "confirmable",
+                        "prompt_zh": "是否确认采用该运动黏度？",
+                        "reason_zh": "该值只来自模型推断。",
+                        "candidates": [
+                            {
+                                "candidate_id": "water-like-nu",
+                                "value": {
+                                    "value": 1.0e-6,
+                                    "unit": "m2/s",
+                                },
+                                "rationale": "水样流体候选。",
+                                "evidence": [],
+                            }
+                        ],
+                        "conflicting_evidence": [],
+                    },
+                    {
+                        "question_id": "provide-outlet-role",
+                        "field_path": "boundaries.outlet.role",
+                        "impact": "high",
+                        "kind": "information_required",
+                        "prompt_zh": "请补充 outlet 的物理角色。",
+                        "reason_zh": "网格只能确定 patch 名称，不能确定用户语义。",
+                        "candidates": [],
+                        "conflicting_evidence": [],
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    store.finalize(run_dir)
+    window = FoamPilotMainWindow()
+    qtbot.addWidget(window)
+
+    _open_run(qtbot, window, run_dir)
+
+    rendered = window.report_viewer.toPlainText()
+    assert "设计门禁：INFORMATION_REQUIRED" in rendered
+    assert "字段：materials.fluid.nu" in rendered
+    assert "原因：该值只来自模型推断。" in rendered
+    assert "候选 water-like-nu" in rendered
+    assert "1.0e-06" in rendered
+    assert "m2/s" in rendered
+    assert "字段：boundaries.outlet.role" in rendered
+    assert "网格只能确定 patch 名称，不能确定用户语义。" in rendered
+    action_text = "\n".join(
+        action.text() for action in window.findChildren(QAction)
+    ).casefold()
+    assert "全部接受" not in action_text
+    assert "accept all" not in action_text
+    assert "continue anyway" not in action_text
 
 
 def test_run_projection_is_loaded_outside_qt_main_thread(

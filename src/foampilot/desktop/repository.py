@@ -505,6 +505,12 @@ class RunRepository:
             ),
             warnings,
         )
+        design_questions = _read_json_projection(
+            directory,
+            registered,
+            "questions.json",
+            warnings,
+        )
 
         return RunSnapshot(
             run_dir=directory,
@@ -522,6 +528,7 @@ class RunRepository:
             execution_risk=execution_risk,
             execution_policy=execution_policy,
             sandbox_probe=sandbox_probe,
+            design_questions=design_questions,
         )
 
     def read_text(

@@ -82,6 +82,13 @@ class RunSummary(StrictModel):
             return "BLOCKED_ENVIRONMENT"
         if self.primary_failure is not None and self.primary_failure.code in {
             "REQUEST_INCOMPLETE",
+            "INFORMATION_REQUIRED",
+            "CONFIRMATION_REQUIRED",
+            "CAPABILITY_UNAVAILABLE",
+            "CASE_DESIGN_FAILED",
+            "CASE_DESIGN_CONTRADICTED",
+            "CASE_DESIGN_CHECKPOINT_MISSING",
+            "CASE_DESIGN_CHECKPOINT_INVALID",
             "ROUTING_UNRESOLVED",
             "BLOCKED_ENVIRONMENT",
             "EXECUTION_WALL_BUDGET_EXHAUSTED",
