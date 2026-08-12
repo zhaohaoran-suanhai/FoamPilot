@@ -61,8 +61,8 @@ isolation；TaskDraft 不接收 Runtime 参数。
 - “任务”：自然语言、澄清表、TaskDraft/TaskSpec 和阻断诊断；
 - “知识上下文”：capability routing，以及模型实际收到的 Knowledge ID、标题、类型、来源、
   内容哈希和 Skill；只显示固化的公开上下文，不展示隐藏思维过程；
-- “残差监控”：从当前 solver stdout 提取各场 initial residual，以 `log10` 曲线实时刷新，并
-  列出各场最新的 initial/final residual、线性迭代次数和时间步；
+- “残差监控”：读取 evidence 层写入的 `metrics.jsonl`，以 `log10` 曲线实时刷新，并列出
+  各场最新的 initial/final residual 和时间步；Desktop 不再自行解析 solver stdout；
 - “产物”：最终 `RunSummary`、选中文件、公开验证/qualification 报告；
 - 左侧：当前 run 内经过安全路径检查的 case、日志、报告和 workflow 文件；
 - 底部：排序后的 workflow 时间线、OpenFOAM 日志以及 TaskBuilder/solve 进程输出；
@@ -126,9 +126,14 @@ parent manifest 与 `rerun_same_input`/`rerun_with_changes` lineage。两者都�
 - Desktop 只展示 run 中公开、规范的 `runtime-config.json`、
   `execution-risk-report.json`、`execution-policy.json` 等证据和模型实际收到的 Knowledge/Skill；
   不展示隐藏思维过程。audited host 与 bubblewrap 不具有相同安全性；
-- 活跃 run 的 workflow/log 通过 byte cursor 增量读取；文件树扫描节流，manifest 验证缓存，
-  重型 projection 在 Qt 后台线程执行。刷新失败保留上一次画面并显示
+- 活跃 run 的时间线通过 byte cursor 增量读取；状态、残差、问题、失败报告和可信链接统一由
+  `WorkflowProjection` 提供，文件树扫描节流，manifest 验证缓存，重型 projection 在 Qt
+  后台线程执行。刷新失败保留上一次画面并显示
   `DESKTOP_REFRESH_DEGRADED`；
+
+Desktop 与 CLI 的 `foampilot progress RUN_DIR --json` 使用同一 `WorkflowProjection`。求解
+日志只由 evidence 层解析一次并形成 `RunFacts`；失败界面展示 `FailureReport` 中的观察、确认
+原因、hypothesis、repair 原因和建议动作，不展示隐藏思维过程。
 - 当前 Desktop 尚未提供人工 repair、case revision、OpenFOAM 时间目录 continuation、三维
   VTK/PyVista 视图、ParaView 启动、远程 HPC、多用户和权限管理。
 

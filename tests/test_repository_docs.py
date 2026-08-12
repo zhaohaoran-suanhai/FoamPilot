@@ -173,3 +173,31 @@ def test_docs_publish_compiled_execution_authority() -> None:
     assert "PlanCompiler" in current_docs
     assert "临时 Phase 2 bridge" not in current_docs
     assert "模型一次编写完整 ExecutionPlan v3" not in current_docs
+
+
+def test_docs_publish_evidence_driven_workflow_projection() -> None:
+    root = Path(__file__).resolve().parents[1]
+    architecture = (root / "docs/architecture.md").read_text(
+        encoding="utf-8"
+    )
+    combined = "\n".join(
+        (root / path).read_text(encoding="utf-8")
+        for path in (
+            "README.md",
+            "AGENTS.md",
+            "docs/architecture.md",
+            "docs/system-overview.md",
+            "docs/desktop-ide.md",
+        )
+    )
+
+    assert "观察事实 ≠ 确认原因 ≠ 推测原因" in architecture
+    for token in (
+        "WorkflowCoordinator",
+        "RunFacts",
+        "FailureReport",
+        "metrics.jsonl",
+        "WorkflowProjection",
+        "foampilot progress",
+    ):
+        assert token in combined

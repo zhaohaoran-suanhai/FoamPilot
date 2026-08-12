@@ -224,8 +224,13 @@ foampilot solve \
 验证已冻结结果：
 
 ```bash
+foampilot progress /tmp/foampilot-runs/RUN_DIR --json
 foampilot report /tmp/foampilot-runs/RUN_DIR --json
 ```
+
+运行中的 CLI 与 Desktop 共享 `WorkflowProjection`。OpenFOAM 原始输出只由 evidence 层一次
+解析为 `RunFacts`，高频残差写入有界 `metrics.jsonl`；终态失败以 `FailureReport` 区分直接
+观察、确认原因和 hypothesis，界面不会把推测显示成已确认根因。
 
 在不修改 parent 的前提下，续跑可重试的 generation 或 repair 中断：
 

@@ -421,6 +421,7 @@ capability-profile.json
 agent-context.json
 agent-status-author-01.json
 agent-status-repair-01.json    # 仅在发生修复时
+metrics.jsonl                  # 有界、非权威的实时求解指标
 resume-compatibility.json
 model-attempts.jsonl
 model-configuration.json
@@ -431,6 +432,7 @@ plan-normalization.json
 execution-plan.json
 workflow-events.jsonl
 failure-classification-attempt-01.json  # 仅在失败时
+failure-report.json                     # 分层失败报告，仅在可分类失败时
 repair-scope-attempt-01.json            # 仅在进入修复时
 repair-patch-attempt-01.json            # 仅在形成有效补丁时
 checkpoints/
@@ -438,6 +440,7 @@ attempt-01/
   execution-plan.json
   generation-trace.json
   static-inspection.json
+  run-facts.json
   run-result.json
   mesh-cache.json             # 显式缓存运行中可选
   execution-reuse.json        # 网格/repair 复用时可选
@@ -451,6 +454,11 @@ attempt-02/                   # 仅在再次尝试时
 summary.json
 artifact-manifest.json
 ```
+
+`WorkflowCoordinator` 只负责阶段推进、checkpoint、取消和终态；OpenFOAM 日志由 evidence 层
+一次性提取为 `RunFacts`。CLI 与 Desktop 使用同一个 `WorkflowProjection`，可通过
+`foampilot progress RUN_DIR --json` 查看当前阶段、残差、待确认问题、失败摘要和可信产物链接。
+`FailureReport` 严格分开直接观察、已确认原因和 hypothesis，不能把模型诊断提升为事实。
 
 并非每个终态都会出现全部文件。例如在模型生成前失败时不会有 attempt 目录，在从未
 进入 OpenFOAM 时也不会有 `run-result.json`。

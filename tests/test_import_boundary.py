@@ -210,3 +210,15 @@ def test_only_evidence_package_contains_solver_log_patterns() -> None:
                     f"{path.relative_to(SOURCE_ROOT)} contains {pattern!r}"
                 )
     assert violations == []
+
+
+def test_desktop_never_constructs_solver_log_parsers() -> None:
+    desktop = SOURCE_ROOT / "desktop"
+    forbidden = ("ResidualLogCursor", "IncrementalOpenFOAMLogParser")
+    violations = [
+        f"{path.relative_to(SOURCE_ROOT)} contains {token}"
+        for path in sorted(desktop.rglob("*.py"))
+        for token in forbidden
+        if token in path.read_text(encoding="utf-8")
+    ]
+    assert violations == []

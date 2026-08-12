@@ -112,6 +112,21 @@ PlanCompiler，在新 attempt 中执行。物理、能力、solver、mesh 或 en
 
 ## 工作流与失败语义
 
+`WorkflowCoordinator` 只推进阶段、持久化 checkpoint、处理取消与 repair 预算；领域模块各自
+产生结构化结果，编排器不读取 OpenFOAM 文本来解释 CFD 事实。每个 attempt 的命令证据只由
+`EvidenceExtractor` 解析一次并冻结为 `RunFacts`。验证、失败分类、repair 和界面只能读取这些
+事实，不能各自重新搜索日志。
+
+失败解释遵循不可降级的分层原则：**观察事实 ≠ 确认原因 ≠ 推测原因**。直接返回码、超时、
+Courant 数、残差和 OpenFOAM 错误属于观察；只有具备直接机械证据的原因才能进入确认原因；
+规则或模型诊断只能标为 hypothesis。每个可分类终态失败生成 `FailureReport`，并明确记录自动
+repair 是已授权、已关闭、需确认还是被策略拒绝。
+
+实时残差等高频非权威指标写入有界 `metrics.jsonl`，不进入低频工作流状态流。CLI 的
+`foampilot progress RUN_DIR --json` 与 Desktop 都只消费同一个 `WorkflowProjection`：它组合
+workflow、RunFacts/FailureReport、问题、指标和 manifest 内的产物链接。指标损坏只产生
+warning，不得改写 workflow 终态。
+
 `workflow-events.jsonl` 是 task、environment、context、intent、requirements、design、generation、plan、
 materialization、inspection、OpenFOAM、public-validation、repair 与 finalization 阶段的
 有序、fsync 持久化记录。Checkpoint 采用独占写入，绝不替换。

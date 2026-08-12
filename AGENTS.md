@@ -115,6 +115,11 @@ foampilot qualify suite \
   `rerun_with_changes`，不能伪装成 strict resume。
 - OpenFOAM 返回 0 只说明进程正常结束，不证明收敛、守恒、网格无关或工程可用。
 - 报告结论前验证 artifact manifest。
+- `WorkflowCoordinator` 只能推进状态、持久化 checkpoint 和处理取消；不得自行解析领域日志。
+- OpenFOAM 文本只由 evidence 层解析一次并冻结为 `RunFacts`；CLI 与 Desktop 必须消费同一个
+  `WorkflowProjection`，实时残差从 `metrics.jsonl` 读取，不得恢复独立日志解析器。
+- 失败报告使用 `FailureReport`，严格区分直接观察、确认原因和 hypothesis；模型诊断不能成为
+  terminal authority。
 - 计划复用只接受完全相同的规范 TaskSpec 和严格兼容 source；拒绝不得静默回退模型生成。
 - 派生缓存必须使用内容寻址依赖键，命中仍重新运行当前 `checkMesh`，不得把缓存结果当作物理验证。
 - repair 阶段复用只能跳过由修改集合证明不受影响的前序命令；依赖不明确时完整重跑。
