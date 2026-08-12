@@ -14,6 +14,7 @@ SUPPORTED_COMMANDS = (
     "rerun",
     "inspect",
     "report",
+    "progress",
     "questions",
     "confirm",
     "preflight",

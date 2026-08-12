@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from foampilot.artifacts import RunSummary
+from foampilot.workflow import WorkflowProjection
 
 
 class FrozenModel(BaseModel):
@@ -55,11 +56,9 @@ class ResidualSample(FrozenModel):
     source_log: str
     sequence: int
     simulation_time: float | None
-    iteration: int | None
     field: str
     initial_residual: float
-    final_residual: float
-    solver_iterations: int
+    final_residual: float | None
 
 
 class RunSnapshot(FrozenModel):
@@ -70,6 +69,7 @@ class RunSnapshot(FrozenModel):
     manifest_state: Literal["verified", "invalid", "pending"]
     manifest_issues: tuple[str, ...]
     warnings: tuple[str, ...]
+    projection: WorkflowProjection
     context_references: tuple[KnowledgeReference, ...] = ()
     skill_references: tuple[SkillReference, ...] = ()
     residual_samples: tuple[ResidualSample, ...] = ()

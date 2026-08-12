@@ -1,14 +1,9 @@
-"""Qt-independent byte cursors for active run events and solver logs."""
+"""Qt-independent byte cursor for active workflow events."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-
-from foampilot.evidence.telemetry import IncrementalOpenFOAMLogParser
-
-from .viewmodels import ResidualSample
-
 
 @dataclass(frozen=True, slots=True)
 class LineChunk:
@@ -84,70 +79,4 @@ class IncrementalLineCursor:
         )
 
 
-class ResidualLogCursor:
-    """Incrementally parse one OpenFOAM log into a bounded sample history."""
-
-    def __init__(
-        self,
-        path: str | Path,
-        *,
-        attempt: int | None,
-        source_log: str,
-        sample_limit: int = 5_000,
-        initial_bytes_limit: int | None = None,
-    ) -> None:
-        if sample_limit < 1:
-            raise ValueError("sample limit must be positive")
-        self.lines = IncrementalLineCursor(
-            path,
-            initial_bytes_limit=initial_bytes_limit,
-        )
-        self.attempt = attempt
-        self.source_log = source_log
-        self.sample_limit = sample_limit
-        self._parser = IncrementalOpenFOAMLogParser()
-        self._sequence = 0
-        self._samples: list[ResidualSample] = []
-        self.truncated_initial_read = False
-
-    @property
-    def offset(self) -> int:
-        return self.lines.offset
-
-    @property
-    def samples(self) -> tuple[ResidualSample, ...]:
-        return tuple(self._samples)
-
-    def read(self) -> tuple[ResidualSample, ...]:
-        chunk = self.lines.read()
-        self.truncated_initial_read = (
-            self.truncated_initial_read or chunk.truncated_initial_read
-        )
-        if chunk.reset:
-            self._parser = IncrementalOpenFOAMLogParser()
-            self._sequence = 0
-            self._samples.clear()
-        added: list[ResidualSample] = []
-        for _, line in chunk.lines:
-            for metric in self._parser.feed(line + "\n"):
-                self._sequence += 1
-                added.append(
-                    ResidualSample(
-                        attempt=self.attempt,
-                        source_log=self.source_log,
-                        sequence=self._sequence,
-                        simulation_time=metric.simulation_time,
-                        iteration=metric.iteration,
-                        field=metric.field,
-                        initial_residual=metric.initial_residual,
-                        final_residual=metric.final_residual,
-                        solver_iterations=metric.solver_iterations,
-                    )
-                )
-        self._samples.extend(added)
-        if len(self._samples) > self.sample_limit:
-            self._samples[:] = self._samples[-self.sample_limit :]
-        return tuple(added)
-
-
-__all__ = ["IncrementalLineCursor", "LineChunk", "ResidualLogCursor"]
+__all__ = ["IncrementalLineCursor", "LineChunk"]

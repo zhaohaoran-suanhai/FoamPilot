@@ -25,6 +25,7 @@ from foampilot.desktop import application as desktop_application
 from foampilot.desktop.job_controller import DesktopJobController, DesktopJobError
 from foampilot.desktop.main_window import FoamPilotMainWindow
 from foampilot.desktop.repository import RunRepository
+from foampilot.evidence import MetricPoint
 from foampilot.jobs import (
     JobState,
     LocalJobStore,
@@ -669,14 +670,24 @@ def test_context_and_residual_tabs_render_public_run_evidence(
         ),
         encoding="utf-8",
     )
-    log = run_dir / "attempt-01/case/.foampilot/logs/solve.stdout.log"
-    log.parent.mkdir(parents=True)
-    log.write_text(
-        "Time = 0.1\n"
-        "smoothSolver: Solving for Ux, Initial residual = 0.2, "
-        "Final residual = 0.01, No Iterations 2\n"
-        "GAMG: Solving for p, Initial residual = 0.1, "
-        "Final residual = 0.001, No Iterations 3\n",
+    metrics = run_dir / "metrics.jsonl"
+    metrics.write_text(
+        "".join(
+            MetricPoint(
+                sequence=sequence,
+                occurred_at=datetime.now(timezone.utc),
+                attempt=1,
+                step_id="solve",
+                simulation_time=0.1,
+                series=f"residual:{field}",
+                value=value,
+            ).model_dump_json()
+            + "\n"
+            for sequence, (field, value) in enumerate(
+                (("Ux", 0.2), ("p", 0.1)),
+                start=1,
+            )
+        ),
         encoding="utf-8",
     )
     window = FoamPilotMainWindow()
@@ -957,11 +968,17 @@ def test_discovered_run_starts_live_refresh_and_updates_residuals(
     qtbot.waitUntil(lambda: window.current_snapshot is not None, timeout=5000)
     assert window.current_snapshot is not None
     assert window.live_refresh_timer.isActive() is True
-    log = run_dir / "attempt-01/case/.foampilot/logs/solve.stdout.log"
-    log.parent.mkdir(parents=True)
-    log.write_text(
-        "Time = 1\nSolving for p, Initial residual = 0.1, "
-        "Final residual = 0.01, No Iterations 1\n",
+    (run_dir / "metrics.jsonl").write_text(
+        MetricPoint(
+            sequence=1,
+            occurred_at=datetime.now(timezone.utc),
+            attempt=1,
+            step_id="solve",
+            simulation_time=1.0,
+            series="residual:p",
+            value=0.1,
+        ).model_dump_json()
+        + "\n",
         encoding="utf-8",
     )
     window.live_refresh_timer.timeout.emit()

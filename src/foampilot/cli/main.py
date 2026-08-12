@@ -91,6 +91,7 @@ from foampilot.taskbuilder import (
     validate_task_draft,
 )
 from foampilot.desktop import DesktopDependencyError
+from foampilot.workflow import build_workflow_projection
 
 
 COMMANDS = (
@@ -101,6 +102,7 @@ COMMANDS = (
     "rerun",
     "inspect",
     "report",
+    "progress",
     "questions",
     "confirm",
     "preflight",
@@ -204,6 +206,10 @@ def _parser() -> argparse.ArgumentParser:
     report = subparsers.add_parser("report")
     report.add_argument("run_dir", type=Path)
     report.add_argument("--json", action="store_true")
+
+    progress = subparsers.add_parser("progress")
+    progress.add_argument("run_dir", type=Path)
+    progress.add_argument("--json", action="store_true")
 
     questions = subparsers.add_parser("questions")
     questions.add_argument("run_dir", type=Path)
@@ -1335,6 +1341,24 @@ def _report(arguments: argparse.Namespace) -> int:
     return 4
 
 
+def cli_progress_payload(run_dir: str | Path) -> dict[str, object]:
+    """Return the same durable workflow projection consumed by Desktop."""
+
+    return build_workflow_projection(run_dir).model_dump(mode="json")
+
+
+def _progress(arguments: argparse.Namespace) -> int:
+    payload = cli_progress_payload(arguments.run_dir)
+    current = payload.get("current_stage") or "not available"
+    active = payload.get("active_operation") or "idle"
+    _emit(
+        payload,
+        as_json=arguments.json,
+        human=f"{current}: {active}",
+    )
+    return 0
+
+
 def _desktop_launcher(
     run_dir: Path | None,
     runtime_cli_args: tuple[str, ...],
@@ -1720,6 +1744,7 @@ def _run_main(argv: list[str] | None = None) -> int:
             "desktop": _desktop,
             "model": _model,
             "report": _report,
+            "progress": _progress,
             "questions": _questions,
             "confirm": _confirm,
             "knowledge": _knowledge,

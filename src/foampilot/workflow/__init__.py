@@ -31,6 +31,24 @@ from .services import (
 
 def __getattr__(name: str):
     if name in {
+        "FailureSummary",
+        "PendingQuestion",
+        "ResidualProjection",
+        "StageProgress",
+        "WorkflowProjection",
+        "build_workflow_projection",
+    }:
+        from .projection import (
+            FailureSummary,
+            PendingQuestion,
+            ResidualProjection,
+            StageProgress,
+            WorkflowProjection,
+            build_workflow_projection,
+        )
+
+        return locals()[name]
+    if name in {
         "ConfirmationAnswer",
         "ConfirmationAnswers",
         "ConfirmationContinuation",
@@ -78,6 +96,12 @@ __all__ = [
     "WorkflowCoordinator",
     "WorkflowCoordinatorOutcome",
     "WorkflowCoordinatorSummary",
+    "FailureSummary",
+    "PendingQuestion",
+    "ResidualProjection",
+    "StageProgress",
+    "WorkflowProjection",
+    "build_workflow_projection",
     "ConfirmationAnswer",
     "ConfirmationAnswers",
     "ConfirmationContinuation",

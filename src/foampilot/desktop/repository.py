@@ -12,20 +12,17 @@ import time
 
 from foampilot.artifacts import ArtifactStore
 from foampilot.knowledge import load_knowledge_corpus
-from foampilot.workflow import WorkflowEvent
+from foampilot.workflow import WorkflowEvent, build_workflow_projection
 
-from .cursors import IncrementalLineCursor, ResidualLogCursor
+from .cursors import IncrementalLineCursor
 from .viewmodels import (
     KnowledgeReference,
+    ResidualSample,
     RunFileView,
     RunSnapshot,
     SkillReference,
     TimelineView,
 )
-
-
-_TELEMETRY_LOG_BYTES = 8 * 1024 * 1024
-_TELEMETRY_SAMPLE_LIMIT = 5_000
 
 
 @dataclass(slots=True)
@@ -35,7 +32,6 @@ class _RunCache:
     timeline_cursor: IncrementalLineCursor | None = None
     timeline: list[TimelineView] = field(default_factory=list)
     timeline_warnings: list[str] = field(default_factory=list)
-    residual_cursors: dict[str, ResidualLogCursor] = field(default_factory=dict)
     manifest_identity: tuple[int, int, int, int] | None = None
     manifest_state: str = "pending"
     manifest_issues: tuple[str, ...] = ()
@@ -206,52 +202,6 @@ def _context_views(
     return references, skills
 
 
-def _residual_views_incremental(
-    directory: Path,
-    files: list[RunFileView],
-    warnings: list[str],
-    cache: _RunCache,
-):
-    visible_logs: set[str] = set()
-    for item in files:
-        if item.category != "log" or not item.path.endswith(".stdout.log"):
-            continue
-        visible_logs.add(item.path)
-        relative = PurePosixPath(item.path)
-        path = directory / Path(*relative.parts)
-        match = re.search(r"(?:^|/)attempt-(\d+)(?:/|$)", item.path)
-        attempt = int(match.group(1)) if match is not None else None
-        cursor = cache.residual_cursors.get(item.path)
-        if cursor is None:
-            cursor = ResidualLogCursor(
-                path,
-                attempt=attempt,
-                source_log=item.path,
-                sample_limit=_TELEMETRY_SAMPLE_LIMIT,
-                initial_bytes_limit=_TELEMETRY_LOG_BYTES,
-            )
-            cache.residual_cursors[item.path] = cursor
-        try:
-            cursor.read()
-        except OSError as error:
-            warnings.append(f"{item.path} cannot be read for residuals: {error}")
-            continue
-        if cursor.truncated_initial_read:
-            warnings.append(
-                f"{item.path} residual view uses the latest "
-                f"{_TELEMETRY_LOG_BYTES} bytes"
-            )
-    for relative in tuple(cache.residual_cursors):
-        if relative not in visible_logs:
-            del cache.residual_cursors[relative]
-    samples = []
-    for relative in sorted(visible_logs):
-        cursor = cache.residual_cursors.get(relative)
-        if cursor is not None:
-            samples.extend(cursor.samples)
-    return samples[-_TELEMETRY_SAMPLE_LIMIT:]
-
-
 def _read_json_projection(
     directory: Path,
     registered: set[str],
@@ -410,8 +360,6 @@ class RunRepository:
                 raise RunOpenError(f"invalid run summary: {error}") from error
 
         self._refresh_timeline(directory, cache)
-        warnings.extend(cache.timeline_warnings)
-
         manifest = directory / ArtifactStore.manifest_name
         manifest_identity = _file_identity(manifest)
         now = self._monotonic()
@@ -460,11 +408,30 @@ class RunRepository:
             trusted_files,
             warnings,
         )
-        residual_samples = _residual_views_incremental(
+        projection = build_workflow_projection(
             directory,
-            trusted_files,
-            warnings,
-            cache,
+            trusted_files=registered,
+            trust_warnings=(
+                ("MANIFEST_INVALID",)
+                if manifest_state == "invalid"
+                else ()
+            ),
+        )
+        warnings.extend(projection.warnings)
+        residual_samples = tuple(
+            ResidualSample(
+                attempt=item.attempt,
+                source_log="metrics.jsonl",
+                sequence=sequence,
+                simulation_time=item.simulation_time,
+                field=item.field,
+                initial_residual=item.initial,
+                final_residual=item.final,
+            )
+            for sequence, item in enumerate(
+                projection.recent_residuals,
+                start=1,
+            )
         )
         runtime_config = _read_json_projection(
             directory,
@@ -519,7 +486,8 @@ class RunRepository:
             files=tuple(files),
             manifest_state=manifest_state,
             manifest_issues=manifest_issues,
-            warnings=tuple(warnings),
+            warnings=tuple(dict.fromkeys(warnings)),
+            projection=projection,
             context_references=tuple(context_references),
             skill_references=tuple(skill_references),
             residual_samples=tuple(residual_samples),

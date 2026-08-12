@@ -12,6 +12,7 @@ from foampilot.desktop.repository import (
     RunOpenError,
     RunRepository,
 )
+from foampilot.evidence import MetricPoint
 from foampilot.workflow import WorkflowEvent, WorkflowStage
 
 
@@ -58,6 +59,25 @@ def _event(
         occurred_at=NOW,
         attempt=1,
         step_id=step_id,
+    )
+
+
+def _metric(
+    sequence: int,
+    field: str,
+    value: float,
+    *,
+    simulation_time: float,
+    final: bool = False,
+) -> MetricPoint:
+    return MetricPoint(
+        sequence=sequence,
+        occurred_at=NOW,
+        attempt=2,
+        step_id="solve",
+        simulation_time=simulation_time,
+        series=f"residual{'-final' if final else ''}:{field}",
+        value=value,
     )
 
 
@@ -175,9 +195,8 @@ def test_open_active_run_tolerates_malformed_event(tmp_path: Path) -> None:
     assert snapshot.summary is None
     assert snapshot.manifest_state == "pending"
     assert [item.sequence for item in snapshot.timeline] == [1]
-    assert snapshot.warnings == (
-        "workflow-events.jsonl line 2 is invalid",
-    )
+    assert "WORKFLOW_EVENT_INVALID:2" in snapshot.warnings
+    assert "LEGACY_METRICS_UNAVAILABLE" in snapshot.warnings
 
 
 def test_open_rejects_batch_root_with_sorted_child_runs(
@@ -271,16 +290,22 @@ def test_open_keeps_unknown_historical_context_id_visible(
     assert snapshot.context_references[0].source_sha256 == "a" * 64
 
 
-def test_open_projects_residual_samples_from_attempt_logs(
+def test_open_projects_residual_samples_from_canonical_metrics(
     tmp_path: Path,
 ) -> None:
     run_dir = tmp_path / "run-active"
-    log = run_dir / "attempt-02/case/.foampilot/logs/solve.stdout.log"
-    log.parent.mkdir(parents=True)
-    log.write_text(
-        "Time = 0.5\n"
-        "smoothSolver: Solving for Ux, Initial residual = 0.2, "
-        "Final residual = 0.01, No Iterations 2\n",
+    run_dir.mkdir()
+    (run_dir / "metrics.jsonl").write_text(
+        _metric(1, "Ux", 0.2, simulation_time=0.5).model_dump_json()
+        + "\n"
+        + _metric(
+            2,
+            "Ux",
+            0.01,
+            simulation_time=0.5,
+            final=True,
+        ).model_dump_json()
+        + "\n",
         encoding="utf-8",
     )
 
@@ -291,12 +316,10 @@ def test_open_projects_residual_samples_from_attempt_logs(
     assert sample.attempt == 2
     assert sample.field == "Ux"
     assert sample.simulation_time == 0.5
-    assert sample.source_log == (
-        "attempt-02/case/.foampilot/logs/solve.stdout.log"
-    )
+    assert sample.source_log == "metrics.jsonl"
 
 
-def test_active_repository_appends_workflow_and_residuals_incrementally(
+def test_active_repository_appends_workflow_and_metrics_incrementally(
     tmp_path: Path,
 ) -> None:
     run_dir = tmp_path / "run-active"
@@ -306,12 +329,10 @@ def test_active_repository_appends_workflow_and_residuals_incrementally(
         _event(1, WorkflowStage.TASK_VALIDATED).model_dump_json() + "\n",
         encoding="utf-8",
     )
-    log = run_dir / "attempt-01/case/.foampilot/logs/solve.stdout.log"
-    log.parent.mkdir(parents=True)
-    log.write_text(
-        "Time = 1\n"
-        "Solving for Ux, Initial residual = 0.1, Final residual = 0.01, "
-        "No Iterations 1\n",
+    metrics = run_dir / "metrics.jsonl"
+    metrics.write_text(
+        _metric(1, "Ux", 0.1, simulation_time=1).model_dump_json()
+        + "\n",
         encoding="utf-8",
     )
     repository = RunRepository(active_rescan_seconds=0.0)
@@ -323,12 +344,8 @@ def test_active_repository_appends_workflow_and_residuals_incrementally(
     partial = repository.open(run_dir)
     with events.open("a", encoding="utf-8") as stream:
         stream.write("\n")
-    with log.open("a", encoding="utf-8") as stream:
-        stream.write(
-            "Time = 2\n"
-            "Solving for p, Initial residual = 0.2, Final residual = 0.02, "
-            "No Iterations 2\n"
-        )
+    with metrics.open("a", encoding="utf-8") as stream:
+        stream.write(_metric(2, "p", 0.2, simulation_time=2).model_dump_json() + "\n")
     final = repository.open(run_dir)
 
     assert [item.sequence for item in first.timeline] == [1]
@@ -423,14 +440,20 @@ def test_large_active_projection_keeps_residual_history_bounded(
         + "\n",
         encoding="utf-8",
     )
-    log = run_dir / "attempt-01/case/.foampilot/logs/solve.stdout.log"
-    log.parent.mkdir(parents=True)
-    log.write_text(
+    metrics = run_dir / "metrics.jsonl"
+    metrics.write_text(
         "".join(
-            f"Time = {index}\n"
-            f"Solving for p, Initial residual = 0.1, "
-            f"Final residual = 0.01, No Iterations 1\n"
-            for index in range(6_000)
+            MetricPoint(
+                sequence=index + 1,
+                occurred_at=NOW,
+                attempt=1,
+                step_id="solve",
+                simulation_time=float(index),
+                series="residual:p",
+                value=0.1,
+            ).model_dump_json()
+            + "\n"
+            for index in range(250)
         ),
         encoding="utf-8",
     )
@@ -442,18 +465,25 @@ def test_large_active_projection_keeps_residual_history_bounded(
             _event(2_001, WorkflowStage.RUN_FINALIZED).model_dump_json()
             + "\n"
         )
-    with log.open("a", encoding="utf-8") as stream:
+    with metrics.open("a", encoding="utf-8") as stream:
         stream.write(
-            "Time = 6000\n"
-            "Solving for Ux, Initial residual = 0.05, "
-            "Final residual = 0.005, No Iterations 1\n"
+            MetricPoint(
+                sequence=251,
+                occurred_at=NOW,
+                attempt=1,
+                step_id="solve",
+                simulation_time=250.0,
+                series="residual:Ux",
+                value=0.05,
+            ).model_dump_json()
+            + "\n"
         )
     incremental = repository.open(run_dir)
     rebuilt = RunRepository(active_rescan_seconds=0.0).open(run_dir)
 
     assert len(first.timeline) == 2_000
     assert len(incremental.timeline) == 2_001
-    assert len(incremental.residual_samples) == 5_000
+    assert len(incremental.residual_samples) == 200
     assert incremental.residual_samples[-1].field == "Ux"
     assert incremental == rebuilt
 

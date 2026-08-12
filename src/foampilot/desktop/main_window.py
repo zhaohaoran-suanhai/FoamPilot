@@ -1381,16 +1381,11 @@ class FoamPilotMainWindow(QMainWindow):
         workflow = _text(summary.workflow_state if summary is not None else None)
         native = _text(summary.native_status if summary is not None else None)
         attempts = len(summary.attempts) if summary is not None else 0
-        primary_failure = _text(
-            summary.primary_failure if summary is not None else None
-        )
+        primary_failure = _text(snapshot.projection.failure_summary)
         terminal_blocker = _text(
             summary.terminal_blocker if summary is not None else None
         )
-        latest = snapshot.timeline[-1] if snapshot.timeline else None
-        current_stage = (
-            f"{latest.stage} / {latest.state}" if latest is not None else "not available"
-        )
+        current_stage = _text(snapshot.projection.current_stage)
 
         self.setWindowTitle(f"FoamPilot — {snapshot.run_dir.name}")
         self.current_stage_label.setText(f"Current stage: {current_stage}")
@@ -1573,19 +1568,19 @@ class FoamPilotMainWindow(QMainWindow):
             step = (
                 f"Time {sample.simulation_time:g}"
                 if sample.simulation_time is not None
-                else (
-                    f"Iteration {sample.iteration}"
-                    if sample.iteration is not None
-                    else "not available"
-                )
+                else "not available"
             )
             self.residual_table.addTopLevelItem(
                 QTreeWidgetItem(
                     [
                         field,
                         f"{sample.initial_residual:.6g}",
-                        f"{sample.final_residual:.6g}",
-                        str(sample.solver_iterations),
+                        (
+                            f"{sample.final_residual:.6g}"
+                            if sample.final_residual is not None
+                            else "not available"
+                        ),
+                        "not available",
                         step,
                         _text(sample.attempt),
                         sample.source_log,
