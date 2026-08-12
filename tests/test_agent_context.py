@@ -98,7 +98,8 @@ def test_context_dynamically_retrieves_public_vof_knowledge() -> None:
     assert "1.000001" not in context.knowledge_text
     assert "openfoam-author-native-case" in context.skills_text
     assert "保持 VOF 有界性" in context.skills_text
-    assert "repair 可以新增一个安全的生成算例文件" in context.skills_text
+    assert "RepairProposal" in context.skills_text
+    assert "不得修改或建议命令" in context.skills_text
     assert "reviewed plan" not in context.skills_text
     assert "Generate files sequentially" not in context.skills_text
     assert "/private/tutorial/damBreak" not in (

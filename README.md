@@ -24,8 +24,10 @@ Foundation 版本尚未完成 qualification。模型编写算例具有非确定�
 -> SimulationIntent 与确定性 ResolvedRequirements
 -> CaseDesignProposal 与程序所有的 RiskGate
 -> READY_TO_AUTHOR 后冻结 CaseDesign
--> 模型一次编写完整 ExecutionPlan v3
--> 安全 MPI 规范化、typed policy 与语义检查
+-> Case Author 一次编写不含命令的完整 CaseBundle
+-> CaseVerifier 检查设计一致性
+-> PlanCompiler 确定性生成 ExecutionPlan v4
+-> typed policy 与语义检查
 -> bubblewrap 或 audited host 原生 OpenFOAM 执行
 -> evaluator 负责的检查
 -> 至多一次由证据限定范围的 repair
@@ -180,9 +182,9 @@ foampilot confirm /tmp/foampilot-runs/PARENT_RUN \
 ```
 
 该命令验证 parent manifest 和候选值，创建不可变 confirmation child，并逐字段保存确认记录；
-它本身不启动 OpenFOAM，也不表示 CFD 已经成功。当前 Phase 2 通过临时 Phase 2 bridge 将
-正常 live solve 中已冻结的设计交给旧 ExecutionPlan author，并在执行前检查 manifest 是否
-违背设计；Phase 3 将以原生 Case Author/Plan Compiler 替换这个过渡层。
+它本身不启动 OpenFOAM，也不表示 CFD 已经成功。正常 live solve 只把已冻结设计交给
+Case Author；模型返回不含命令的 CaseBundle，CaseVerifier 检查设计一致性，PlanCompiler 再
+依据冻结的第一方能力扩展确定性生成 ExecutionPlan v4。
 
 已有 OpenFOAM 原生网格应作为完整目录资产声明，而不是拆成多个文件：
 
@@ -267,8 +269,8 @@ foampilot solve TASK.yaml \
 qualification 也不启用复用。
 
 默认后端通过公开 `codex exec` 调用已登录的 Codex CLI；FoamPilot 不读取认证文件。
-任务可以允许串行或有界 MPI 执行。模型声明 `mpi_ranks`；MPI launcher 由 Runner 而不是
-模型负责。
+任务可以允许串行或有界 MPI 执行。PlanCompiler 在任务资源预算内声明 `mpi_ranks`；MPI
+launcher 由 Runner 负责。模型不能生成 launcher 或任何 typed command。
 
 取消语义按后端区分：Codex CLI 与 OpenFOAM/MPI 属于受监督的本机进程，可执行
 `SIGTERM`/`SIGKILL` 升级；非流式 OpenAI-compatible HTTP 请求只能在请求前后检查取消，

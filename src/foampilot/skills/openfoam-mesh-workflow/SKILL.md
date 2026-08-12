@@ -21,8 +21,10 @@ description: Use when a Foundation OpenFOAM v10 case must create, inspect, or re
 - 已提供 OpenFOAM mesh 不再重新生成，但仍必须运行 `checkMesh`，且 patch/region 必须匹配
   TaskSpec。
 
-所有步骤都写成 `ExecutionPlan v3` typed command。网格程序使用 `stage: mesh`，`checkMesh`
-使用 `stage: check`；不得生成 shell、`Allrun`、重定向或 MPI launcher。
+Case Author 不写执行步骤。只需让 CaseBundle 的 manifest 与文件忠实实现已冻结的网格设计；
+系统 PlanCompiler 会通过已选择的第一方网格扩展确定性生成 `ExecutionPlan v4`，其中网格程序
+使用 `stage: mesh`，`checkMesh` 使用 `stage: check`。不得在文件内容中生成 shell、`Allrun`、
+重定向、MPI launcher 或替代命令清单。
 
 ## 编写与自检
 
@@ -55,6 +57,6 @@ location-in-mesh 和必要 feature；只有 TaskSpec 启用 boundary layer 时�
 
 ## 网格修复
 
-网格失败时只修改网格字典、`.geo/.msh` 和 mesh/check command。只有日志证明 patch 名发生变化
-时，才允许同步初始场的 `boundaryField`；此时 internalField、物性、求解器、数值格式和公开验收
-要求必须保持不变。每次只修复一个由日志直接支持的拓扑或质量原因，并完整重跑网格链。
+网格失败不得由 repair 模型修改 mesh/check command。需要改变网格策略、几何、patch 或区域时，
+应返回明确失败并以新的权威输入和 CaseDesign rerun；命令始终由 PlanCompiler 重新生成。只有
+冻结 NumericalRepairEnvelope 内的数值字段才允许自动修复，且不能借此修改网格语义。

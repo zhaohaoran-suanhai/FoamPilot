@@ -144,5 +144,32 @@ def test_contract_first_docs_name_the_no_generic_override_rule() -> None:
     assert "foampilot questions" in combined
     assert "foampilot confirm" in combined
     assert "TaskSpec v2" in combined
-    assert "临时 Phase 2 bridge" in combined
+    assert "CaseBundle" in combined
+    assert "ExecutionPlan v4" in combined
     assert "不是 CFD 求解失败" in combined
+
+
+def test_docs_publish_compiled_execution_authority() -> None:
+    root = Path(__file__).resolve().parents[1]
+    architecture = (root / "docs/architecture.md").read_text(
+        encoding="utf-8"
+    )
+    current_docs = "\n".join(
+        (root / path).read_text(encoding="utf-8")
+        for path in (
+            "README.md",
+            "AGENTS.md",
+            "docs/architecture.md",
+            "docs/system-overview.md",
+            "docs/independent-agent-quickstart.md",
+            "src/foampilot/skills/openfoam-mesh-workflow/SKILL.md",
+        )
+    )
+
+    assert "Case Author 不生成命令" in architecture
+    assert "ExecutionPlan v4" in architecture
+    assert "automatic_numerical_repair" in architecture
+    assert "CaseBundle" in current_docs
+    assert "PlanCompiler" in current_docs
+    assert "临时 Phase 2 bridge" not in current_docs
+    assert "模型一次编写完整 ExecutionPlan v3" not in current_docs

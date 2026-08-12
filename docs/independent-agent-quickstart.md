@@ -14,26 +14,33 @@ FoamPilot 可以把完整的中文或英文 CFD 请求编译为公开 `TaskSpec 
 5. 按语义槽位最多检索一条有界公开知识，将无关槽位留空，并路由 Skills；
 6. 分别生成 `SimulationIntent` 和不含文件/命令的 `CaseDesignProposal`；
 7. 用确定性 Requirement Resolver/RiskGate 决定是否冻结 `CaseDesign`；
-8. 只有 `READY_TO_AUTHOR` 才通过临时 Phase 2 bridge 生成完整 case/plan；
-9. 只对无歧义的 MPI wrapper 进行安全规范化，然后执行 typed policy；
+8. 只有 `READY_TO_AUTHOR` 才由 Case Author 生成不含命令的完整 CaseBundle；
+9. CaseVerifier 检查设计一致性，PlanCompiler 确定性生成 ExecutionPlan v4 并执行 typed policy；
 10. 将声明的文件写入空的 attempt 目录；
 11. 检查高置信度跨文件语义，并执行原生命令；
 12. 生成结构化网格质量报告并执行 evaluator 公开检查；
-13. 如果尝试预算允许，请求一次基于失败证据的定向修复；
+13. 如果尝试预算、失败分类和冻结数值 envelope 允许，请求一次不含命令的定向修复；
 14. 如果可重试的模型后端故障中断生成或修复，将运行固化为 `DEFERRED`，
     并保存 strict resume 元数据；
 15. 为每个终态运行固化 artifact manifest。
 
-规范的 `ExecutionPlan` v3 结构为：
+规范权限分为两个结构：
 
 ```text
-manifest   = {solver, family, regions, fields, patches, models, ...}
-files[]    = {path, content}
-commands[] = {step_id, stage, executable, args, mpi_ranks, timeout_seconds}
+CaseBundle（模型输出）
+  manifest = {solver, family, regions, fields, patches, models, ...}
+  files[]  = {path, content}
+
+ExecutionPlan v4（系统编译）
+  compiled_from_design_sha256
+  compiler_identities
+  manifest + files[]
+  commands[] = {step_id, stage, executable, args, mpi_ranks, timeout_seconds}
 ```
 
-求解器选择、字典结构、数值方法、初始化和后处理仍由 Agent 决定。确定性代码在
-执行前检查结构、安全和高置信度语义约束，但不会替 Agent 审查完整 CFD 策略。
+求解器、物理模型、数值方法和时间方案在 CaseDesign 阶段冻结；Case Author 只负责把设计写成
+一致的 OpenFOAM 字典。Case Author 不生成命令；命令顺序、executable、MPI 和超时由注册的
+第一方 contributor 与 PlanCompiler 确定。
 
 当前 authoring 输入只接受 `TaskSpec v3`；`TaskSpec v2` 只用于历史 run 的只读展示。
 Case Author 前的 RiskGate 不接受模型自报 confidence，也没有 accept-all 或 continue-anyway。
@@ -174,8 +181,8 @@ foampilot confirm /tmp/foampilot-native-runs/PARENT_RUN \
 ```
 
 系统逐字段验证 candidate ID/value、parent manifest 和 proposal hash，随后创建不可变 child；
-确认命令本身不启动 OpenFOAM。当前 live solve 的 case 编写仍使用临时 Phase 2 bridge 将冻结
-CaseDesign 交给旧 ExecutionPlan author，并拒绝与设计冲突的 manifest；Phase 3 将删除该过渡层。
+确认命令本身不启动 OpenFOAM。live solve 将冻结 CaseDesign 交给 Case Author，随后由
+CaseVerifier 与 PlanCompiler 形成带设计 hash 和 compiler identities 的 ExecutionPlan v4。
 
 TaskSpec 生成后进入与手写任务完全相同的规范路径：
 
@@ -209,8 +216,9 @@ foampilot solve examples/tasks/non-tutorial-side-driven-box.yaml \
 foampilot report /tmp/foampilot-native-runs/RUN_DIR --json
 ```
 
-`plan` 和 `solve` 的初始阶段都会针对整个 case bundle 发起一次逻辑模型请求。
-一次逻辑请求内部可以包含次数受限的传输重试。
+`plan` 和 `solve` 使用完全相同的 intent/design/author/verifier/compiler 链；两者都会针对整个
+CaseBundle 发起一次逻辑 author 请求。`plan` 在 materialize 和 Runner 前以 `PLAN_READY` 正常
+结束并输出 ExecutionPlan v4。一次逻辑请求内部可以包含次数受限的传输重试。
 
 `solve` 只有在状态为 `PUBLIC_VALIDATION_PASS` 时返回 0；模型后端暂缓或环境
 阻断返回 3；执行失败或验证失败返回 4。
@@ -227,7 +235,8 @@ foampilot solve task.yaml \
 ```
 
 该路径不创建 ModelGateway，也不发起 routing、generation 或 repair 模型请求。source 必须
-拥有有效 artifact manifest，并有 manifested `blockMesh`/`checkMesh`/目标 solver 证据；
+拥有有效 artifact manifest、一致的 CaseDesign/CaseBundle/conformance/compiler identities/
+ExecutionPlan v4 authority chain，以及 manifested `blockMesh`/`checkMesh`/目标 solver 证据；
 TaskSpec、公开资产、OpenFOAM 目标、solver 可用性和 MPI 预算必须严格兼容。拒绝不会静默切回
 冷路径。
 

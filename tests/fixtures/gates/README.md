@@ -1,7 +1,7 @@
 # Real continuation gate fixtures
 
-`non-tutorial-side-driven-plan.json` is a frozen, public, model-authored
-ExecutionPlan v3, upgraded with a reviewed CaseManifest and command stages
+`non-tutorial-side-driven-plan.json` is a frozen historical replay fixture:
+it was model-authored as ExecutionPlan v3 and upgraded with a reviewed CaseManifest and command stages
 from a previously manifest-verified run of
 `examples/tasks/non-tutorial-side-driven-box.yaml`.
 
@@ -11,6 +11,7 @@ from a previously manifest-verified run of
 - No OpenFOAM tutorial, golden field, private evaluator output, credential, or
   source-machine path is included.
 
-The opt-in gate injects one public dictionary defect, verifies that the target
+This fixture is accepted only through the read-only legacy replay boundary; it
+is not a current authoring, resume, or execution fallback. The opt-in gate injects one public dictionary defect, verifies that the target
 solver starts and fails, defers on a fake backend overload, then resumes from
 the frozen failure evidence with a minimal repair.

@@ -65,8 +65,10 @@ ArtifactStore、case 或 evaluator workspace。如果持续的后端过载或网
 TaskSpec
 -> CapabilityProfile
 -> 按槽位组织的上下文
--> ExecutionPlan v3
--> 规范化、策略和语义检查
+-> SimulationIntent / CaseDesign
+-> CaseBundle / CaseVerifier
+-> PlanCompiler / ExecutionPlan v4
+-> 策略和语义检查
 -> 原生 OpenFOAM
 -> 公开验证
 -> 外部 qualification
@@ -87,8 +89,8 @@ Qualification YAML 是 evaluator 配置，不是逐算例的 case 编写适配�
 仅仅完成求解器执行，不代表 qualification 通过。
 
 `REQUEST_INCOMPLETE` 和 `ROUTING_UNRESOLVED` 发生在生成前，并与模型后端、环境、
-case、求解器和物理 qualification 失败分别报告。模型响应未通过 v3 schema 时记为
-`SCHEMA_INVALID`；trace 只保存有界的校验位置、类型和消息，不保存原始
+case、求解器和物理 qualification 失败分别报告。模型响应未通过当前阶段的 Intent、Design、
+CaseBundle 或 RepairProposal schema 时记为 `SCHEMA_INVALID`；trace 只保存有界的校验位置、类型和消息，不保存原始
 响应。
 
 ## 阶段指标

@@ -8,6 +8,10 @@
 **Date:** 2026-07-31
 **Repository baseline:** local `main` working tree after Stage B
 
+> This document preserves the historical v3 design. Current reuse additionally
+> requires a manifested CaseDesign, CaseBundle, conformance report, compiler
+> identities, and ExecutionPlan v4; v3 is not an execution fallback.
+
 ## 1. Purpose
 
 FoamPilot's live authoring path is now bounded, observable, and recoverable,

@@ -4,6 +4,9 @@
 [第二阶段实施记录](../reports/2026-08-04-stage-2-preprocessing.md)。本文保留完整规格，未通过的
 原生 gate 不得解释为现有能力。
 
+> 本规格基于历史 ExecutionPlan v3 authoring。当前 Case Author 不生成命令，网格执行步骤由
+> PlanCompiler 的第一方 contributor 生成；现行边界见 [当前架构](../architecture.md)。
+
 ## 1. 背景与目标
 
 当前 FoamPilot 能让 Agent 编写 `blockMeshDict`，也能以 typed command 调用多种 OpenFOAM

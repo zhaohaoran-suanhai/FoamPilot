@@ -5,6 +5,9 @@
 适用基线：当前 FoamPilot `main` 工作区中的 TaskSpec v2、ExecutionPlan v3、ModelGateway、
 GeometryProbe、MeshQualityReport、有限 repair 和不可变 artifact 主链。
 
+> 上述“当前”仅指 2026-08-05 的适用基线。当前 verified reuse 还必须验证 CaseDesign、
+> CaseBundle、conformance、compiler identities 与 ExecutionPlan v4 authority chain。
+
 ## 1. 目标
 
 Performance v1 同时优化两类性能，不能只让重复演示变快：

@@ -10,7 +10,7 @@ FoamPilot 是面向 Foundation OpenFOAM v10 的独立 Agent 工具包。规范�
 FAISS、MCP、Case renderer、`Allrun` 或第二套兼容状态机。
 
 OpenFOAM 负责网格 utility 和数值求解。FoamPilot 负责 TaskSpec 校验、能力路由、公开
-上下文、模型编写 case、typed command、安全执行、公开验证、有限 repair、qualification
+上下文、分阶段模型推理、确定性 typed command 编译、安全执行、公开验证、有限 repair、qualification
 和不可变证据。可选 TaskBuilder 可以在 run 创建前把完整自然语言请求编译为相同 TaskSpec；
 它不得直接运行 OpenFOAM。
 
@@ -63,10 +63,13 @@ foampilot qualify suite \
 - `CONCRETE_CONFIRMATION_REQUIRED` 必须绑定问题、字段、候选 ID 和完整候选值。禁止
   accept-all、continue-anyway 或高影响风险 override；模型不能自报 confidence 取得放行。
 - `foampilot confirm` 只能从 manifest 有效的 parent 创建不可变 child 并逐项记录
-  `ConfirmationRecord`。确认命令本身不启动 OpenFOAM。Phase 2 仍通过临时 Phase 2 bridge
-  把冻结设计交给旧 author；该 bridge 必须拒绝与设计矛盾的 manifest，并在 Phase 3 删除。
-- 模型返回完整 `ExecutionPlan` schema v3：region-aware `CaseManifest`、全部 case 文件和
-  每条带 `stage` 的 typed command。
+  `ConfirmationRecord`。确认命令本身不启动 OpenFOAM。
+- Case Author 只接受冻结的 `CaseDesign`、权威网格事实和有界公开上下文，只返回包含
+  region-aware `CaseManifest` 与全部 case 文件的 `CaseBundle`；禁止返回或修改命令。
+- `CaseVerifier` 必须先证明 CaseBundle 与冻结设计一致；随后系统 `PlanCompiler` 根据已冻结的
+  第一方扩展身份确定性生成 `ExecutionPlan v4` typed commands。模型没有执行权限。
+- `foampilot plan` 走同一条设计、编写、验证和编译路径，但在 materialize/Runner 前以
+  `PLAN_READY` 正常结束。
 - 禁止读取或复制当前目标 tutorial，也不能向生成或 repair 模型暴露 evaluator rule、
   reference、golden value、受保护路径或目标 case 映射。
 - 命令只能包含 executable 和 args。禁止 shell、重定向、命令替换、`Allrun`、`mpirun`、
@@ -99,8 +102,13 @@ foampilot qualify suite \
 - `author` 和 `public_asset` 字段必须在执行前存在；由 mesh、initialize 或 solver 创建的
   字段不得被错误地提前要求存在。
 - 每个 attempt 独立保存，不得原地修改已固化目录。
-- repair 只能使用公开失败报告、失败命令日志、当前 plan/file、动态知识和公开 Skill，并且
-  只做任务预算内、与证据直接相关的最小修改。
+- repair 只能使用公开失败报告、失败命令日志、当前设计/bundle、动态知识和公开 Skill，并且
+  只做任务预算内、与证据直接相关的最小修改。repair 模型返回不含命令的
+  `RepairProposal`；变更必须落在冻结的 `NumericalRepairEnvelope` 字段、方向、范围、文件和
+  dictionary keyword 内，再重新通过 CaseVerifier 与 PlanCompiler。
+- `repair_policy.automatic_numerical_repair` 默认开启但可关闭。自动 repair 只允许已分类的数值
+  不稳定；物理、能力、求解器、网格和 envelope 外变更不得泛化放行，必须失败并给出重新确认或
+  rerun 的具体原因。
 - 可重试的 generation/repair 中断只能通过 child continuation 恢复。恢复前验证 parent
   manifest、兼容性指纹和 lineage budget。
 - 代码、TaskSpec、资产、模型、backend policy、Knowledge 或 Skill 变化属于

@@ -397,7 +397,7 @@ RunFacts
 → 确定性 FailureClassifier
 → RepairScope
 ├─ 机械修复：确定性执行
-├─ 数值修复：模型生成 RepairPatch → NumericalRepairEnvelope 校验
+├─ 数值修复：模型生成 RepairProposal → NumericalRepairEnvelope 校验
 └─ 物理修复：返回用户逐项确认
 ```
 
@@ -422,9 +422,10 @@ repair_policy:
 关闭后仍执行安全检查、静态检查、确定性诊断和机械修复。遇到数值失败时，当前 Run 正常终结
 为失败，不自动修改数值参数；用户之后可以基于冻结证据创建 repair continuation。
 
-### 11.2 RepairPatch
+### 11.2 RepairProposal
 
-模型只能提交与失败范围相关的差异补丁，不能重新生成整个 case。补丁应用后重新经过：
+模型只能提交与失败范围相关的设计差异和完整目标文件替换，不能提交命令或重新生成整个 case。
+授权的 proposal 应用后生成派生 CaseDesign/CaseBundle，并重新经过：
 
 ```text
 CaseVerifier → PlanCompiler → RiskGate → Runner
@@ -551,7 +552,7 @@ evidence_paths: []
 - CaseAuthor 只输出 manifest 和原生文件；
 - PlanCompiler 确定性产生 typed commands；
 - CaseVerifier 检查冻结设计实现；
-- repair 改为 RepairPatch 和 NumericalRepairEnvelope。
+- repair 改为 RepairProposal 和 NumericalRepairEnvelope。
 
 ### 阶段 4：薄 Coordinator 与单一 RunFacts
 
@@ -614,7 +615,7 @@ schema、门禁、权限和状态迁移使用确定性测试；case 语义和证
 | polyMesh 输入抽象错位 | `OpenFOAMMeshBundle`、目录 manifest、原子 staging、禁止模型覆盖 | 阶段 1 | 完整/缺文件/zone/篡改测试与真实 provided-mesh gate |
 | 网格事实未成为系统权威 | `PolyMeshInspector`、`InputMeshFacts`、`ExecutedMeshFacts`、受控 checkMesh | 阶段 1 | patch/zone/count/bounds/维度 fixtures 和真实 checkMesh |
 | 验收与后处理缺少独立闭环 | `ObservationPlan → PostProcessor → AcceptanceEvaluator` | 阶段 5；契约在阶段 2 建立 | 流量、压差、连续性、区域平均等通用指标测试 |
-| 模型承担过多职责 | 三次有界调用：Intent、Design、Author；冻结 CaseDesign；RepairPatch | 阶段 2、3 | schema、hash、越权修改和恢复测试 |
+| 模型承担过多职责 | 三次有界调用：Intent、Design、Author；冻结 CaseDesign；RepairProposal | 阶段 2、3 | schema、hash、越权修改和恢复测试 |
 | 编排器过重且重复解释证据 | 薄 Coordinator、唯一 EvidenceExtractor、统一 RunFacts/Projection | 阶段 4 | 依赖边界测试、单次解析测试、CLI/Desktop 一致性 gate |
 
 这五项均是本设计的显式交付条件；任何阶段只完成类和接口、但没有通过对应验收证据，都不能

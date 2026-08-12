@@ -46,6 +46,6 @@ description: Use when authoring or repairing a Foundation OpenFOAM v10 incompres
 | `keyword ... is undefined in dictionary fvSchemes` | 只补实际缺失的算子条目 |
 | continuity 快速增大 | 检查边界通量、时间步、离散格式和松弛设置 |
 | Maxwell stress residual 随 actual Courant 恶化 | 定位首次恶化，单独修复一个原因族；不要同时改固定输入 |
-| SRF/porous 文件缺失 | 仅为已声明模型补充对应字典和 command |
+| SRF/porous 文件缺失 | 仅为已声明模型补充对应字典；命令由 PlanCompiler 生成 |
 
 不得读取目标 tutorial 或 golden 数值来选择参数。

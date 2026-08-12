@@ -25,8 +25,8 @@ description: Use when authoring or repairing a Foundation OpenFOAM v10 compressi
    `maxCo` 且令 `maxDeltaT > deltaT`。
 6. 对 PIMPLE/SIMPLE 可压缩求解器，提供实际方程所需的 `div(phi,U)`、能量和湍流散度
    格式以及字段求解器。
-7. 初始间断或区域初始化必须在网格坐标系中可表达，并由必要的 `setFields` command 显式
-   生成，不能假设字段已存在。
+7. 初始间断或区域初始化必须在网格坐标系中可表达，并提供必要的 `setFieldsDict`；冻结设计的
+   initialize contributor 会由 PlanCompiler 显式生成 `setFields` 命令，不能假设字段已存在。
 8. 时间精度、写出精度和采样位置必须足以支持任务声明的公开验证。字典 compatibility 与初始
    thermo state 通过后，才调整 Courant、格式或松弛。
 

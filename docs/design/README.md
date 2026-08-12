@@ -25,7 +25,9 @@ FoamPilot 下一阶段围绕四个方向顺序演进：
 ```text
 TaskSpec
   -> environment / routing / context
-  -> Agent 编写 ExecutionPlan v3
+  -> Intent / frozen CaseDesign
+  -> Case Author 编写 CaseBundle
+  -> CaseVerifier / PlanCompiler 编译 ExecutionPlan v4
   -> inspect / mesh / initialize / solve / postprocess
   -> public validation / bounded repair
   -> workflow summary / immutable artifacts
@@ -64,8 +66,8 @@ MCP、微服务或第二套 CaseSpec。
 | 角色 | 主要职责 |
 | --- | --- |
 | 用户/工程师 | 提供几何、单位、物性、工况、边界物理含义、目标输出和工程验收标准；确认高影响假设 |
-| Agent | 选择适用求解策略，编写完整原生 case 和 typed commands，依据公开证据进行有限修复 |
-| 确定性程序 | 校验数据、探测环境与几何、约束命令、执行 OpenFOAM、解析日志、计算公开指标并保存证据 |
+| Agent | 分阶段解释意图、提出 CaseDesign、编写不含命令的完整原生 CaseBundle，并依据公开证据提出有限 RepairProposal |
+| 确定性程序 | 校验数据、探测环境与几何、冻结设计、编译并约束命令、执行 OpenFOAM、解析日志、计算公开指标并保存证据 |
 | qualification evaluator | 在与 Agent 隔离的边界内使用 reference/golden 进行外部评测 |
 
 Agent 不得虚构缺失的物性、边界数值、单位或工程目标。确定性程序也不替 Agent 选择本应由

@@ -6,6 +6,10 @@
 设计主题：运行韧性、薄语义层、定向修复与受控学习路由
 架构定位：Qualification-first Transition Architecture（FoamPilot 健康架构 v1）
 
+> 本文是 `8d30409` 基线的历史演进规格。当前 canonical authoring 已使用 CaseBundle、
+> ExecutionPlan v4、CaseVerifier、PlanCompiler 与 RepairProposal；下文 v3/RepairPatch 术语不构成
+> 现行接口或 fallback。
+
 相关证据：
 
 - [当前架构](architecture.md)

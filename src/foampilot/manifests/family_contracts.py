@@ -33,7 +33,7 @@ GENERIC_RULES: dict[str, SemanticRuleProvenance] = {
         rule_id="of10.semantic.solver-command-match",
         source=(
             "Foundation OpenFOAM v10 application entrypoints and "
-            "FoamPilot ExecutionPlan v3 command contract"
+            "FoamPilot compiled ExecutionPlan v4 command contract"
         ),
         severity="error",
         tested_by=(
@@ -94,7 +94,7 @@ GENERIC_RULES: dict[str, SemanticRuleProvenance] = {
         rule_id="of10.semantic.command-stage-shape",
         source=(
             "Foundation OpenFOAM v10 utility interfaces and FoamPilot "
-            "ExecutionPlan v3 stage contract"
+            "compiled ExecutionPlan v4 stage contract"
         ),
         severity="error",
         tested_by=(

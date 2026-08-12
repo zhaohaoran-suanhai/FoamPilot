@@ -6,6 +6,9 @@
 设计主题：确定性状态、定向修复、受控经验学习与可比较实验
 架构定位：现有单 Agent CFD 主链的增量完善，不迁移通用 Agent 框架
 
+> 本文记录适用基线上的 v3/RepairPatch 设计与验收。当前 canonical authoring 已迁移为
+> CaseBundle、ExecutionPlan v4 和 RepairProposal；本文中的旧接口不是可用 fallback。
+
 相关文档：
 
 - [架构、运行流程与功能边界](../system-overview.md)

@@ -21,12 +21,11 @@ FoamPilot 只支持一条从公开 TaskSpec 到证据限定结果的规范求解
 - `manifests`：薄型、支持 region 的算例声明，以及带来源的 family contract；
 - `models`：单次交换 backend、共享 `ModelGateway`、retry/deadline policy、
   transport trace、lineage budget 与线程安全 circuit breaker；
-- `agent`：构造 prompt、编写完整 case bundle 和执行有界 repair；
+- `authoring`/`agent`：从冻结设计编写不含命令的完整 CaseBundle，并请求有界 RepairProposal；
 - `workflow`：有序持久事件、独占 checkpoint、v2 run state、严格兼容性指纹，以及不可变
   parent/child continuation；
-- `plans`：ExecutionPlan v3、完整生成文件、分阶段 typed native command 与狭窄安全的
-  MPI launcher normalizer；
-- `inspection`：算例内静态安全检查与高置信度跨文件语义检查；
+- `plans`：由第一方能力扩展确定性编译 ExecutionPlan v4 与分阶段 typed native command；
+- `inspection`：CaseBundle/CaseDesign 一致性、算例内静态安全与高置信度跨文件语义检查；
 - `runtime`：Foundation v10 发现、bubblewrap/audited-host 自动选择、显式 MPI 启动、预算与日志；
 - `validation`：由 evaluator 负责检查命令、日志与写出字段；
 - `artifacts`：不可变 attempt 与 SHA256 manifest；
@@ -61,7 +60,7 @@ TaskSpec v3 + authoritative asset/mesh facts
 -> ResolvedRequirements
 -> CaseDesignProposal（不含文件正文和命令）
 -> deterministic RiskGate
-   |- READY_TO_AUTHOR -> frozen CaseDesign -> author
+   |- READY_TO_AUTHOR -> frozen CaseDesign -> Case Author
    |- CONFIRMATION_REQUIRED -> concrete questions -> immutable child
    |- INFORMATION_REQUIRED -> finalize pending information
    `- CAPABILITY_UNAVAILABLE -> finalize unsupported design
@@ -81,29 +80,35 @@ startup/numerics、可选 parallel 与可选 repair-error 槽位中各选择至�
 事实环境清单，以及至多一个通用 Skill 和一个 family Skill；看不到目标 tutorial、受保护路径、
 evaluator validation YAML 或 reference JSON。
 
-只有 `READY_TO_AUTHOR` 的冻结设计能够进入 case 编写。当前过渡实现是临时 Phase 2 bridge：
-旧 author 收到冻结 CaseDesign 后，一次逻辑 generation request 仍返回全部必需 case file、
-一个 region-aware `CaseManifest`，以及 ExecutionPlan v3 中全部分阶段 typed command；程序在
-执行前拒绝 solver、物理、稳/瞬态或 region role 与冻结设计矛盾的结果。Phase 3 会删除该 bridge，
-改为 Case Author 只写 CaseBundle、Plan Compiler 确定性生成命令。
+只有 `READY_TO_AUTHOR` 的冻结设计能够进入 case 编写。Case Author 一次逻辑请求返回全部必需
+case file 和 region-aware `CaseManifest`，共同组成 `CaseBundle`。Case Author 不生成命令，
+也不能改变冻结的 solver、物理、稳/瞬态、region role 或扩展身份。`CaseVerifier` 先检查 bundle
+是否忠实实现 CaseDesign；系统 `PlanCompiler` 再按冻结的第一方 mesh/solver contributor 身份、
+stage 顺序和资源预算确定性生成 `ExecutionPlan v4`。计划保存设计 hash 与 compiler identities，
+执行、strict resume 和 verified reuse 都验证这条 authority chain。
 `ModelGateway` 可在单调时钟 stage
 deadline 内进行多次 transport attempt，但会分别记录逻辑请求与实际传输。两个 qualification
 worker 只共享 Gateway 和 circuit breaker；每项任务保留独立 deadline ledger、trace、case、
 artifact store 与 evaluator workspace。
 
-进入 policy 前，normalizer 只会拆解无歧义的本地
-`mpirun|mpiexec|orterun -n N solver [-parallel]` 形式。确定性 policy 检查安全性、
-已安装 executable、路径、受保护数据、资源限制与命令形态。Semantic inspection 检查
-manifest/solver/application、region/field path、显式 mesh patch、command stage、MPI
-decomposition 和已审查 family requirement。未登记 family 只产生 advisory。随后 OpenFOAM
-直接读取模型编写的 dictionary。
+确定性 policy 检查系统编译命令的安全性、已安装 executable、路径、受保护数据、资源限制与
+命令形态。Semantic inspection 检查 manifest/solver/application、region/field path、显式 mesh
+patch、command stage、MPI decomposition 和已审查 family requirement。未登记 family 只产生
+advisory。随后 OpenFOAM 读取模型编写并已通过设计一致性检查的 dictionary。
 
 标记为 `author` 或 `public_asset` 的 field 必须在执行前存在。标记为 `mesh`、`initialize`
 或 `solver` 的 field 只检查 region/path 一致性，不会错误地要求它们在创建命令前存在。
 
 执行后，公开 validation 判断要求的结果是否存在并满足声明检查。任务若允许另一次 attempt，
-repair 模型会收到公开失败证据，以及编写阶段动态选择的同一批公开知识与 workflow Skill。
-模型可以修改生成文件或已有 typed command，修订计划在新 attempt 中物化。
+系统先分类失败；只有 solver/validation 层的 `numerical_instability` 且冻结设计含非空
+`NumericalRepairEnvelope` 时才可请求自动 repair。repair 模型返回不含命令的
+`RepairProposal`，其数值字段、操作方向、范围、目标文件和 dictionary keyword 必须全部落在
+冻结 envelope 内。授权后产生派生 CaseDesign/CaseBundle，重新通过 CaseVerifier 与
+PlanCompiler，在新 attempt 中执行。物理、能力、solver、mesh 或 envelope 外变更不能自动执行；
+它们需要新的确认/权威输入，当前 run 正常终结为带具体原因的失败。
+
+`repair_policy.automatic_numerical_repair` 默认开启，但用户可在 TaskSpec 中关闭；关闭后数值失败
+也不会触发模型 repair，并以 `AUTOMATIC_NUMERICAL_REPAIR_DISABLED` 明确结束。
 
 ## 工作流与失败语义
 
@@ -143,8 +148,9 @@ lineage 至多允许七次真实 transport attempt。代码、knowledge、Skill�
 新的 authoring 入口只接受 `TaskSpec v3`。`TaskSpec v2` 只由未导出的历史 run 只读 adapter
 解析，不能重新进入 authoring、strict resume 或 qualification。
 
-规范 authoring 与 strict resume 只接受 ExecutionPlan v3。历史 v2 replay fixture 使用
-狭窄、未导出的 reader，加上独立审查并带 hash 的 v3 manifest overlay；这不是 authoring fallback。
+规范 authoring、strict resume 与 verified reuse 只接受 ExecutionPlan v4，并验证 CaseDesign、
+CaseBundle、conformance、compiler identities 和计划 hash。历史 ExecutionPlan v3 只允许由
+`plans.legacy` 的狭窄只读 loader 用于 manifested replay；它不是 authoring、resume 或执行 fallback。
 
 ## 隔离
 

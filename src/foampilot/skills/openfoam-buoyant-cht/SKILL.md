@@ -20,8 +20,8 @@ description: Use when authoring or repairing a Foundation OpenFOAM v10 buoyantFo
    层流算例不得凭空增加湍流场。
 4. `chtMultiRegionFoam` 必须声明 fluid/solid regions，为每个 region 提供独立的初始场、
    `fvSchemes`、`fvSolution` 和物性，并让成对 interface patch 类型匹配。
-5. mesh commands 先生成总网格，再按需要执行 region 划分和 region-specific `checkMesh`；
-   目标 solver 是验证这些步骤后的首个求解 command。
+5. CaseBundle 提供总网格和 region 划分所需字典；PlanCompiler 的 mesh contributor 按依赖生成
+   总网格、region 划分和 region-specific `checkMesh` 命令，目标 solver 位于这些检查之后。
 6. 稳态任务检查 residual 趋势和 continuity，不以迭代次数或 `End` 代替收敛。
 7. 发生 thermo inversion、`Maximum number of iterations exceeded` 或负温度时，先验证参考状态、
    初始/边界 `p`、`T`、`rho`、energy 和 thermo package 能否一致反演，并保存失败前的

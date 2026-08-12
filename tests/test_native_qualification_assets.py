@@ -107,7 +107,7 @@ def test_scalar_transport_task_retrieves_foundation_v10_solver_contract() -> Non
     )
 
 
-def test_native_authoring_skill_uses_only_execution_plan_v3_fields() -> None:
+def test_native_authoring_skill_uses_command_free_case_bundle() -> None:
     skill = (
         PACKAGE_ROOT
         / "src"
@@ -118,6 +118,8 @@ def test_native_authoring_skill_uses_only_execution_plan_v3_fields() -> None:
     ).read_text(encoding="utf-8")
 
     assert "unresolved_inputs" not in skill
+    assert "Case Author 只返回 CaseBundle" in skill
+    assert "不得返回 command" in skill
 
 
 def test_native_authoring_skill_keeps_optional_diagnostics_external() -> None:
@@ -130,8 +132,8 @@ def test_native_authoring_skill_keeps_optional_diagnostics_external() -> None:
         / "SKILL.md"
     ).read_text(encoding="utf-8")
 
-    assert "Runner 负责 MPI launcher" in skill
-    assert "将可选诊断排除在必需求解计划之外" in skill
+    assert "PlanCompiler 与 Runner" in skill
+    assert "将可选诊断排除在必需 CaseBundle 之外" in skill
     assert (
         "configure native volume-field-value function objects" not in skill
     )
@@ -376,5 +378,5 @@ def test_native_authoring_skill_covers_topology_geometry_and_budget_shields() ->
     assert "复用完全相同的 vertex label" in normalized
     assert "-merge-points" in normalized
     assert "defaultFaces" in normalized
-    assert "命令 timeout 总和" in normalized
+    assert "资源预算生成并执行命令" in normalized
     assert "完整局部坐标系与截面" in normalized

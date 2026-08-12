@@ -14,8 +14,8 @@ FoamPilot 是围绕 OpenFOAM 构建的单 Agent CFD 工作流，不是新的 CFD
 求解器。两者的职责边界如下：
 
 - OpenFOAM 负责网格工具、初始化工具、数值求解器和原生后处理程序；
-- FoamPilot 负责把完整自然语言请求编译为结构化任务、选择求解器族、组织公开知识、调用模型编写
-  OpenFOAM case、约束执行、检查结果、有限修复和保存证据。
+- FoamPilot 负责把完整自然语言请求编译为结构化任务、选择求解器族、组织公开知识、分阶段调用
+  模型编写 OpenFOAM case、确定性编译执行计划、约束执行、检查结果、有限修复和保存证据。
 
 FoamPilot 从空 case 目录开始工作。Agent 编写的是 OpenFOAM case 文件和执行
 计划，而不是 OpenFOAM 求解器的 C++ 源码。运行时直接调用本机已经安装的
@@ -50,18 +50,20 @@ blocking、confirmable 和 advisory，Compiler 只填充公开可见的低风险
 authoring、resume 或 qualification。Agent 能看到任务的物理需求、资源、输出要求和公开资产说明，但看不到
 `public_checks`、受保护路径、qualification 私有规则或参考答案。
 
-### 3.2 ExecutionPlan v3
+### 3.2 CaseBundle 与 ExecutionPlan v4
 
-模型一次生成完整的 `ExecutionPlan` v3：
+Case Author 一次生成不含执行权限的完整 `CaseBundle`：
 
 ```text
 manifest   = 求解器、物理族、region、field、patch 和模型声明
 files[]    = case 相对路径和完整文件内容
-commands[] = step_id、stage、可执行程序、参数、MPI 核数和超时
 ```
 
-命令阶段包括网格、网格检查、初始化、区域分解、求解、重构和后处理。计划中不
-允许使用 shell 片段、`Allrun`、主机选择或任意外部路径。
+`CaseVerifier` 检查 bundle 是否忠实实现已冻结 CaseDesign。随后 `PlanCompiler` 从已冻结的
+第一方扩展生成系统所有的 `ExecutionPlan v4`：它引用设计 SHA256 和 compiler identities，
+并加入带 step_id、stage、可执行程序、参数、MPI 核数与超时的 typed commands。命令阶段包括
+网格、网格检查、初始化、区域分解、求解、重构和后处理；模型不能提供或修改这些命令。计划中
+不允许 shell 片段、`Allrun`、主机选择或任意外部路径。
 
 ### 3.3 运行结果
 
@@ -82,9 +84,9 @@ SHA256 manifest 覆盖，之后的修改能够被 `foampilot report` 检出。
 | `knowledge` / `skills` | 提供经过审查的公开 OpenFOAM 知识和行为规范 |
 | `context` | 按语义槽位选择有限知识，并装配通用及求解器族 Skill |
 | `models` | 执行结构化模型调用、超时、重试、错误分类、追踪和熔断 |
-| `agent` | 生成完整 case bundle，并根据公开失败证据提出有限修复 |
-| `plans` / `manifests` | 定义 ExecutionPlan v3、CaseManifest、命令规范化和计划策略 |
-| `inspection` | 检查路径、文件、命令和高置信度跨文件语义一致性 |
+| `authoring` / `agent` | 生成无命令 CaseBundle，并根据公开失败证据提出有限 RepairProposal |
+| `plans` / `manifests` | 确定性编译 ExecutionPlan v4、定义 CaseManifest 和计划策略 |
+| `inspection` | 检查设计一致性、路径、文件、命令和高置信度跨文件语义 |
 | `runtime` | 通过 bubblewrap 或 audited host 后端执行 typed OpenFOAM 命令 |
 | `validation` | 根据 TaskSpec 中的公开规则检查日志和写出的场 |
 | `workflow` / `artifacts` | 记录事件、检查点、续跑关系、摘要和内容哈希 |
@@ -104,8 +106,10 @@ TaskSpec（也可直接提供）
   -> SimulationIntent 与确定性 ResolvedRequirements
   -> CaseDesignProposal 与 RiskGate
   -> READY_TO_AUTHOR 后冻结 CaseDesign
-  -> 临时 Phase 2 bridge 生成 ExecutionPlan v3，或显式加载严格匹配的已验证计划
-  -> 计划规范化与安全策略
+  -> Case Author 生成 CaseBundle
+  -> CaseVerifier 检查设计一致性
+  -> PlanCompiler 生成 ExecutionPlan v4，或显式加载严格匹配的已验证 authority chain
+  -> 计划与安全策略
   -> 空目录物化 case
   -> 静态与跨文件语义检查
   -> bubblewrap 或 audited host 执行 OpenFOAM
@@ -183,8 +187,7 @@ FoamPilot 读取本机 OpenFOAM 发行版、版本和可执行程序清单。路
 
 每个槽位最多选取一条知识；没有可靠匹配时保留为空，而不是用无关条目填满提示。
 运行时采用“通用 Skill + 至多一个物理族 Skill”；任务声明 geometry/mesh 时再增加一个
-mesh Skill。通用 Skill 约束原生 case 编写和
-typed command，物理族 Skill 只补充不可压缩、可压缩、VOF、浮力/CHT、固体或标量/势场中
+mesh Skill。通用 Skill 约束原生 case 编写，物理族 Skill 只补充不可压缩、可压缩、VOF、浮力/CHT、固体或标量/势场中
 与当前 solver 相符的一类判断。窄求解器没有可靠映射时只加载通用 Skill，不叠加多个 Skill。
 
 repair 阶段使用公开验证反馈和失败日志尾部重新选择 error playbook；失败日志只进入
@@ -210,42 +213,38 @@ prompt 关键词；Gmsh 只有被环境发现后才能进入 typed plan。
 `foampilot questions` 展示字段、理由和候选，`foampilot confirm` 只接受 exact candidate/value，
 为每个字段写独立记录并创建不可变 child。确认动作本身不执行 OpenFOAM。
 
-当前是临时 Phase 2 bridge：只有冻结 CaseDesign 才会传给旧 author。ModelGateway 随后发起
-一次逻辑生成请求，要求模型同时返回所有 case 文件、
-CaseManifest 和全部 typed commands。底层传输在阶段 deadline 和次数预算内可以
-对网络中断、服务过载或限流进行重试，但不会无限等待。
+只有冻结 CaseDesign 才会传给 Case Author。ModelGateway 发起一次逻辑生成请求，要求模型同时
+返回所有 case 文件和 CaseManifest，形成不含命令的 CaseBundle。底层传输在阶段 deadline 和
+次数预算内可以对网络中断、服务过载或限流进行重试，但不会无限等待。
 
-过渡层至少校验 authored manifest 的 solver、物理族、稳/瞬态和 region role 不得与冻结
-设计矛盾。Phase 3 会删除该 bridge，改由 Case Author 只写 CaseBundle，再由确定性 Plan
-Compiler 生成命令。
+CaseVerifier 校验 authored manifest/files 的 solver、物理族、稳/瞬态、region role、字段和
+网格 patch 不得与冻结设计及权威网格事实矛盾。PlanCompiler 只从 CaseDesign 冻结的第一方
+mesh/solver contributor 生成 ExecutionPlan v4 命令，并记录设计 hash 与 contributor 版本。
+`foampilot plan` 使用相同链路，但在 case 物化与 Runner 前以 `PLAN_READY` 结束。
 
 Model backend 只负责一次交换；Gateway 负责错误分类、重试、deadline、
 传输追踪和熔断。qualification 的多个 worker 可以共享 Gateway 和熔断状态，但各
 算例的任务、时间预算、case、日志和评测状态相互独立。
 
 完全相同的 TaskSpec 可以通过 `--reuse-verified-plan SOURCE_RUN` 显式选择一个已经 manifested、
-网格检查通过且目标 solver 正常结束的计划。该路径不创建 Gateway；任何任务、资产、版本、
-solver 或资源不兼容都以 `PLAN_REUSE_REJECTED` 结束，不会静默调用模型。普通 live solve 和
-qualification 默认仍生成新计划。
+网格检查通过且目标 solver 正常结束的 authority chain。该路径不创建 Gateway；source attempt
+必须同时包含一致的 CaseDesign、CaseBundle、conformance、compiler identities、ExecutionPlan v4
+和 run result。任何任务、资产、版本、solver、编译器身份或资源不兼容都以
+`PLAN_REUSE_REJECTED` 结束，不会静默调用模型。普通 live solve 和 qualification 默认仍生成新计划。
 
-### 5.7 计划规范化与检查
+### 5.7 计划编译与检查
 
-生成后的计划依次经过：
+冻结设计后的产物依次经过：
 
-1. 对模型原始输出中的无害 `step_id` 格式和完全重复 manifest field 做可审计的局部规范化；
-2. 狭窄的 MPI wrapper 与已知 OpenFOAM utility stage 规范化；
-3. ExecutionPlan schema 和 typed command 策略校验；
-4. case 文件物化；
-5. 原生文件检查和高置信度语义检查。
+1. Case Author 返回 CaseManifest 和全部文件组成的 CaseBundle；
+2. CaseVerifier 检查 bundle 与 CaseDesign、权威网格事实和扩展契约；
+3. PlanCompiler 按 contributor/stage/local order 确定性生成 typed commands；
+4. ExecutionPlan v4 schema 和安全策略校验；
+5. case 文件物化，并执行原生文件检查和高置信度语义检查。
 
-规范化器只会拆解可以无歧义识别的简单本地 MPI 启动形式，并纠正 `blockMesh`、
-`checkMesh`、`postProcess` 等已知 utility 的确定性 stage。它不猜测求解器、主机、
-核数、未知命令或未知参数；原始 authored plan 和每项规范化记录仍单独保存。
-
-模型输出的局部规范化同样保守：`step_id` 只是内部标签，可以确定性转为小写安全标识并
-解决标签碰撞；manifest 中只有内容完全等价的重复 field 声明会被删除。相同 field identity
-若内容不同，仍由 canonical schema 拒绝。每次修正记录在 `model-attempts.jsonl`，不会保存
-prompt 或 case 文件正文。
+Case Author 不生成命令，因此不存在模型 MPI wrapper、stage 或 step_id 的兼容性规范化。
+PlanCompiler 不猜测求解器、主机、核数或未知参数；这些值必须来自冻结设计、任务预算和注册
+贡献器。贡献器输出冲突、缺失命令或未安装 executable 会在 Runner 前失败。
 
 检查器阻止路径逃逸、shell 语法、受保护路径引用、缺失文件、明显损坏的 OpenFOAM
 文件、MPI 预算超限和已登记求解器族中的确定性跨文件矛盾。它不替 Agent 选择网格、
@@ -265,8 +264,8 @@ Runner 按计划顺序逐条执行命令：
 - 每步有独立超时，整体受 TaskSpec 资源预算限制；
 - stdout、stderr、返回码、开始时间、结束时间和超时状态全部记录。
 
-因此 Agent 可以安排网格生成、`checkMesh`、场初始化、求解和原生后处理，但实际
-执行始终由 Runner 控制。某一步失败后，后续命令不再继续。
+因此系统贡献器可以安排网格生成、`checkMesh`、场初始化、求解和原生后处理；Case Author
+没有执行权限，实际执行始终由 Runner 控制。某一步失败后，后续命令不再继续。
 
 `--derived-cache CACHE_ROOT` 显式启用内容寻址的 GeometryFacts/polyMesh 缓存。只有几何、资产、
 mesh intent、网格文件和命令、region 及工具版本组成的依赖键完全相同时才命中。命中会复制
@@ -303,18 +302,24 @@ non-orthogonality、skewness 等观测与 TaskSpec 阈值分开保存。网格�
 - 按上下文预算选择完整文件、匹配块、首尾摘要、结构或元数据表示；
 - 生成不含 protected/public asset 原文的 repair 状态快照。
 
-repair 模型只在 `RepairScope` 内返回 `RepairPatch`。补丁可以新增或替换允许的 case
-文件，也可以在明确锚点前后插入、替换或删除 typed command。应用后的完整计划仍要再次通过
-规范化、安全策略、物化、静态检查、OpenFOAM 执行和公开验证。越界修改、无实质变化、
-重复 failure、环境错误或尝试预算耗尽时停止修复。
+自动 repair 只接受 solver/validation 层已分类的 `numerical_instability`，且冻结 CaseDesign
+必须包含非空 `NumericalRepairEnvelope`。repair 模型在 `RepairScope` 内返回不含命令的
+`RepairProposal`；每个设计字段、操作方向、上下界、目标文件和 dictionary keyword 都必须由
+envelope 预先声明。授权后生成新的派生 CaseDesign 与 CaseBundle，再次通过 CaseVerifier、
+PlanCompiler、安全策略、物化、静态检查、OpenFOAM 执行和公开验证。模型不能插入、替换或删除
+typed command。
+
+`repair_policy.automatic_numerical_repair` 默认开启但可关闭。关闭时，或遇到物理、能力、solver、
+mesh、envelope 外变更、无实质变化、重复 failure、环境错误和预算耗尽时，当前 run 正常终结为
+失败，并在 summary 中给出稳定 code、具体缘由和 rerun/补充确认建议；不得泛化放行。
 
 新 attempt 会根据 repair 修改集合保守选择最早重跑阶段。求解字典变化可以复用前序网格，
 初始场变化从 initialize 开始；网格、patch、include、动态网格、多区域或并行拓扑依赖变化
 则完整重跑。复用只复制允许的前序产物，并对 parent/child 内容记录哈希；当前 `checkMesh`
 不会被跳过。
 
-mesh failure 使用更窄的 `RepairScope`：默认只能修改网格文件和 mesh/check command；只有
-patch 变化有直接证据时才允许同步初始场 `boundaryField`，物性、求解器和初始内场保持不变。
+mesh failure 不属于自动数值 repair 范围。改变网格策略、网格文件、patch 或 zone 必须由新的
+权威输入和 CaseDesign 进入 rerun；repair 模型不能修改 mesh/check command。
 
 仓库随附任务的 `max_attempts` 当前均为 2，因此这些规范任务最多执行一次初始生成
 和一次修复尝试。
@@ -364,8 +369,8 @@ restart 功能。
 - `ROUTING_UNRESOLVED`：无法可靠确定求解器族；
 - `BLOCKED_ENVIRONMENT`：本机运行环境不满足要求；
 - `CASE_GENERATION_FAILED`：模型输出或 case 物化失败；
-- `GENERATION_INVALID`：模型返回内容最终不能形成 canonical ExecutionPlan；这是 Agent/plan
-  失败，不是模型后端或环境阻断；
+- `GENERATION_INVALID`：模型返回内容最终不能形成符合冻结设计的 canonical CaseBundle；这是
+  Agent authoring 失败，不是模型后端或环境阻断；
 - `PLAN_INVALID`：执行计划违反 schema 或安全策略；
 - `STATIC_INSPECTION_FAILED`：原生 case 或跨文件语义检查失败；
 - `MESH_FAILED` / `INITIALIZATION_FAILED` / `SOLVER_FAILED` /

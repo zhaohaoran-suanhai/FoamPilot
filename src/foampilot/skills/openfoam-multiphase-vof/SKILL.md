@@ -21,7 +21,8 @@ description: Use when authoring or repairing a Foundation OpenFOAM v10 VOF or mi
    对 `pcorr`、`p_rgh`、`U` 等会进入 final corrector 的字段保持 base/Final 成对。
 3. `alpha.<phase>` 是无量纲相分数；`p_rgh` 的 dimensions 是压力维度，不是密度或相分数
    维度。每个字段必须覆盖全部 mesh patch。
-4. 区域化初态必须由显式 `setFields` command 生成；command 位于网格检查之后、求解之前。
+4. 区域化初态必须提供 `setFieldsDict`；PlanCompiler 的 initialize contributor 会生成显式
+   `setFields` 命令，并将其放在网格检查之后、求解之前。
 5. 为相分数提供求解器要求的 `alpha`、`alphar` 和压缩/限制格式，且给出必要的
    `nAlphaSubCycles`、`cAlpha`、`maxAlphaCo` 等控制量。
 6. 时间步同时满足全局 Courant 和 alpha Courant 要求；监测项不是进入求解的前置依赖。

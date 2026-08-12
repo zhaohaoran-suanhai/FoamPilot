@@ -168,10 +168,10 @@ def test_repository_native_authoring_skill_validates() -> None:
         package_root
         / "src/foampilot/skills/openfoam-author-native-case/SKILL.md"
     ).read_text(encoding="utf-8")
-    assert "将 `finite_fields` 直接绑定到 solve step" in text
-    assert "不要添加 `-case case`" in text
-    assert "Runner 负责 MPI launcher" in text
-    assert "将可选诊断排除在必需求解计划之外" in text
+    assert "Case Author 只返回 CaseBundle" in text
+    assert "不得返回 command" in text
+    assert "PlanCompiler 与 Runner" in text
+    assert "将可选诊断排除在必需 CaseBundle 之外" in text
 
 
 @pytest.mark.parametrize(
