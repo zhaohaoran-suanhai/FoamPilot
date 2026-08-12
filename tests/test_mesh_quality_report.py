@@ -14,6 +14,7 @@ def _run(
     *,
     return_code: int | None = 0,
     failed: bool = False,
+    command: list[str] | None = None,
 ) -> PlanRunResult:
     case = tmp_path / "case"
     logs = case / ".foampilot/logs"
@@ -25,7 +26,7 @@ def _run(
     now = datetime.now(timezone.utc)
     step = PlanStepResult(
         step_id="check-mesh",
-        command=["checkMesh"],
+        command=command or ["checkMesh"],
         return_code=return_code,
         started_at=now,
         finished_at=now,
@@ -39,6 +40,34 @@ def _run(
         steps=[step],
         failed_step_id="check-mesh" if failed else None,
     )
+
+
+def test_mesh_quality_report_recognizes_canonical_check_mesh_path(
+    tmp_path: Path,
+) -> None:
+    report = build_mesh_quality_report(
+        _run(
+            tmp_path,
+            """
+Mesh stats
+    points:           2241
+    faces:            6288
+    cells:            2048
+Mesh OK.
+""",
+            command=[
+                "/opt/OpenFOAM-10/platforms/linux64GccDPInt32Opt/bin/checkMesh"
+            ],
+        ),
+        MeshIntent(
+            strategy="provided",
+            quality={"require_check_mesh_pass": True},
+        ),
+    )
+
+    assert report.check_mesh_passed is True
+    assert report.cells == 2048
+    assert report.failed_requirements == ()
 
 
 def test_mesh_quality_report_parses_native_check_mesh_observations(

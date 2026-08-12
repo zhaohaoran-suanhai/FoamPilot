@@ -85,7 +85,9 @@ def build_mesh_quality_report(
         )
     )
     check_steps = [
-        step for step in plan_run.steps if "checkMesh" in step.command
+        step
+        for step in plan_run.steps
+        if any(Path(token).name == "checkMesh" for token in step.command)
     ]
     check_text = "\n".join(
         _bounded_text(path)
@@ -122,12 +124,12 @@ def build_mesh_quality_report(
     )
 
     command_names = {
-        token
+        Path(token).name
         for step in plan_run.steps
         for token in step.command
     }
     successful_names = {
-        token
+        Path(token).name
         for step in plan_run.steps
         if step.return_code == 0 and not step.timed_out
         for token in step.command

@@ -157,6 +157,48 @@ def test_exact_verified_plan_reuse_executes_without_model_request(
     assert store.verify(outcome.run_dir) == []
 
 
+def test_verified_plan_reuse_accepts_provided_mesh_without_mesh_command(
+    tmp_path: Path,
+) -> None:
+    task_payload = _task().model_dump(mode="json")
+    task_payload["mesh"] = {
+        "strategy": "provided",
+        "quality": {"require_check_mesh_pass": True},
+    }
+    task = type(_task()).model_validate(task_payload)
+    plan = _verified_plan().model_copy(
+        update={
+            "commands": [
+                command
+                for command in _verified_plan().commands
+                if command.stage != "mesh"
+            ]
+        }
+    )
+    store = ArtifactStore(tmp_path / "runs")
+    source = NativeAgent(
+        gateway=RecordingModel([plan]),
+        runtime_config=_runtime_config(),
+        artifact_store=store,
+        environment_snapshot=_environment("checkMesh", "icoFoam"),
+        runner=VerifiedPlanRunner(),
+    ).solve(task)
+    assert source.status == "PUBLIC_VALIDATION_PASS"
+
+    outcome = NativeAgent(
+        gateway=None,
+        runtime_config=_runtime_config(),
+        artifact_store=store,
+        environment_snapshot=_environment("checkMesh", "icoFoam"),
+        runner=VerifiedPlanRunner(),
+    ).solve(task, reuse_verified_plan=source.run_dir)
+
+    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    assert json.loads(
+        (outcome.run_dir / "plan-reuse.json").read_text(encoding="utf-8")
+    )["status"] == "hit"
+
+
 def test_verified_plan_reuse_rejects_changed_task_before_materialization(
     tmp_path: Path,
 ) -> None:

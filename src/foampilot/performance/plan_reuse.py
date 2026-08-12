@@ -296,7 +296,14 @@ def load_verified_plan_source(
             if item.stage == "solve"
             and item.executable == plan.manifest.solver_executable
         ]
-        if not mesh_commands or not check_commands or not solver_commands:
+        provided_mesh = (
+            task.mesh is not None and task.mesh.strategy == "provided"
+        )
+        if (
+            (not provided_mesh and not mesh_commands)
+            or not check_commands
+            or not solver_commands
+        ):
             continue
         if any(
             command.step_id not in steps
