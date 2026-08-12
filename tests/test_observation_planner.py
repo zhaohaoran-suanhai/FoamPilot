@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from foampilot.acceptance import AcceptanceCompiler, AcceptanceRequest, AcceptanceScope
 from foampilot.observations import (
     ObservationPlanner,
     ObservationPlanningError,
@@ -108,3 +109,34 @@ def test_duplicate_requests_are_deduplicated_by_identity() -> None:
     request = _request("continuity")
     plan = _compile(request, request)
     assert len(plan.items) == 1
+
+
+def test_acceptance_condition_forces_observable_into_plan() -> None:
+    request = _request("continuity")
+    acceptance = AcceptanceCompiler().compile(
+        observation_requests=(),
+        condition_requests=(
+            AcceptanceRequest(
+                condition_id="continuity-limit",
+                observation=request,
+                operator="less_equal",
+                limit=1.0e-5,
+                unit="1",
+                scope=AcceptanceScope(time="latest"),
+                source="user_text",
+                confirmed=True,
+                provenance=request.provenance,
+            ),
+        ),
+    )
+
+    plan = ObservationPlanner().compile(
+        intent=SimulationIntent(),
+        design=None,
+        mesh_facts=(_mesh(),),
+        registry=first_party_observation_registry(),
+        acceptance_plan=acceptance,
+    )
+
+    assert plan.items[0].observation_id == "continuity"
+    assert plan.items[0].required_for_condition_ids == ("continuity-limit",)

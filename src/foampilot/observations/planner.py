@@ -8,6 +8,9 @@ from foampilot.simulation import SimulationIntent
 from .models import EvidenceStrategy, ObservationItem, ObservationPlan, ObservationRequest
 from .registry import ObservationExtensionRegistry
 
+if False:  # pragma: no cover - import-only type boundary
+    from foampilot.acceptance import AcceptancePlan
+
 
 class ObservationPlanningError(ValueError):
     pass
@@ -77,7 +80,7 @@ class ObservationPlanner:
         registry: ObservationExtensionRegistry,
         acceptance_plan: object | None = None,
     ) -> ObservationPlan:
-        del design, acceptance_plan
+        del design
         unique: dict[str, ObservationRequest] = {}
         for request in intent.observation_requests:
             previous = unique.get(request.observation_id)
@@ -86,6 +89,19 @@ class ObservationPlanner:
                     f"OBSERVATION_ID_CONFLICT: {request.observation_id}"
                 )
             unique[request.observation_id] = request
+        condition_ids: dict[str, list[str]] = {}
+        if acceptance_plan is not None:
+            for request in acceptance_plan.observation_requests:
+                previous = unique.get(request.observation_id)
+                if previous is not None and previous != request:
+                    raise ObservationPlanningError(
+                        f"OBSERVATION_ID_CONFLICT: {request.observation_id}"
+                    )
+                unique[request.observation_id] = request
+            for condition in acceptance_plan.conditions:
+                condition_ids.setdefault(condition.observation_id, []).append(
+                    condition.condition_id
+                )
         items = []
         for observation_id in sorted(unique):
             request = unique[observation_id]
@@ -94,6 +110,9 @@ class ObservationPlanner:
                 ObservationItem(
                     **request.model_dump(mode="python"),
                     evidence_strategy=_strategy(request, registry),
+                    required_for_condition_ids=tuple(
+                        sorted(condition_ids.get(observation_id, ()))
+                    ),
                 )
             )
         return ObservationPlan(items=tuple(items))
