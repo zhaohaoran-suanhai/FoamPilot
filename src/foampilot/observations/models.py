@@ -119,6 +119,18 @@ class ObservationItem(_StrictFrozenModel):
         return values
 
 
+class ObservationRequest(_StrictFrozenModel):
+    """Intent-level observable with no collection or command authority."""
+
+    observation_id: str = Field(pattern=r"^[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*$")
+    kind: ObservationKind
+    quantity: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    dimension: str = Field(min_length=1)
+    scope: ObservationScope
+    time_selection: TimeSelection
+    provenance: tuple[FactEvidence, ...] = Field(min_length=1)
+
+
 class ObservationWarning(_StrictFrozenModel):
     code: str = Field(pattern=r"^[A-Z][A-Z0-9_]*$")
     observation_id: str | None = None
@@ -155,6 +167,7 @@ __all__ = [
     "ObservationItem",
     "ObservationKind",
     "ObservationPlan",
+    "ObservationRequest",
     "ObservationScope",
     "ObservationWarning",
     "TimeSelection",

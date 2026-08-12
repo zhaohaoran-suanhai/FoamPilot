@@ -7,6 +7,7 @@ from foampilot.observations import (
     EvidenceStrategy,
     ObservationItem,
     ObservationPlan,
+    ObservationRequest,
     ObservationScope,
     TimeSelection,
 )
@@ -27,6 +28,20 @@ def _item(observation_id: str = "outlet-flow") -> ObservationItem:
         ),
         provenance=(FactEvidence(kind="user_quote", detail="outlet flow history"),),
     )
+
+
+def test_observation_request_has_no_collection_authority() -> None:
+    request = ObservationRequest(
+        observation_id="outlet-flow",
+        kind="flow_rate",
+        quantity="volumetric_flow_rate",
+        dimension="L3/T",
+        scope=ObservationScope(kind="patch", names=("outlet",)),
+        time_selection=TimeSelection(kind="history"),
+        provenance=(FactEvidence(kind="user_quote", detail="outlet flow history"),),
+    )
+
+    assert "evidence_strategy" not in request.model_dump()
 
 
 def test_observation_plan_is_frozen_hashable_and_roundtrips() -> None:

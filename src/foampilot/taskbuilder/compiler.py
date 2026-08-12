@@ -8,8 +8,8 @@ import json
 from foampilot.tasks import TaskSpec
 from foampilot.simulation import FactEvidence, ResolvedValue
 
-from .checks import build_public_checks
 from .models import (
+    DraftIssue,
     DraftReview,
     TaskAssumption,
     TaskCompilation,
@@ -100,6 +100,23 @@ def _resolved_fact(
     )
 
 
+def _metric_diagnostics(facts: dict[str, TaskFact]) -> list[DraftIssue]:
+    metrics = _fact_value(facts, "outputs.metrics", [])
+    if not isinstance(metrics, list):
+        return []
+    return [
+        DraftIssue(
+            code="TASK_METRIC_TOLERANCE_MISSING",
+            severity="advisory",
+            field_path=f"outputs.metrics.{metric['name']}",
+            message_zh=f"指标 {metric['name']} 未声明工程容差，仅作为观测输出。",
+            recovery_zh="如需据此判定通过，请显式提供定义、参考值和容差。",
+        )
+        for metric in metrics
+        if isinstance(metric, dict)
+        and isinstance(metric.get("name"), str)
+        and "tolerance" not in metric
+    ]
 def compile_task_draft(review: DraftReview) -> TaskCompilation:
     """Compile without solver routing, case authoring or native execution."""
 
@@ -109,7 +126,7 @@ def compile_task_draft(review: DraftReview) -> TaskCompilation:
         )
     draft = review.draft
     facts = draft.fact_map()
-    checks, compiler_diagnostics = build_public_checks(facts)
+    compiler_diagnostics = _metric_diagnostics(facts)
     assumptions = list(draft.assumptions)
 
     distribution = _fact_value(facts, "openfoam.distribution", "foundation")
@@ -195,26 +212,6 @@ def compile_task_draft(review: DraftReview) -> TaskCompilation:
                 confirmed=False,
             ).model_dump(mode="json")
         )
-    for check in checks:
-        explicit_facts.append(
-            ResolvedValue(
-                field_path=f"acceptance.legacy_checks.{check.name}",
-                value=check.model_dump(mode="json"),
-                source="deterministic_rule",
-                impact="high",
-                evidence=(
-                    FactEvidence(
-                        kind="legacy_acceptance_compiler",
-                        detail=(
-                            "Temporary Phase 2 projection; Phase 5 compiles "
-                            "AcceptancePlan."
-                        ),
-                    ),
-                ),
-                confirmed=True,
-            ).model_dump(mode="json")
-        )
-
     payload = {
         "schema_version": 3,
         "task_id": draft.draft_id,

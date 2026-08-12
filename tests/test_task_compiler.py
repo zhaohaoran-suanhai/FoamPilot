@@ -16,17 +16,13 @@ def _with_facts(draft: TaskDraft, *facts: dict) -> TaskDraft:
     return TaskDraft.model_validate(payload)
 
 
-def test_compiler_adds_only_supported_universal_public_checks() -> None:
+def test_compiler_emits_task_v3_without_legacy_public_checks() -> None:
     compilation = compile_task_draft(
         validate_task_draft(_complete_draft())
     )
 
     assert compilation.task.schema_version == 3
-    assert {item.kind for item in compilation.task.public_checks} >= {
-        "mesh_ok",
-        "completion",
-        "finite_fields",
-    }
+    assert compilation.task.public_checks == []
     assert compilation.task.openfoam_target.version == "10"
     assert compilation.task.geometry is not None
     assert compilation.task.mesh is not None
@@ -41,7 +37,7 @@ def test_compiler_adds_only_supported_universal_public_checks() -> None:
     }
 
 
-def test_transient_vof_registry_adds_time_bounds_and_conservation() -> None:
+def test_transient_vof_requirements_remain_acceptance_intent_and_facts() -> None:
     draft = _complete_draft()
     payload = draft.model_dump(mode="json")
     for item in payload["facts"]:
@@ -64,14 +60,10 @@ def test_transient_vof_registry_adds_time_bounds_and_conservation() -> None:
         validate_task_draft(TaskDraft.model_validate(payload))
     )
 
-    checks = {item.kind: item for item in compilation.task.public_checks}
-    assert checks["final_time"].parameters["minimum"] == 1.0
-    assert checks["bounded_field"].parameters == {
-        "field": "alpha.water",
-        "minimum": 0.0,
-        "maximum": 1.0,
-    }
-    assert checks["conservation"].parameters["field"] == "alpha.water"
+    assert "solver reaches the declared end time 1.0" in (
+        compilation.task.acceptance_intent
+    )
+    assert compilation.task.explicit_value("acceptance.conservation_max") == 1.0e-6
 
 
 def test_explicit_pressure_drop_without_tolerance_is_observation_only() -> None:
@@ -94,7 +86,7 @@ def test_explicit_pressure_drop_without_tolerance_is_observation_only() -> None:
     assert all("tolerance" not in item.lower() for item in compilation.task.acceptance_requirements)
 
 
-def test_explicit_solver_adds_command_executed_check() -> None:
+def test_explicit_solver_remains_a_fact_not_a_legacy_check() -> None:
     draft = _with_facts(
         _complete_draft(),
         _fact("physics.solver", "simpleFoam"),
@@ -102,8 +94,15 @@ def test_explicit_solver_adds_command_executed_check() -> None:
 
     task = compile_task_draft(validate_task_draft(draft)).task
 
-    check = next(item for item in task.public_checks if item.kind == "command_executed")
-    assert check.parameters == {"executable": "simpleFoam"}
+    assert task.explicit_value("physics.solver") == "simpleFoam"
+    assert task.public_checks == []
+
+
+def test_taskbuilder_source_does_not_construct_public_checks() -> None:
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "src/foampilot/taskbuilder"
+    assert all("PublicCheck" not in path.read_text(encoding="utf-8") for path in root.rglob("*.py"))
 
 
 def test_same_confirmed_draft_compiles_to_same_task_hash() -> None:

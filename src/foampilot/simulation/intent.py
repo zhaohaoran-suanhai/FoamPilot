@@ -15,6 +15,7 @@ from foampilot.models import (
     ModelTraceSink,
 )
 from foampilot.preprocessing import InputMeshFacts
+from foampilot.observations.models import ObservationRequest
 from foampilot.tasks import TaskSpec
 
 from .provenance import FactEvidence, ResolvedValue, StrictModel, Uncertainty
@@ -39,6 +40,7 @@ class SimulationIntent(StrictModel):
     facts: tuple[ResolvedValue, ...] = ()
     constraints: tuple[str, ...] = ()
     requested_observables: tuple[str, ...] = ()
+    observation_requests: tuple[ObservationRequest, ...] = ()
     acceptance_intent: tuple[str, ...] = ()
     uncertainties: tuple[Uncertainty, ...] = ()
     audit_warnings: tuple[str, ...] = ()
