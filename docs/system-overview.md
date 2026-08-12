@@ -28,7 +28,7 @@ FAISS、MCP、预先存在的目标 tutorial、Case renderer 或 `Allrun` 脚本
 
 ### 3.1 TaskSpec
 
-`foampilot solve` 的直接输入仍是 YAML 格式的 `TaskSpec`。普通用户可以先通过
+`foampilot solve` 的直接输入是 YAML 格式的 `TaskSpec v3`。普通用户可以先通过
 `foampilot task draft -> validate-draft -> compile`，把一份完整的中文或英文自然语言请求和
 显式声明的公开附件转换成相同的规范 `TaskSpec`。`TaskSpec` 包含：
 
@@ -46,7 +46,8 @@ blocking、confirmable 和 advisory，Compiler 只填充公开可见的低风险
 边界值、初始条件、终止时间和工程容差等高影响事实缺失时不会被猜测，也不会进入 case generation。
 当前提供的是三个可审计 CLI/Python 步骤，尚未提供持续聊天会话、交互表单或一条命令完成澄清与求解。
 
-Agent 能看到任务的物理需求、资源、输出要求和公开资产说明，但看不到
+新的 authoring 只接受 v3；`TaskSpec v2` 只供历史 run 的只读 adapter 展示，不能重新进入
+authoring、resume 或 qualification。Agent 能看到任务的物理需求、资源、输出要求和公开资产说明，但看不到
 `public_checks`、受保护路径、qualification 私有规则或参考答案。
 
 ### 3.2 ExecutionPlan v3
@@ -77,6 +78,7 @@ SHA256 manifest 覆盖，之后的修改能够被 `foampilot report` 检出。
 | `preprocessing` | 探测公开几何事实并从原生日志构造网格质量报告 |
 | `environment` | 发现 Foundation OpenFOAM v10、可执行程序和本地运行条件 |
 | `routing` | 根据任务事实、已安装程序和知识元数据确定求解器及物理族 |
+| `simulation` | 解释意图、确定性解析需求、提议并冻结 CaseDesign、执行程序所有的 RiskGate |
 | `knowledge` / `skills` | 提供经过审查的公开 OpenFOAM 知识和行为规范 |
 | `context` | 按语义槽位选择有限知识，并装配通用及求解器族 Skill |
 | `models` | 执行结构化模型调用、超时、重试、错误分类、追踪和熔断 |
@@ -99,7 +101,10 @@ TaskSpec（也可直接提供）
   -> 公开资产 staging 与 GeometryProbe
   -> 求解器族路由
   -> 动态知识和 Skill 装配
-  -> 模型生成完整 ExecutionPlan v3，或显式加载严格匹配的已验证计划
+  -> SimulationIntent 与确定性 ResolvedRequirements
+  -> CaseDesignProposal 与 RiskGate
+  -> READY_TO_AUTHOR 后冻结 CaseDesign
+  -> 临时 Phase 2 bridge 生成 ExecutionPlan v3，或显式加载严格匹配的已验证计划
   -> 计划规范化与安全策略
   -> 空目录物化 case
   -> 静态与跨文件语义检查
@@ -191,9 +196,28 @@ prompt 关键词；Gmsh 只有被环境发现后才能进入 typed plan。
 
 ### 5.6 完整 case 生成
 
-ModelGateway 发起一次逻辑生成请求，要求模型同时返回所有 case 文件、
+在完整 case 生成前，FoamPilot 用两个有界、schema 独立的模型阶段分别生成
+`SimulationIntent` 和不含文件/命令的 `CaseDesignProposal`。确定性 Requirement Resolver
+将网格事实、用户事实和 capability requirement 合并；RiskGate 再产生四种状态：
+
+- `READY_TO_AUTHOR`：冻结 `case-design.json`；
+- `CONFIRMATION_REQUIRED`：用 `CONCRETE_CONFIRMATION_REQUIRED` 要求逐字段候选确认；
+- `INFORMATION_REQUIRED`：缺少无安全默认值的信息，或权威事实冲突；
+- `CAPABILITY_UNAVAILABLE`：当前能力注册表无法实现设计。
+
+后三种会以 `workflow_state=DEFERRED`、`native_status=null` 固化，因此不是 CFD 求解失败。
+模型不能自报 confidence；系统禁止 accept-all、continue-anyway 和高影响风险 override。
+`foampilot questions` 展示字段、理由和候选，`foampilot confirm` 只接受 exact candidate/value，
+为每个字段写独立记录并创建不可变 child。确认动作本身不执行 OpenFOAM。
+
+当前是临时 Phase 2 bridge：只有冻结 CaseDesign 才会传给旧 author。ModelGateway 随后发起
+一次逻辑生成请求，要求模型同时返回所有 case 文件、
 CaseManifest 和全部 typed commands。底层传输在阶段 deadline 和次数预算内可以
 对网络中断、服务过载或限流进行重试，但不会无限等待。
+
+过渡层至少校验 authored manifest 的 solver、物理族、稳/瞬态和 region role 不得与冻结
+设计矛盾。Phase 3 会删除该 bridge，改由 Case Author 只写 CaseBundle，再由确定性 Plan
+Compiler 生成命令。
 
 Model backend 只负责一次交换；Gateway 负责错误分类、重试、deadline、
 传输追踪和熔断。qualification 的多个 worker 可以共享 Gateway 和熔断状态，但各

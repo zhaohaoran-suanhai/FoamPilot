@@ -2,7 +2,7 @@
 
 ## 精简主路径的功能
 
-FoamPilot 可以把完整的中文或英文 CFD 请求编译为公开 `TaskSpec`，再由 `foampilot solve`
+FoamPilot 可以把完整的中文或英文 CFD 请求编译为公开 `TaskSpec v3`，再由 `foampilot solve`
 执行一次原生 Foundation OpenFOAM v10 运行。已有结构化系统也可以直接提供 TaskSpec。
 
 运行流程如下：
@@ -12,16 +12,17 @@ FoamPilot 可以把完整的中文或英文 CFD 请求编译为公开 `TaskSpec`
 3. 对声明的公开几何执行 hash、单位、surface/patch 和拓扑探测；
 4. 根据公开证据生成由系统负责的 `CapabilityProfile`；
 5. 按语义槽位最多检索一条有界公开知识，将无关槽位留空，并路由 Skills；
-6. 通过具备重试、deadline 和熔断能力的 Gateway，发起一次逻辑模型请求，生成
-   完整 CaseBundle；
-7. 只对无歧义的 MPI wrapper 进行安全规范化，然后执行 typed policy；
-8. 将声明的文件写入空的 attempt 目录；
-9. 检查高置信度跨文件语义，并执行原生命令；
-10. 生成结构化网格质量报告并执行 evaluator 公开检查；
-11. 如果尝试预算允许，请求一次基于失败证据的定向修复；
-12. 如果可重试的模型后端故障中断生成或修复，将运行固化为 `DEFERRED`，
+6. 分别生成 `SimulationIntent` 和不含文件/命令的 `CaseDesignProposal`；
+7. 用确定性 Requirement Resolver/RiskGate 决定是否冻结 `CaseDesign`；
+8. 只有 `READY_TO_AUTHOR` 才通过临时 Phase 2 bridge 生成完整 case/plan；
+9. 只对无歧义的 MPI wrapper 进行安全规范化，然后执行 typed policy；
+10. 将声明的文件写入空的 attempt 目录；
+11. 检查高置信度跨文件语义，并执行原生命令；
+12. 生成结构化网格质量报告并执行 evaluator 公开检查；
+13. 如果尝试预算允许，请求一次基于失败证据的定向修复；
+14. 如果可重试的模型后端故障中断生成或修复，将运行固化为 `DEFERRED`，
     并保存 strict resume 元数据；
-13. 为每个终态运行固化 artifact manifest。
+15. 为每个终态运行固化 artifact manifest。
 
 规范的 `ExecutionPlan` v3 结构为：
 
@@ -33,6 +34,9 @@ commands[] = {step_id, stage, executable, args, mpi_ranks, timeout_seconds}
 
 求解器选择、字典结构、数值方法、初始化和后处理仍由 Agent 决定。确定性代码在
 执行前检查结构、安全和高置信度语义约束，但不会替 Agent 审查完整 CFD 策略。
+
+当前 authoring 输入只接受 `TaskSpec v3`；`TaskSpec v2` 只用于历史 run 的只读展示。
+Case Author 前的 RiskGate 不接受模型自报 confidence，也没有 accept-all 或 continue-anyway。
 
 ## 安装和预检
 
@@ -143,6 +147,35 @@ foampilot solve examples/tasks/provided-poly-mesh.yaml \
   --model-name gpt-5.6-sol \
   --json
 ```
+
+如果 solve 在 authoring 前返回 `CONFIRMATION_REQUIRED` 或 `INFORMATION_REQUIRED`，它是求解前
+设计状态，不是 CFD 求解失败。先查看具体问题：
+
+```bash
+foampilot questions /tmp/foampilot-native-runs/PARENT_RUN --json
+```
+
+只有 confirmable 问题可按 `questions.json` 的 exact candidate 确认；information-required
+问题必须补充新的权威事实，不能绕过。答案文件示例：
+
+```yaml
+schema_version: 1
+answers:
+  - question_id: confirm-materials-fluid-nu
+    candidate_id: water-like-nu
+    confirmed_value: {value: 1.0e-6, unit: m2/s}
+```
+
+```bash
+foampilot confirm /tmp/foampilot-native-runs/PARENT_RUN \
+  --answers answers.yaml \
+  --run-root /tmp/foampilot-native-runs \
+  --json
+```
+
+系统逐字段验证 candidate ID/value、parent manifest 和 proposal hash，随后创建不可变 child；
+确认命令本身不启动 OpenFOAM。当前 live solve 的 case 编写仍使用临时 Phase 2 bridge 将冻结
+CaseDesign 交给旧 ExecutionPlan author，并拒绝与设计冲突的 manifest；Phase 3 将删除该过渡层。
 
 TaskSpec 生成后进入与手写任务完全相同的规范路径：
 
@@ -284,6 +317,12 @@ geometry-facts.json              # 几何任务存在
 asset-bundles.json                # 公开资产的原子 manifest
 input-mesh-facts.json             # provided polyMesh 的生成前静态权威事实
 pre-authoring-mesh-facts.json     # provided polyMesh 的受控 checkMesh 事实
+simulation-intent.json            # 独立意图解释
+resolved-requirements.json        # 确定性完整性/冲突/能力解析
+case-design-proposal.json         # 不含原生文件和命令的设计提议
+risk-decision.json                # 程序所有的四态门禁
+questions.json                    # 需要补充或逐字段确认时存在
+case-design.json                  # 仅 READY_TO_AUTHOR 后存在
 capability-profile.json
 agent-context.json
 resume-compatibility.json

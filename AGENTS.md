@@ -29,6 +29,8 @@ foampilot solve TASK.yaml --run-root RUNS \
   --reuse-verified-plan RUNS/SOURCE_RUN --derived-cache CACHE_ROOT --json
 foampilot resume RUNS/PARENT_RUN --run-root RUNS --backend auto --json
 foampilot report RUN_DIR --json
+foampilot questions RUN_DIR --json
+foampilot confirm RUN_DIR --answers ANSWERS.yaml --run-root RUNS --json
 
 foampilot qualify suite \
   --suite-file src/foampilot/qualification/data/suites/controlled-learning-15-v1.yaml \
@@ -41,6 +43,8 @@ foampilot qualify suite \
 
 ## TaskSpec 与 case 编写
 
+- 新的 authoring 输入只接受 `TaskSpec v3`。`TaskSpec v2` 仅用于历史 run 的只读报告，禁止
+  重新进入 authoring、resume 或 qualification。
 - 完整自然语言请求可以经过 `TaskDraft -> DraftReview -> TaskCompiler`，但高影响模型推断不能
   冒充 `user_confirmation`，缺少单位、物性、边界值或终止条件时不得进入 generation。
 - 将用户需求转换为保留几何、物理、工况、资源、输出和公开验收条件的最小 TaskSpec；
@@ -52,6 +56,15 @@ foampilot qualify suite \
 - 先根据任务事实与本机 executable 路由 solver family，再动态检索公开知识；TaskSpec
   不得预选 knowledge ID。
 - `CapabilityProfile.confidence` 由确定性证据计算，不能接受模型自报 confidence。
+- 正常 live solve 必须依次形成 `SimulationIntent -> ResolvedRequirements ->
+  CaseDesignProposal -> RiskDecision`。只有 `READY_TO_AUTHOR` 才能冻结 `CaseDesign` 并进入
+  case 编写；`INFORMATION_REQUIRED`、`CONFIRMATION_REQUIRED` 和
+  `CAPABILITY_UNAVAILABLE` 都是设计阶段终态，不是 CFD 求解失败。
+- `CONCRETE_CONFIRMATION_REQUIRED` 必须绑定问题、字段、候选 ID 和完整候选值。禁止
+  accept-all、continue-anyway 或高影响风险 override；模型不能自报 confidence 取得放行。
+- `foampilot confirm` 只能从 manifest 有效的 parent 创建不可变 child 并逐项记录
+  `ConfirmationRecord`。确认命令本身不启动 OpenFOAM。Phase 2 仍通过临时 Phase 2 bridge
+  把冻结设计交给旧 author；该 bridge 必须拒绝与设计矛盾的 manifest，并在 Phase 3 删除。
 - 模型返回完整 `ExecutionPlan` schema v3：region-aware `CaseManifest`、全部 case 文件和
   每条带 `stage` 的 typed command。
 - 禁止读取或复制当前目标 tutorial，也不能向生成或 repair 模型暴露 evaluator rule、

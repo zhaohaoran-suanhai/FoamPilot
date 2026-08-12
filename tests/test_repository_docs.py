@@ -120,3 +120,29 @@ def test_quickstart_documents_poly_mesh_as_one_directory_asset() -> None:
     assert "input-mesh-facts.json" in text
     assert "pre-authoring-mesh-facts.json" in text
     assert "constant/polyMesh/points" not in text
+
+
+def test_contract_first_docs_name_the_no_generic_override_rule() -> None:
+    root = Path(__file__).resolve().parents[1]
+    architecture = (root / "docs/architecture.md").read_text(
+        encoding="utf-8"
+    )
+    combined = "\n".join(
+        (root / path).read_text(encoding="utf-8")
+        for path in (
+            "README.md",
+            "AGENTS.md",
+            "docs/system-overview.md",
+            "docs/independent-agent-quickstart.md",
+        )
+    )
+
+    assert "CONCRETE_CONFIRMATION_REQUIRED" in architecture
+    assert "READY_TO_AUTHOR" in architecture
+    assert "模型不能自报 confidence" in architecture
+    assert "TaskSpec v3" in combined
+    assert "foampilot questions" in combined
+    assert "foampilot confirm" in combined
+    assert "TaskSpec v2" in combined
+    assert "临时 Phase 2 bridge" in combined
+    assert "不是 CFD 求解失败" in combined

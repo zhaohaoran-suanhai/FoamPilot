@@ -111,3 +111,39 @@ def test_production_source_has_no_legacy_imports() -> None:
                         f"{module}"
                     )
     assert violations == []
+
+
+def _imported_modules(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module)
+    return modules
+
+
+def test_taskbuilder_does_not_import_execution_or_runner_layers() -> None:
+    violations: list[str] = []
+    for path in sorted((SOURCE_ROOT / "taskbuilder").rglob("*.py")):
+        for module in _imported_modules(path):
+            if module == "foampilot.runtime" or module.startswith(
+                "foampilot.runtime."
+            ) or module == "foampilot.plans" or module.startswith(
+                "foampilot.plans."
+            ):
+                violations.append(
+                    f"{path.relative_to(SOURCE_ROOT)} imports {module}"
+                )
+    assert violations == []
+
+
+def test_risk_gate_does_not_import_model_backends() -> None:
+    path = SOURCE_ROOT / "simulation/risk_gate.py"
+    modules = _imported_modules(path)
+    assert not any(
+        module == "foampilot.models"
+        or module.startswith("foampilot.models.")
+        for module in modules
+    )

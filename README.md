@@ -17,10 +17,13 @@ Foundation 版本尚未完成 qualification。模型编写算例具有非确定�
 
 ```text
 自然语言 + 显式公开附件（可选）
--> 带来源的 TaskDraft、确定性 review 与 TaskSpec 编译
-公开 TaskSpec（也可直接提供）
+-> 带来源的 TaskDraft、确定性 review 与 TaskSpec v3 编译
+公开 TaskSpec v3（也可直接提供）
 -> 基于证据的 CapabilityProfile
 -> 按槽位限制的公开知识与路由 Skills
+-> SimulationIntent 与确定性 ResolvedRequirements
+-> CaseDesignProposal 与程序所有的 RiskGate
+-> READY_TO_AUTHOR 后冻结 CaseDesign
 -> 模型一次编写完整 ExecutionPlan v3
 -> 安全 MPI 规范化、typed policy 与语义检查
 -> bubblewrap 或 audited host 原生 OpenFOAM 执行
@@ -142,6 +145,44 @@ foampilot task compile task-draft.yaml --output task.yaml --json
 TaskBuilder 只提取带来源的事实并使用低风险确定性默认值。缺少单位、物性、边界值、初始条件、
 终止时间或工程容差时不会猜测，也不会进入 case generation。当前 CLI 是三个可审计步骤，
 尚未提供多轮聊天或交互式澄清表单。
+
+新的 authoring 路径只接受 `TaskSpec v3`；`TaskSpec v2` 只允许用于历史 run 的只读展示。进入
+solve 后，模型先分别解释 `SimulationIntent` 和提出不含文件/命令的 `CaseDesignProposal`，
+确定性 Requirement Resolver 与 RiskGate 再决定：
+
+- `READY_TO_AUTHOR`：冻结 `case-design.json` 后才允许编写 case；
+- `CONFIRMATION_REQUIRED`：存在具体候选，但中高影响值必须逐字段确认；
+- `INFORMATION_REQUIRED`：缺少信息或事实冲突，没有安全的唯一候选；
+- `CAPABILITY_UNAVAILABLE`：当前已注册且已安装的能力无法实现设计。
+
+后三种是求解前设计结果，不是 CFD 求解失败。模型不能自报 confidence，系统也没有
+accept-all、continue-anyway 或风险 override。查看待处理字段：
+
+```bash
+foampilot questions /tmp/foampilot-runs/PARENT_RUN --json
+```
+
+只对 `CONFIRMATION_REQUIRED`，按 `questions.json` 中的 exact question/candidate 提交：
+
+```yaml
+schema_version: 1
+answers:
+  - question_id: confirm-materials-fluid-nu
+    candidate_id: water-like-nu
+    confirmed_value: {value: 1.0e-6, unit: m2/s}
+```
+
+```bash
+foampilot confirm /tmp/foampilot-runs/PARENT_RUN \
+  --answers answers.yaml \
+  --run-root /tmp/foampilot-runs \
+  --json
+```
+
+该命令验证 parent manifest 和候选值，创建不可变 confirmation child，并逐字段保存确认记录；
+它本身不启动 OpenFOAM，也不表示 CFD 已经成功。当前 Phase 2 通过临时 Phase 2 bridge 将
+正常 live solve 中已冻结的设计交给旧 ExecutionPlan author，并在执行前检查 manifest 是否
+违背设计；Phase 3 将以原生 Case Author/Plan Compiler 替换这个过渡层。
 
 已有 OpenFOAM 原生网格应作为完整目录资产声明，而不是拆成多个文件：
 

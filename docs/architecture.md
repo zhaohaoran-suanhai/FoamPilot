@@ -15,6 +15,8 @@ FoamPilot 只支持一条从公开 TaskSpec 到证据限定结果的规范求解
 - `knowledge`：包含来源信息的已审查 Foundation OpenFOAM v10 知识；
 - `skills`：用于算例编写和特定 solver family 的可移植行为指导；
 - `routing`：基于证据选择 solver family，并由系统计算 confidence；
+- `simulation`：分离意图解释、确定性需求解析、CaseDesign 提议、程序所有的 RiskGate 与
+  逐字段确认；
 - `context`：每个语义槽位最多选择一条有界公开知识，并装配通用/族级 Skill；
 - `manifests`：薄型、支持 region 的算例声明，以及带来源的 family contract；
 - `models`：单次交换 backend、共享 `ModelGateway`、retry/deadline policy、
@@ -39,7 +41,8 @@ Compiler 引入。TaskBuilder 不调用 Runner，失败也不创建 solve run。
 
 环境发现后，确定性 router 创建 `CapabilityProfile`。其依据包括任务中的显式事实、已安装
 executable 和已审查 solver-family metadata。只有 candidate set 含糊时才允许请求模型
-辅助路由，且模型不能自行提高 confidence。低置信度或信息不完整的 route 会在完整算例编写前停止。
+辅助路由，且模型不能自行提高 confidence。模型不能自报 confidence 来通过任何设计门禁。
+低置信度或信息不完整的 route 会在完整算例编写前停止。
 
 几何任务会在路由前 staging 已声明 public asset 并生成 `geometry-facts.json`。显式单位、
 patch/region role 或 mesh strategy 不得由 probe 猜测；必要的外部网格程序未被环境发现时在零
@@ -50,6 +53,27 @@ provided 原生网格走单独的确定性路径：`OpenFOAMMeshBundle -> InputM
 `checkMesh -> ExecutedMeshFacts`。目录 manifest、成员 hash、inspector identity 进入续跑和
 缓存指纹。模型收到紧凑 patch/zone/count/bounds 事实，但永远不拥有网格生成命令或成员写权限。
 
+路由与上下文完成后，规范 live 路径依次固化：
+
+```text
+TaskSpec v3 + authoritative asset/mesh facts
+-> SimulationIntent
+-> ResolvedRequirements
+-> CaseDesignProposal（不含文件正文和命令）
+-> deterministic RiskGate
+   |- READY_TO_AUTHOR -> frozen CaseDesign -> author
+   |- CONFIRMATION_REQUIRED -> concrete questions -> immutable child
+   |- INFORMATION_REQUIRED -> finalize pending information
+   `- CAPABILITY_UNAVAILABLE -> finalize unsupported design
+```
+
+RiskGate 依据事实来源、影响等级、缺失项、冲突和注册能力计算状态；它不读取模型 confidence。
+`CONCRETE_CONFIRMATION_REQUIRED` 绑定一个问题、一个字段、候选 ID 和完整 typed 候选值。
+不存在 accept-all、continue-anyway 或高影响风险 override。`foampilot questions` 只展示已
+manifested 的公开问题；`foampilot confirm` 校验 exact candidate 后为每个字段创建独立
+`ConfirmationRecord`，并创建不可变 child。等待信息/确认以及能力不可用是设计阶段结果，
+不是 CFD 求解失败，确认命令本身也不启动 OpenFOAM。
+
 ContextAssembler 随后在 solver-family、mesh、boundary、physics/transport、
 startup/numerics、可选 parallel 与可选 repair-error 槽位中各选择至多一条知识。缺少匹配
 时记录空槽位，而不是用无关 top-N 结果填充。不能从通用词安全推断的跨 solver 条目带有显式
@@ -57,8 +81,12 @@ startup/numerics、可选 parallel 与可选 repair-error 槽位中各选择至�
 事实环境清单，以及至多一个通用 Skill 和一个 family Skill；看不到目标 tutorial、受保护路径、
 evaluator validation YAML 或 reference JSON。
 
-一次逻辑 generation request 返回全部必需 case file、一个 region-aware `CaseManifest`，
-以及 ExecutionPlan v3 中全部分阶段 typed command。`ModelGateway` 可在单调时钟 stage
+只有 `READY_TO_AUTHOR` 的冻结设计能够进入 case 编写。当前过渡实现是临时 Phase 2 bridge：
+旧 author 收到冻结 CaseDesign 后，一次逻辑 generation request 仍返回全部必需 case file、
+一个 region-aware `CaseManifest`，以及 ExecutionPlan v3 中全部分阶段 typed command；程序在
+执行前拒绝 solver、物理、稳/瞬态或 region role 与冻结设计矛盾的结果。Phase 3 会删除该 bridge，
+改为 Case Author 只写 CaseBundle、Plan Compiler 确定性生成命令。
+`ModelGateway` 可在单调时钟 stage
 deadline 内进行多次 transport attempt，但会分别记录逻辑请求与实际传输。两个 qualification
 worker 只共享 Gateway 和 circuit breaker；每项任务保留独立 deadline ledger、trace、case、
 artifact store 与 evaluator workspace。
@@ -79,7 +107,7 @@ repair 模型会收到公开失败证据，以及编写阶段动态选择的同�
 
 ## 工作流与失败语义
 
-`workflow-events.jsonl` 是 task、environment、context、generation、plan、
+`workflow-events.jsonl` 是 task、environment、context、intent、requirements、design、generation、plan、
 materialization、inspection、OpenFOAM、public-validation、repair 与 finalization 阶段的
 有序、fsync 持久化记录。Checkpoint 采用独占写入，绝不替换。
 
@@ -111,6 +139,9 @@ lineage 至多允许七次真实 transport attempt。代码、knowledge、Skill�
 变化后必须创建新的 `rerun_with_changes`，不能 strict resume。
 
 历史 RunSummary v1 文件仍可通过 read-only adapter 报告，但不能续跑。
+
+新的 authoring 入口只接受 `TaskSpec v3`。`TaskSpec v2` 只由未导出的历史 run 只读 adapter
+解析，不能重新进入 authoring、strict resume 或 qualification。
 
 规范 authoring 与 strict resume 只接受 ExecutionPlan v3。历史 v2 replay fixture 使用
 狭窄、未导出的 reader，加上独立审查并带 hash 的 v3 manifest overlay；这不是 authoring fallback。
