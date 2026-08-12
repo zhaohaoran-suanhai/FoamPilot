@@ -7,6 +7,12 @@ from datetime import datetime, timezone
 import re
 from pathlib import Path
 from threading import RLock
+from typing import TYPE_CHECKING
+
+from foampilot.evidence import MetricsWriter
+
+if TYPE_CHECKING:
+    from foampilot.runtime.telemetry import ResidualMetric
 
 from .models import (
     ActivityEvent,
@@ -106,6 +112,7 @@ class ActivityReporter:
         critical_listeners: Iterable[ActivityListener] = (),
         utc_now: Callable[[], datetime] | None = None,
         cancel_requested: CancellationCheck | None = None,
+        metric_heartbeat_seconds: float = 5.0,
     ) -> None:
         if not operation_id:
             raise ValueError("operation_id must not be empty")
@@ -114,6 +121,11 @@ class ActivityReporter:
         self._critical_listeners = list(critical_listeners)
         self._utc_now = utc_now or (lambda: datetime.now(timezone.utc))
         self._cancel_requested = cancel_requested
+        if metric_heartbeat_seconds <= 0:
+            raise ValueError("metric heartbeat interval must be positive")
+        self._metric_heartbeat_seconds = metric_heartbeat_seconds
+        self._last_metric_heartbeat_elapsed: dict[str, float] = {}
+        self._metrics_writer: MetricsWriter | None = None
         self._sequence = 0
         self._run_id: str | None = None
         self._degradation_messages: list[str] = []
@@ -154,7 +166,15 @@ class ActivityReporter:
         with self._lock:
             self._listeners.append(listener)
 
-    def bind_run(self, run_id: str, path: str | Path) -> None:
+    def bind_run(
+        self,
+        run_id: str,
+        path: str | Path,
+        *,
+        metrics_path: str | Path | None = None,
+        metrics_sample_interval_seconds: float = 0.2,
+        metrics_max_points_per_series: int = 500,
+    ) -> None:
         if not run_id:
             raise ValueError("run_id must not be empty")
         with self._lock:
@@ -162,6 +182,59 @@ class ActivityReporter:
                 raise ValueError("activity reporter is already bound to another run")
             self._run_id = run_id
             self._listeners.append(JsonlActivitySink(path))
+            self._metrics_writer = MetricsWriter(
+                metrics_path or Path(path).with_name("metrics.jsonl"),
+                sample_interval_seconds=metrics_sample_interval_seconds,
+                max_points_per_series=metrics_max_points_per_series,
+            )
+
+    def emit_solver_metric(
+        self,
+        *,
+        metric: "ResidualMetric",
+        elapsed_seconds: float,
+        attempt: int | None,
+        stage: str,
+        step_id: str,
+        pid: int,
+    ) -> None:
+        """Write live numbers separately and emit only bounded heartbeats."""
+
+        with self._lock:
+            occurred_at = self._utc_now()
+            writer = self._metrics_writer
+            if writer is not None:
+                for series, value in metric.series_values().items():
+                    try:
+                        writer.write(
+                            occurred_at=occurred_at,
+                            attempt=attempt,
+                            step_id=step_id,
+                            simulation_time=metric.simulation_time,
+                            series=series,
+                            value=value,
+                        )
+                    except Exception as error:
+                        detail = f"{type(error).__name__}: {error}"
+                        if detail not in self._degradation_messages:
+                            self._degradation_messages.append(detail)
+            last = self._last_metric_heartbeat_elapsed.get(step_id)
+            if last is not None and (
+                elapsed_seconds - last < self._metric_heartbeat_seconds
+            ):
+                return
+            self._last_metric_heartbeat_elapsed[step_id] = elapsed_seconds
+        self.emit(
+            kind="heartbeat",
+            state="alive",
+            source="runner",
+            elapsed_seconds=elapsed_seconds,
+            attempt=attempt,
+            stage=stage,
+            step_id=step_id,
+            pid=pid,
+            message="OpenFOAM solver is producing metrics",
+        )
 
     def emit(
         self,

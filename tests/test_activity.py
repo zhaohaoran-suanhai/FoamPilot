@@ -15,6 +15,7 @@ from foampilot.activity import (
     JsonlStreamActivitySink,
     PlainActivitySink,
 )
+from foampilot.evidence import MetricsProjection
 
 
 def test_activity_event_is_strict() -> None:
@@ -232,3 +233,51 @@ def test_reporter_delivers_concurrent_events_in_sequence_order() -> None:
     second.join(timeout=1)
 
     assert seen == [1, 2]
+
+
+def test_solver_metrics_use_separate_sink_and_bounded_heartbeat(
+    tmp_path,
+) -> None:
+    seen: list[ActivityEvent] = []
+    now = datetime(2026, 8, 13, tzinfo=timezone.utc)
+    reporter = ActivityReporter(
+        operation_id="op-1",
+        listeners=[seen.append],
+        utc_now=lambda: now,
+        metric_heartbeat_seconds=5,
+    )
+    reporter.bind_run(
+        "run-1",
+        tmp_path / "activity.jsonl",
+        metrics_path=tmp_path / "metrics.jsonl",
+    )
+    from foampilot.runtime.telemetry import ResidualMetric
+
+    metric = ResidualMetric(
+        simulation_time=0.1,
+        field="p",
+        initial_residual=0.2,
+        final_residual=0.01,
+        solver_iterations=2,
+    )
+    reporter.emit_solver_metric(
+        metric=metric,
+        elapsed_seconds=1,
+        attempt=1,
+        stage="solve",
+        step_id="solve",
+        pid=10,
+    )
+    reporter.emit_solver_metric(
+        metric=metric,
+        elapsed_seconds=6,
+        attempt=1,
+        stage="solve",
+        step_id="solve",
+        pid=10,
+    )
+
+    assert [item.kind.value for item in seen] == ["heartbeat", "heartbeat"]
+    assert all(not item.metrics for item in seen)
+    metrics = MetricsProjection.from_file(tmp_path / "metrics.jsonl")
+    assert metrics.recent("residual:p", 10)

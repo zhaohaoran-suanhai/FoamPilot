@@ -10,12 +10,7 @@ from .models import (
     RunFacts,
     SolverProgressFact,
 )
-from .extractors import (
-    EvidenceExtractionError,
-    EvidenceExtractor,
-    EvidenceExtractorRegistry,
-)
-from .openfoam10 import OpenFOAM10EvidenceExtractor
+from .metrics import MetricPoint, MetricsProjection, MetricsWriter
 
 __all__ = [
     "ContinuityFact",
@@ -24,6 +19,9 @@ __all__ = [
     "EvidenceExtractor",
     "EvidenceExtractorRegistry",
     "MeshCheckFact",
+    "MetricPoint",
+    "MetricsProjection",
+    "MetricsWriter",
     "NativeErrorFact",
     "RawCommandEvidence",
     "ResidualFact",
@@ -31,3 +29,27 @@ __all__ = [
     "SolverProgressFact",
     "OpenFOAM10EvidenceExtractor",
 ]
+
+
+def __getattr__(name: str):
+    if name in {
+        "EvidenceExtractionError",
+        "EvidenceExtractor",
+        "EvidenceExtractorRegistry",
+    }:
+        from .extractors import (
+            EvidenceExtractionError,
+            EvidenceExtractor,
+            EvidenceExtractorRegistry,
+        )
+
+        return {
+            "EvidenceExtractionError": EvidenceExtractionError,
+            "EvidenceExtractor": EvidenceExtractor,
+            "EvidenceExtractorRegistry": EvidenceExtractorRegistry,
+        }[name]
+    if name == "OpenFOAM10EvidenceExtractor":
+        from .openfoam10 import OpenFOAM10EvidenceExtractor
+
+        return OpenFOAM10EvidenceExtractor
+    raise AttributeError(name)

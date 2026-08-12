@@ -92,29 +92,13 @@ class _StepLogObserver:
     ) -> None:
         if self.reporter is None:
             return
-        values: dict[str, float | int | str] = {
-            "field": metric.field,
-            "initial_residual": metric.initial_residual,
-            "final_residual": metric.final_residual,
-            "solver_iterations": metric.solver_iterations,
-        }
-        if metric.simulation_time is not None:
-            values["simulation_time"] = metric.simulation_time
-        if metric.iteration is not None:
-            values["iteration"] = metric.iteration
-        self.reporter.emit(
-            kind="metric",
-            state="progressed",
-            source="runner",
+        self.reporter.emit_solver_metric(
+            metric=metric,
             elapsed_seconds=elapsed,
             attempt=self.attempt,
             stage=self.stage,
             step_id=self.step_id,
             pid=pid,
-            message="OpenFOAM residual updated",
-            metrics=values,
-            evidence_path=self.evidence_path,
-            evidence_offset=self.offset,
         )
 
     def poll(self, elapsed: float, pid: int) -> None:

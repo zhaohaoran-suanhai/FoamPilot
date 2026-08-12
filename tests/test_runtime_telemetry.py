@@ -41,3 +41,17 @@ def test_incremental_parser_finishes_one_unterminated_line() -> None:
     assert len(metrics) == 1
     assert metrics[0].iteration == 7
     assert metrics[0].simulation_time is None
+
+
+def test_residual_metric_exposes_non_authoritative_series_values() -> None:
+    parser = IncrementalOpenFOAMLogParser()
+    metric = parser.feed(
+        "Time = 0.1\nSolving for p, Initial residual = 0.2, "
+        "Final residual = 0.01, No Iterations 2\n"
+    )[0]
+
+    assert metric.series_values() == {
+        "residual:p": 0.2,
+        "residual-final:p": 0.01,
+        "solver-iterations:p": 2.0,
+    }

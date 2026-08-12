@@ -7,6 +7,7 @@ from threading import Event, Timer
 import pytest
 
 from foampilot.activity import ActivityEvent, ActivityReporter
+from foampilot.evidence import MetricsProjection
 from foampilot.environment import CommandFact, EnvironmentSnapshot
 from foampilot.plans import NativeCommand
 from foampilot.runtime import PlanRunner, RuntimeConfig
@@ -396,6 +397,11 @@ def test_runner_streams_real_log_growth_and_residual_metric(
     reporter = ActivityReporter(operation_id="op-1", listeners=[seen.append])
     case = tmp_path / "run/attempt-01/case"
     case.mkdir(parents=True)
+    reporter.bind_run(
+        "run",
+        tmp_path / "run/activity-events.jsonl",
+        metrics_path=tmp_path / "run/metrics.jsonl",
+    )
 
     result = _run(
         _runner(
@@ -411,15 +417,14 @@ def test_runner_streams_real_log_growth_and_residual_metric(
 
     assert result.passed
     assert any(event.kind == "log" and event.evidence_offset for event in seen)
-    residuals = [event for event in seen if event.kind == "metric"]
+    assert not [event for event in seen if event.kind == "metric"]
+    assert [event for event in seen if event.kind == "heartbeat"]
+    metrics = MetricsProjection.from_file(tmp_path / "run/metrics.jsonl")
+    residuals = metrics.recent("residual:Ux", 10)
     assert len(residuals) == 1
-    assert residuals[0].metrics == {
-        "field": "Ux",
-        "initial_residual": 0.12,
-        "final_residual": 0.0002,
-        "solver_iterations": 3,
-        "simulation_time": 0.5,
-    }
+    assert residuals[0].value == 0.12
+    assert residuals[0].simulation_time == 0.5
+    assert residuals[0].attempt is None
 
 
 def test_runner_executes_argument_array_and_stops_at_first_failure(

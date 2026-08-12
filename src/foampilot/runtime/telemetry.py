@@ -32,6 +32,13 @@ class ResidualMetric(BaseModel):
     final_residual: float = Field(gt=0)
     solver_iterations: int = Field(ge=0)
 
+    def series_values(self) -> dict[str, float]:
+        return {
+            f"residual:{self.field}": self.initial_residual,
+            f"residual-final:{self.field}": self.final_residual,
+            f"solver-iterations:{self.field}": float(self.solver_iterations),
+        }
+
 
 class IncrementalOpenFOAMLogParser:
     """Retain step context and parse only complete newly supplied lines."""
