@@ -57,9 +57,11 @@ def _single_manifest() -> CaseManifest:
     )
 
 
-def test_execution_plan_v3_has_region_manifest_and_stage_only_on_command():
+def test_execution_plan_v4_has_compiler_provenance_and_command_stage():
     plan = ExecutionPlan(
-        schema_version=3,
+        schema_version=4,
+        compiled_from_design_sha256="a" * 64,
+        compiler_identities={"test.fixture": "1.0.0/protocol-1"},
         manifest=_single_manifest(),
         files=[
             GeneratedFile(
@@ -78,7 +80,11 @@ def test_execution_plan_v3_has_region_manifest_and_stage_only_on_command():
     )
     payload = plan.model_dump(mode="json")
 
-    assert payload["schema_version"] == 3
+    assert payload["schema_version"] == 4
+    assert payload["compiled_from_design_sha256"] == "a" * 64
+    assert payload["compiler_identities"] == {
+        "test.fixture": "1.0.0/protocol-1"
+    }
     assert payload["manifest"]["regions"] == [
         {
             "name": "default",
@@ -236,7 +242,9 @@ def test_canonical_execution_plan_rejects_v2_and_manifest_stage_mapping():
         ExecutionPlan.model_validate(payload)
 
     plan_payload = {
-        "schema_version": 3,
+        "schema_version": 4,
+        "compiled_from_design_sha256": "a" * 64,
+        "compiler_identities": {"test.fixture": "1.0.0/protocol-1"},
         "manifest": {
             **_single_manifest().model_dump(mode="json"),
             "command_stages": {"solve": "solve"},

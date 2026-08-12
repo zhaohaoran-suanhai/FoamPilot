@@ -9,11 +9,15 @@ from pathlib import Path
 
 import yaml
 
+from foampilot.authoring import CaseBundle
 from foampilot.artifacts import ArtifactStore
 from foampilot.environment import EnvironmentSnapshot
+from foampilot.extensions import CapabilityRegistry
+from foampilot.inspection import InspectionReport, verify_design_conformance
 from foampilot.plans import ExecutionPlan
 from foampilot.routing import CapabilityProfile
 from foampilot.runtime import PlanRunResult, parse_openfoam_log
+from foampilot.simulation import CaseDesign
 from foampilot.tasks import TaskSpec
 
 
@@ -137,6 +141,20 @@ def _validate_assets(task: TaskSpec, asset_root: Path) -> None:
             )
 
 
+def _current_compiler_identities(design: CaseDesign) -> dict[str, str]:
+    registry = CapabilityRegistry.planning_first_party()
+    identities: dict[str, str] = {}
+    for extension_id in sorted(design.extension_identities):
+        try:
+            descriptor = registry.descriptor(extension_id)
+        except LookupError:
+            continue
+        identities[extension_id] = (
+            f"{descriptor.extension_version}/protocol-{descriptor.protocol_version}"
+        )
+    return identities
+
+
 def load_verified_plan_source(
     source_run: str | Path,
     *,
@@ -255,28 +273,74 @@ def load_verified_plan_source(
     for attempt_number in attempts:
         attempt_root = source / f"attempt-{attempt_number:02d}"
         plan_path = attempt_root / "execution-plan.json"
+        design_path = attempt_root / "case-design.json"
+        bundle_path = attempt_root / "case-bundle.json"
+        conformance_path = attempt_root / "design-conformance.json"
         result_path = attempt_root / "run-result.json"
-        if not plan_path.is_file() or not result_path.is_file():
+        if not all(
+            path.is_file()
+            for path in (
+                plan_path,
+                design_path,
+                bundle_path,
+                conformance_path,
+                result_path,
+            )
+        ):
             continue
-        _covered_path(
+        for evidence_path in (
             plan_path,
-            source_run=source,
-            manifest_files=manifest_files,
-        )
-        _covered_path(
+            design_path,
+            bundle_path,
+            conformance_path,
             result_path,
-            source_run=source,
-            manifest_files=manifest_files,
-        )
+        ):
+            _covered_path(
+                evidence_path,
+                source_run=source,
+                manifest_files=manifest_files,
+            )
         try:
             plan = ExecutionPlan.model_validate_json(
                 plan_path.read_text(encoding="utf-8")
+            )
+            design = CaseDesign.model_validate_json(
+                design_path.read_text(encoding="utf-8")
+            )
+            bundle = CaseBundle.model_validate_json(
+                bundle_path.read_text(encoding="utf-8")
+            )
+            conformance = InspectionReport.model_validate_json(
+                conformance_path.read_text(encoding="utf-8")
             )
             run_result = PlanRunResult.model_validate_json(
                 result_path.read_text(encoding="utf-8")
             )
         except ValueError:
             continue
+        planning_identities = _current_compiler_identities(design)
+        if (
+            not conformance.passed
+            or plan.compiled_from_design_sha256 != design.design_sha256
+            or plan.compiler_identities != planning_identities
+            or bundle.manifest != plan.manifest
+            or bundle.files != plan.files
+        ):
+            raise PlanReuseError(
+                "SOURCE_AUTHORITY_CHAIN_INVALID",
+                "source design, bundle, conformance, compiler, and plan differ",
+            )
+        current_conformance = verify_design_conformance(
+            design=design,
+            bundle=bundle,
+            mesh_facts=(),
+            extensions=CapabilityRegistry.planning_first_party(),
+        )
+        if not current_conformance.passed:
+            raise PlanReuseError(
+                "SOURCE_DESIGN_CONFORMANCE_FAILED",
+                "source bundle no longer conforms to its frozen design",
+            )
         if plan.manifest.solver_executable not in (
             environment.available_executable_names
         ):

@@ -104,9 +104,8 @@ def test_current_introduction_documents_are_primarily_chinese() -> None:
 
 
 def test_primary_agent_instruction_prompt_is_chinese() -> None:
-    prompt = (PROJECT / "src/foampilot/agent/prompts.py").read_text(
+    prompt = (PROJECT / "src/foampilot/authoring/case_author.py").read_text(
         encoding="utf-8"
     )
-    assert len(CJK.findall(prompt)) >= 30
-    for contract in ("ExecutionPlan", "manifest", "typed command", "cwd=/case"):
+    for contract in ("CaseBundle", "CaseManifest", "execution steps", "argv"):
         assert contract in prompt

@@ -258,7 +258,7 @@ def build_resume_fingerprint(
         package_version=__version__,
         package_artifact_sha256=_package_artifact_sha256(),
         git_revision=_git_revision(),
-        execution_plan_schema=3,
+        execution_plan_schema=4,
         knowledge_ids=list(knowledge_ids),
         knowledge_hash=_hash_text(knowledge_text),
         skill_ids=list(skill_ids),

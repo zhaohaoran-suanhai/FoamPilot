@@ -1,4 +1,4 @@
-"""One-call native case-bundle authoring and atomic materialization."""
+"""Atomic materialization of an already verified compiled plan."""
 
 from __future__ import annotations
 
@@ -6,75 +6,8 @@ import os
 from pathlib import Path, PurePosixPath
 import tempfile
 
-from foampilot.environment import EnvironmentSnapshot
-from foampilot.models import (
-    ModelContextArtifact,
-    ModelBudgetWindow,
-    ModelGateway,
-    ModelRequest,
-    ModelTraceSink,
-)
-from foampilot.plans import ExecutionPlan, normalize_execution_plan_input
-from foampilot.routing import CapabilityProfile
-from foampilot.simulation.risk_gate import CaseDesign
+from foampilot.plans import ExecutionPlan
 from foampilot.tasks import TaskSpec
-from foampilot.preprocessing import (
-    ExecutedMeshFacts,
-    GeometryFacts,
-    InputMeshFacts,
-)
-
-from .prompts import bundle_request_text
-from .status import AgentStatusSnapshot
-
-
-def author_case_bundle(
-    task: TaskSpec,
-    environment: EnvironmentSnapshot,
-    capability: CapabilityProfile,
-    gateway: ModelGateway,
-    knowledge_text: str,
-    skills_text: str,
-    *,
-    geometry_facts: GeometryFacts | None = None,
-    input_mesh_facts: tuple[InputMeshFacts, ...] = (),
-    executed_mesh_facts: tuple[ExecutedMeshFacts, ...] = (),
-    status_snapshot: AgentStatusSnapshot | None = None,
-    status_artifact: ModelContextArtifact | None = None,
-    case_design: CaseDesign | None = None,
-    budget: ModelBudgetWindow,
-    trace: ModelTraceSink,
-) -> ExecutionPlan:
-    """Ask the model once for every case file and typed command."""
-
-    system, user = bundle_request_text(
-        task,
-        environment,
-        capability,
-        knowledge_text,
-        skills_text,
-        geometry_facts,
-        input_mesh_facts,
-        executed_mesh_facts,
-        status_snapshot,
-        case_design,
-    )
-    return gateway.generate_structured(
-        ModelRequest(
-            purpose="author-openfoam-case-bundle",
-            system_prompt=system,
-            user_prompt=user,
-            context_artifacts=(
-                (status_artifact,)
-                if status_artifact is not None
-                else ()
-            ),
-        ),
-        ExecutionPlan,
-        budget=budget,
-        trace=trace,
-        output_normalizer=normalize_execution_plan_input,
-    ).value
 
 
 def _safe_relative(relative: str) -> bool:

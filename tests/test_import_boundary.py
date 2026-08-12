@@ -19,7 +19,6 @@ FORBIDDEN_ROOTS = {
     "anthropic",
 }
 FORBIDDEN_MODULES = (
-    "foampilot.authoring",
     "foampilot.run_service",
     "foampilot.capabilities",
     "foampilot.casespec",
@@ -28,7 +27,6 @@ FORBIDDEN_MODULES = (
     "foampilot.lint",
     "foampilot.mesh",
     "foampilot.pipelines",
-    "foampilot.plans.legacy",
     "foampilot.renderers",
     "foampilot.solvers",
     "foampilot.specs",
@@ -147,3 +145,52 @@ def test_risk_gate_does_not_import_model_backends() -> None:
         or module.startswith("foampilot.models.")
         for module in modules
     )
+
+
+def test_production_has_no_model_to_plan_or_legacy_repair_bridge() -> None:
+    forbidden_names = {"author_case_bundle", "request_repair_patch"}
+    violations: list[str] = []
+    for path in sorted(SOURCE_ROOT.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            names: set[str] = set()
+            if isinstance(node, ast.FunctionDef):
+                names.add(node.name)
+            elif isinstance(node, ast.AsyncFunctionDef):
+                names.add(node.name)
+            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                names.add(node.func.id)
+            elif isinstance(node, ast.ImportFrom):
+                names.update(alias.name for alias in node.names)
+            for name in sorted(names & forbidden_names):
+                violations.append(
+                    f"{path.relative_to(SOURCE_ROOT)}:{node.lineno}: {name}"
+                )
+    assert violations == []
+
+
+def test_historical_plan_reader_is_not_imported_by_production_modules() -> None:
+    violations: list[str] = []
+    for path in sorted(SOURCE_ROOT.rglob("*.py")):
+        if path == SOURCE_ROOT / "plans/legacy.py":
+            continue
+        for module in _imported_modules(path):
+            if module == "foampilot.plans.legacy" or module.startswith(
+                "foampilot.plans.legacy."
+            ):
+                violations.append(
+                    f"{path.relative_to(SOURCE_ROOT)} imports {module}"
+                )
+    assert violations == []
+
+
+def test_authoring_layer_never_constructs_native_commands() -> None:
+    violations: list[str] = []
+    for path in sorted((SOURCE_ROOT / "authoring").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and node.id == "NativeCommand":
+                violations.append(
+                    f"{path.relative_to(SOURCE_ROOT)}:{node.lineno}"
+                )
+    assert violations == []

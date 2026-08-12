@@ -51,7 +51,9 @@ def _task() -> TaskSpec:
 
 def _plan() -> ExecutionPlan:
     return ExecutionPlan(
-        schema_version=3,
+        schema_version=4,
+        compiled_from_design_sha256="a" * 64,
+        compiler_identities={"test.fixture": "1.0.0/protocol-1"},
         manifest=CaseManifest(
             solver_executable="icoFoam",
             solver_family="incompressible-laminar",

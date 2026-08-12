@@ -1,26 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-import re
 
 from pydantic import BaseModel
 import pytest
 
-from foampilot.agent.generation import (
-    author_case_bundle,
-    materialize_case,
-)
-from foampilot.agent.repair_patch import RepairPatch
+from foampilot.agent.generation import materialize_case
 from foampilot.authoring import CaseBundle
-from foampilot.agent.status import AgentStatusSnapshot
 from foampilot.environment import CommandFact, EnvironmentSnapshot
 from foampilot.models import (
-    InMemoryModelTraceSink,
     ModelBudgetLedger,
     ModelRequest,
     ModelResult,
     ModelStage,
-    ModelContextArtifact,
 )
 from foampilot.simulation import FactEvidence, ResolvedValue, SimulationIntent
 from foampilot.simulation.design import CaseDesignProposal, ExtensionDecision
@@ -34,14 +26,6 @@ from foampilot.plans import (
     ExecutionPlan,
     GeneratedFile,
     NativeCommand,
-)
-from foampilot.preprocessing import (
-    BoundingBox,
-    ExecutedMeshFacts,
-    GeometryFacts,
-    InputMeshFacts,
-    MeshCheckFact,
-    MeshQualityReport,
 )
 from foampilot.routing import CapabilityProfile
 from foampilot.tasks import TaskSpec
@@ -181,38 +165,6 @@ class RecordingModel:
                 manifest=reply.manifest,
                 files=reply.files,
             )
-        if schema.__name__ == "RepairProposal" and isinstance(reply, RepairPatch):
-            operation = next(
-                (
-                    item
-                    for item in reply.file_operations
-                    if item.path == "system/controlDict"
-                ),
-                None,
-            )
-            if operation is not None:
-                match = re.search(
-                    r"(?m)^\s*deltaT\s+([^;]+);",
-                    operation.content,
-                )
-                new_value = float(match.group(1)) if match is not None else 0.001
-                reply = schema(
-                    category="numerical",
-                    because=reply.because,
-                    design_changes=(
-                        {
-                            "field_path": "numerics.delta_t",
-                            "old_value": 0.01,
-                            "new_value": new_value,
-                            "operator": "replace",
-                        },
-                    ),
-                    file_operations=tuple(
-                        item.model_dump(mode="python")
-                        for item in reply.file_operations
-                    ),
-                    expected_checks=(reply.expected_check,),
-                )
         assert isinstance(reply, schema)
         return ModelResult(
             value=reply,
@@ -435,65 +387,10 @@ def _plan(
     )
 
 
-def _author_status() -> AgentStatusSnapshot:
-    return AgentStatusSnapshot.model_validate(
-        {
-            "schema_version": 1,
-            "source_event_sequence": 5,
-            "current_stage": "author",
-            "last_completed_stage": "CONTEXT_READY",
-            "attempt": {"current": 1, "maximum": 2},
-            "capability": {
-                "solver_family": "incompressible-laminar",
-                "solver": "icoFoam",
-                "regions": [],
-            },
-            "latest_failure": None,
-            "budget": {
-                "model_logical_requests_remaining": 2,
-                "transport_attempts_remaining": 7,
-                "model_seconds_remaining": 600,
-                "execution_seconds_remaining": 120,
-            },
-            "context": {
-                "knowledge_ids": ["of10.ico.contract"],
-                "skill_names": ["openfoam-author-native-case"],
-                "knowledge_sources_sha256": "a" * 64,
-                "skills_sha256": "b" * 64,
-            },
-            "allowed_actions": ["author_case_bundle"],
-            "immutable_constraints": {
-                "public_assets": [],
-                "protected_path_count": 1,
-                "protected_paths_sha256": "c" * 64,
-                "openfoam_distribution": "foundation",
-                "openfoam_version": "10",
-            },
-        }
-    )
-
-
-def test_one_model_call_authors_and_materializes_complete_bundle(
-    tmp_path: Path,
-) -> None:
+def test_materializes_complete_compiled_plan_bundle(tmp_path: Path) -> None:
     plan = _plan()
-    model = RecordingModel([plan])
+    generated = materialize_case(plan, _task(), tmp_path)
 
-    actual = author_case_bundle(
-        _task(),
-        _environment("blockMesh", "icoFoam"),
-        _capability(),
-        model,
-        "public knowledge",
-        "portable skill",
-        budget=_model_window(ModelStage.GENERATION),
-        trace=InMemoryModelTraceSink(),
-    )
-    generated = materialize_case(actual, _task(), tmp_path)
-
-    assert actual == plan
-    assert len(model.requests) == 1
-    assert model.requests[0].purpose == "author-openfoam-case-bundle"
     assert generated == [
         tmp_path / "system/controlDict",
         tmp_path / "system/fvSchemes",
@@ -507,221 +404,6 @@ def test_one_model_call_authors_and_materializes_complete_bundle(
         tmp_path / "system/controlDict"
     ).read_text(encoding="utf-8")
     assert not (tmp_path / ".foampilot/generation-checkpoint.json").exists()
-
-
-def test_bundle_prompt_has_no_review_or_evaluator_contract() -> None:
-    model = RecordingModel([_plan()])
-
-    author_case_bundle(
-        _task(),
-        _environment("blockMesh", "icoFoam"),
-        _capability(),
-        model,
-        "public knowledge",
-        "portable skill",
-        budget=_model_window(ModelStage.GENERATION),
-        trace=InMemoryModelTraceSink(),
-    )
-
-    prompt = (
-        model.requests[0].system_prompt
-        + "\n"
-        + model.requests[0].user_prompt
-    )
-    assert "/private/tutorial" not in prompt
-    assert "expected_evidence" not in prompt
-    assert "satisfies_outputs" not in prompt
-    assert "review-openfoam-plan" not in prompt
-
-
-def test_bundle_prompt_and_request_reference_deterministic_status() -> None:
-    model = RecordingModel([_plan()])
-    status = _author_status()
-    reference = ModelContextArtifact(
-        path="agent-status-author-01.json",
-        sha256="d" * 64,
-    )
-
-    author_case_bundle(
-        _task(),
-        _environment("blockMesh", "icoFoam"),
-        _capability(),
-        model,
-        "public knowledge",
-        "portable skill",
-        status_snapshot=status,
-        status_artifact=reference,
-        budget=_model_window(ModelStage.GENERATION),
-        trace=InMemoryModelTraceSink(),
-    )
-
-    assert "DETERMINISTIC AGENT STATUS" in model.requests[0].user_prompt
-    assert '"current_stage": "author"' in model.requests[0].user_prompt
-    assert model.requests[0].context_artifacts == (reference,)
-
-
-def test_bundle_prompt_contains_bounded_public_geometry_facts() -> None:
-    model = RecordingModel([_plan()])
-    facts = GeometryFacts(
-        mode="surface",
-        source_hashes={"geometry/body.stl": "b" * 64},
-        declared_length_unit="mm",
-        bounding_box_m=BoundingBox(
-            minimum=(0.0, 0.0, 0.0),
-            maximum=(0.1, 0.02, 0.01),
-        ),
-        point_count=12,
-        face_count=20,
-        surface_names=("body",),
-        region_names=("fluid",),
-        closed_surface=True,
-        manifold_status="closed_manifold",
-        dimensionality_observation="three_d",
-        patch_role_matches=(),
-        topology_observations=("boundary_edges=0",),
-        warnings=(),
-    )
-
-    author_case_bundle(
-        _task(),
-        _environment("blockMesh", "icoFoam"),
-        _capability(),
-        model,
-        "public knowledge",
-        "portable skill",
-        geometry_facts=facts,
-        budget=_model_window(ModelStage.GENERATION),
-        trace=InMemoryModelTraceSink(),
-    )
-
-    prompt = model.requests[0].user_prompt
-    assert "PUBLIC GEOMETRY FACTS" in prompt
-    assert '"face_count": 20' in prompt
-    assert '"maximum"' in prompt
-    assert "/tmp/" not in prompt
-
-
-def test_bundle_prompt_contains_compact_authoritative_mesh_facts() -> None:
-    model = RecordingModel([_plan()])
-    input_facts = InputMeshFacts(
-        bundle_manifest_sha256="a" * 64,
-        inspector_id="foampilot.mesh.poly-mesh",
-        inspector_version="1.0.0",
-        region=None,
-        declared_length_unit="m",
-        source_member_sha256={"points": "b" * 64},
-        points=12,
-        faces=11,
-        internal_faces=1,
-        cells=2,
-        bounding_box_m=BoundingBox(
-            minimum=(0, 0, 0),
-            maximum=(2, 1, 1),
-        ),
-        patches=(),
-        cell_zones=(),
-        face_zones=(),
-        point_zones=(),
-        dimensionality_observations=("empty patch frontAndBack",),
-        topology_observations=("owner count equals face count",),
-        warnings=(),
-    )
-    metrics = MeshQualityReport(
-        strategy="provided",
-        commands_completed=("inspect-provided-mesh",),
-        mesh_created=True,
-        check_mesh_passed=True,
-        cells=2,
-        faces=11,
-        points=12,
-        regions=1,
-        patches=(),
-        failed_requirements=(),
-        warnings=(),
-        evidence_files=(".foampilot/logs/check.log",),
-    )
-    executed = ExecutedMeshFacts(
-        mesh_check=MeshCheckFact(
-            executed=True,
-            executable_identity="checkMesh:trusted",
-            return_code=0,
-            timed_out=False,
-            mesh_ok=True,
-            evidence_paths=(".foampilot/logs/check.log",),
-        ),
-        metrics=metrics,
-    )
-
-    author_case_bundle(
-        _task(),
-        _environment("checkMesh", "icoFoam"),
-        _capability(),
-        model,
-        "public knowledge",
-        "portable skill",
-        input_mesh_facts=(input_facts,),
-        executed_mesh_facts=(executed,),
-        budget=_model_window(ModelStage.GENERATION),
-        trace=InMemoryModelTraceSink(),
-    )
-
-    prompt = model.requests[0].user_prompt
-    assert "AUTHORITATIVE INPUT MESH FACTS" in prompt
-    assert "PRE-AUTHORING EXECUTED MESH FACTS" in prompt
-    assert '"cells": 2' in prompt
-    assert "points\n(" not in prompt
-
-
-def test_bundle_prompt_keeps_diagnostics_outside_the_required_solve() -> None:
-    model = RecordingModel([_plan()])
-
-    author_case_bundle(
-        _task(),
-        _environment("blockMesh", "icoFoam"),
-        _capability(),
-        model,
-        "public knowledge",
-        "portable skill",
-        budget=_model_window(ModelStage.GENERATION),
-        trace=InMemoryModelTraceSink(),
-    )
-
-    prompt = model.requests[0].system_prompt
-    assert "只生成求解该算例必需的文件和命令" in prompt
-    assert (
-        "不要仅为制造评测证据而添加 function object、sampling、\n"
-        "extrema 或 residualControl"
-    ) in prompt
-    assert (
-        "求解成功后，由 evaluator 从 solver log 和写出字段计算观测量"
-    ) in prompt
-    assert (
-        "使用 MPI 时，设置 solver executable 和 mpi_ranks；绝不能生成\n"
-        "mpirun 或 orterun"
-    ) in prompt
-    assert (
-        "除非公开任务明确要求更严格 flag，否则只使用普通 checkMesh"
-    ) in prompt
-    assert "-allGeometry 或 -allTopology" in prompt
-
-
-def test_bundle_prompt_requires_applicable_retrieved_contract_rules() -> None:
-    model = RecordingModel([_plan()])
-
-    author_case_bundle(
-        _task(),
-        _environment("blockMesh", "icoFoam"),
-        _capability(),
-        model,
-        "public knowledge",
-        "portable skill",
-        budget=_model_window(ModelStage.GENERATION),
-        trace=InMemoryModelTraceSink(),
-    )
-
-    prompt = model.requests[0].system_prompt
-    assert "content.rules 视为必须落实的适用契约" in prompt
-    assert "公开任务明确冲突" in prompt
 
 
 def test_materializer_rejects_unsafe_and_protected_files(

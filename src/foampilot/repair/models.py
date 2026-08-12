@@ -8,6 +8,8 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from foampilot.plans.models import GeneratedFile, NativeCommand
+
 
 class StrictFrozenModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -122,6 +124,15 @@ class RepairProposal(StrictFrozenModel):
         return self
 
 
+class RepairChangeSet(StrictFrozenModel):
+    """Actual byte and command effects used only for deterministic reuse."""
+
+    changed_file_paths: tuple[str, ...] = ()
+    changed_files: tuple[GeneratedFile, ...] = ()
+    command_operations: tuple[str, ...] = ()
+    changed_commands: tuple[NativeCommand, ...] = ()
+
+
 class RepairAuthorization(StrictFrozenModel):
     state: RepairAuthorizationState
     reason_codes: tuple[str, ...]
@@ -155,6 +166,7 @@ __all__ = [
     "NumericalRepairRule",
     "RepairAuthorization",
     "RepairCategory",
+    "RepairChangeSet",
     "RepairDecision",
     "RepairFileOperation",
     "RepairPolicy",

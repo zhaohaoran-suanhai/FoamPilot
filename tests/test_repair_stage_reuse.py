@@ -6,11 +6,11 @@ import json
 from pathlib import Path
 
 from foampilot.agent import NativeAgent
-from foampilot.agent.repair_patch import RepairChangeSet, RepairPatch
 from foampilot.artifacts import ArtifactStore
 from foampilot.performance import classify_repair_rerun
 from foampilot.plans import GeneratedFile, NativeCommand
 from foampilot.runtime import PlanRunResult, PlanStepResult
+from foampilot.repair import RepairChangeSet, RepairProposal
 
 from tests.test_native_agent_state_machine import _control_dict, _runtime_config
 from tests.test_native_case_generation import (
@@ -24,12 +24,12 @@ from tests.support.runtime import synthetic_execution_evidence
 
 def _changes(*, files=(), commands=()) -> RepairChangeSet:
     return RepairChangeSet(
-        changed_file_paths=[item.path for item in files],
-        changed_files=list(files),
-        command_operations=[
+        changed_file_paths=tuple(item.path for item in files),
+        changed_files=tuple(files),
+        command_operations=tuple(
             f"replace:{item.step_id}" for item in commands
-        ],
-        changed_commands=list(commands),
+        ),
+        changed_commands=tuple(commands),
     )
 
 
@@ -189,19 +189,25 @@ def test_numerical_repair_reuses_mesh_and_keeps_parent_immutable(
     tmp_path: Path,
 ) -> None:
     plan = _plan_with_check()
-    repair = RepairPatch(
+    repair = RepairProposal(
+        category="numerical",
         because="The solver log reports an unstable Courant number.",
-        evidence=["Courant number 10"],
-        file_operations=[
+        design_changes=(
+            {
+                "field_path": "numerics.delta_t",
+                "old_value": 0.01,
+                "new_value": 0.001,
+                "operator": "replace",
+            },
+        ),
+        file_operations=(
             {
                 "operation": "replace",
                 "path": "system/controlDict",
                 "content": _control_dict(delta_t=0.001),
-            }
-        ],
-        command_operations=[],
-        expected_check="The solver reaches End.",
-        stable_control="The mesh and physical design remain unchanged.",
+            },
+        ),
+        expected_checks=("The solver reaches End.",),
     )
     runner = RepairReuseRunner()
     outcome = NativeAgent(

@@ -233,7 +233,7 @@ def test_mesh_cache_skips_generator_but_rechecks_mesh_and_solver(
         )
     )
     assert [item["step_id"] for item in run_result["reused_steps"]] == [
-        "mesh"
+        "block-mesh-default"
     ]
     execution_reuse = json.loads(
         (warm.run_dir / "attempt-01/execution-reuse.json").read_text(
@@ -241,7 +241,7 @@ def test_mesh_cache_skips_generator_but_rechecks_mesh_and_solver(
         )
     )
     assert execution_reuse["commands_to_execute"] == [
-        "check-mesh",
+        "check-mesh-default",
         "solve",
     ]
     performance = json.loads(

@@ -9,7 +9,7 @@ import shutil
 import pytest
 
 from foampilot.agent import NativeAgent
-from foampilot.agent.repair_patch import RepairPatch
+from foampilot.repair import RepairProposal
 from foampilot.artifacts import ArtifactStore
 from foampilot.environment import CommandFact
 from foampilot.plans import GeneratedFile
@@ -51,20 +51,26 @@ def _agent(
     )
 
 
-def _repair() -> RepairPatch:
-    return RepairPatch(
+def _repair() -> RepairProposal:
+    return RepairProposal(
+        category="numerical",
         because="The solver log identifies a missing stable time step.",
-        evidence=["FOAM FATAL ERROR: missing keyword"],
-        file_operations=[
+        design_changes=(
+            {
+                "field_path": "numerics.delta_t",
+                "old_value": 0.01,
+                "new_value": 0.001,
+                "operator": "replace",
+            },
+        ),
+        file_operations=(
             {
                 "operation": "replace",
                 "path": "system/controlDict",
                 "content": _control_dict(delta_t=0.001),
-            }
-        ],
-        command_operations=[],
-        expected_check="The solver reaches End.",
-        stable_control="Mesh and boundary conditions are unchanged.",
+            },
+        ),
+        expected_checks=("The solver reaches End.",),
     )
 
 

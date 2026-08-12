@@ -267,6 +267,39 @@ def test_verified_plan_reuse_rejects_mutated_source_manifest(
     assert "SOURCE_MANIFEST_INVALID" in outcome.summary.message
 
 
+def test_verified_plan_reuse_rejects_changed_compiler_identity(
+    tmp_path: Path,
+) -> None:
+    store, source, _ = _source_run(tmp_path)
+    plan_path = source.run_dir / "attempt-01/execution-plan.json"
+    payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    payload["compiler_identities"] = {
+        key: "999.0.0/protocol-1"
+        for key in payload["compiler_identities"]
+    }
+    plan_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (source.run_dir / "artifact-manifest.json").unlink()
+    store.finalize(source.run_dir)
+
+    outcome = NativeAgent(
+        gateway=None,
+        runtime_config=_runtime_config(),
+        artifact_store=store,
+        environment_snapshot=_environment(
+            "blockMesh",
+            "checkMesh",
+            "icoFoam",
+        ),
+        runner=VerifiedPlanRunner(),
+    ).solve(_task(), reuse_verified_plan=source.run_dir)
+
+    assert outcome.status == "PLAN_REUSE_REJECTED"
+    assert "SOURCE_AUTHORITY_CHAIN_INVALID" in outcome.summary.message
+
+
 def test_verified_plan_reuse_rejects_incompatible_source_environment(
     tmp_path: Path,
 ) -> None:

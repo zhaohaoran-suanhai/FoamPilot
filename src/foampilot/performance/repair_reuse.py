@@ -15,7 +15,7 @@ from foampilot.plans import ExecutionPlan, NativeCommand
 from foampilot.runtime import ReusedStepResult
 
 if TYPE_CHECKING:
-    from foampilot.agent.repair_patch import RepairChangeSet
+    from foampilot.repair import RepairChangeSet
 
 
 RerunStage = Literal["mesh", "initialize", "solve", "postprocess"]

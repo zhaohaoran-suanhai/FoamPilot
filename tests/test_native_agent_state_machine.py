@@ -8,7 +8,7 @@ import time
 
 from foampilot.activity import OperationCancelled
 from foampilot.agent import NativeAgent
-from foampilot.agent.repair_patch import RepairPatch
+from foampilot.repair import RepairProposal
 from foampilot.artifacts import ArtifactStore
 from foampilot.models import (
     BackendError,
@@ -1076,19 +1076,25 @@ def test_native_agent_applies_one_evidence_scoped_repair(
     tmp_path: Path,
 ) -> None:
     plan = _plan()
-    repair = RepairPatch(
+    repair = RepairProposal(
+        category="numerical",
         because="The solver log contains non-finite evidence.",
-        evidence=["nan appears in the solve log"],
-        file_operations=[
+        design_changes=(
+            {
+                "field_path": "numerics.delta_t",
+                "old_value": 0.01,
+                "new_value": 0.001,
+                "operator": "replace",
+            },
+        ),
+        file_operations=(
             {
                 "operation": "replace",
                 "path": "system/controlDict",
                 "content": _control_dict(delta_t=0.001),
-            }
-        ],
-        command_operations=[],
-        expected_check="The solve log reaches End without nan.",
-        stable_control="The mesh and boundaries remain unchanged.",
+            },
+        ),
+        expected_checks=("The solve log reaches End without nan.",),
     )
     model = RecordingModel(
         [
@@ -1130,6 +1136,30 @@ def test_native_agent_applies_one_evidence_scoped_repair(
     assert runner.calls == 2
 
 
+def test_native_agent_plan_only_compiles_without_materializing_or_running(
+    tmp_path: Path,
+) -> None:
+    runner = SequencePlanRunner([])
+    outcome = _agent(
+        tmp_path=tmp_path,
+        model=RecordingModel([_plan()]),
+        runner=runner,
+    ).plan(_task())
+
+    assert outcome.summary.workflow_state == "COMPLETED"
+    assert outcome.summary.primary_failure is None
+    assert runner.calls == 0
+    assert (outcome.run_dir / "case-design.json").is_file()
+    assert (outcome.run_dir / "case-bundle.json").is_file()
+    assert (outcome.run_dir / "design-conformance.json").is_file()
+    compiled = json.loads(
+        (outcome.run_dir / "execution-plan.json").read_text(encoding="utf-8")
+    )
+    assert compiled["schema_version"] == 4
+    assert compiled["compiler_identities"]
+    assert not list(outcome.run_dir.glob("attempt-*"))
+
+
 def test_native_agent_rejects_undeclared_dynamic_code_during_repair(
     tmp_path: Path,
 ) -> None:
@@ -1137,19 +1167,25 @@ def test_native_agent_rejects_undeclared_dynamic_code_during_repair(
         _control_dict(delta_t=0.001)
         + "#codeStream\n{\ncode #{ int generated = 1; #};\n}\n"
     )
-    repair = RepairPatch(
+    repair = RepairProposal(
+        category="numerical",
         because="The first solver log contains non-finite evidence.",
-        evidence=["nan appears in the solve log"],
-        file_operations=[
+        design_changes=(
+            {
+                "field_path": "numerics.delta_t",
+                "old_value": 0.01,
+                "new_value": 0.001,
+                "operator": "replace",
+            },
+        ),
+        file_operations=(
             {
                 "operation": "replace",
                 "path": "system/controlDict",
                 "content": coded_control,
-            }
-        ],
-        command_operations=[],
-        expected_check="The repaired solve reaches End.",
-        stable_control="The mesh and boundaries remain unchanged.",
+            },
+        ),
+        expected_checks=("The repaired solve reaches End.",),
     )
     runner = SequencePlanRunner(
         [
@@ -1194,21 +1230,7 @@ functions
         content="FoamFile { class volVectorField; object U; }\n",
     )
     plan = _plan(files=[bad_control, velocity])
-    repair = RepairPatch(
-        because="The static report identifies an unsupported function object.",
-        evidence=["UNSUPPORTED_OF10_FUNCTION_OBJECT in system/controlDict"],
-        file_operations=[
-            {
-                "operation": "replace",
-                "path": "system/controlDict",
-                "content": _control_dict(),
-            }
-        ],
-        command_operations=[],
-        expected_check="Static inspection accepts controlDict.",
-        stable_control="The mesh, fields, and solver command remain unchanged.",
-    )
-    model = RecordingModel([plan, repair])
+    model = RecordingModel([plan])
     runner = SequencePlanRunner([(0, "Time = 1\nEnd\n", "")])
 
     outcome = _agent(
@@ -1239,29 +1261,7 @@ def test_native_agent_repair_cannot_invent_missing_physics_dictionary(
     tmp_path: Path,
 ) -> None:
     plan = _plan()
-    property_file = GeneratedFile(
-        path="constant/physicalProperties.water",
-        content=(
-            "FoamFile { class dictionary; "
-            "object physicalProperties.water; }\n"
-            "viscosityModel constant;\nnu 1e-6;\nrho 1000;\n"
-        ),
-    )
-    repair = RepairPatch(
-        because="The solver reports a missing grouped phase dictionary.",
-        evidence=["cannot find constant/physicalProperties.water"],
-        file_operations=[
-            {
-                "operation": "add",
-                "path": property_file.path,
-                "content": property_file.content,
-            }
-        ],
-        command_operations=[],
-        expected_check="The solver opens the phase dictionary.",
-        stable_control="Mesh, fields, and commands remain unchanged.",
-    )
-    model = RecordingModel([plan, repair])
+    model = RecordingModel([plan])
     runner = SequencePlanRunner(
         [
             (1, "", "cannot find constant/physicalProperties.water"),
@@ -1289,27 +1289,6 @@ def test_native_agent_repair_cannot_insert_missing_typed_command(
     tmp_path: Path,
 ) -> None:
     plan = _plan()
-    repair = RepairPatch(
-        because="The public log identifies a missing initialization step.",
-        evidence=["required initialization command setFields is missing"],
-        file_operations=[],
-        command_operations=[
-            {
-                "operation": "insert_before",
-                "anchor_step_id": "solve",
-                "command": {
-                    "step_id": "set-fields",
-                    "stage": "initialize",
-                    "executable": "setFields",
-                    "args": [],
-                    "mpi_ranks": 1,
-                    "timeout_seconds": 10,
-                },
-            }
-        ],
-        expected_check="The initialization step runs before the solver.",
-        stable_control="Case files and solver settings remain unchanged.",
-    )
     runner = SequencePlanRunner(
         [
             (1, "", "required initialization command setFields is missing"),
@@ -1317,7 +1296,7 @@ def test_native_agent_repair_cannot_insert_missing_typed_command(
         ]
     )
     outcome = NativeAgent(
-        gateway=RecordingModel([plan, repair]),
+        gateway=RecordingModel([plan]),
         runtime_config=_runtime_config(),
         artifact_store=ArtifactStore(tmp_path / "runs"),
         environment_snapshot=_environment(
@@ -1347,19 +1326,6 @@ def test_native_agent_repair_cannot_remove_typed_command(
             timeout_seconds=10,
         )
     )
-    repair = RepairPatch(
-        because="The optional postprocess command is unsupported.",
-        evidence=["unsupported optional command is not required"],
-        file_operations=[],
-        command_operations=[
-            {
-                "operation": "remove",
-                "target_step_id": "optional-post",
-            }
-        ],
-        expected_check="The required solver path completes without the command.",
-        stable_control="Case files and solver command remain unchanged.",
-    )
     runner = SequencePlanRunner(
         [
             (1, "", "unsupported optional command post is not required"),
@@ -1367,7 +1333,7 @@ def test_native_agent_repair_cannot_remove_typed_command(
         ]
     )
     outcome = NativeAgent(
-        gateway=RecordingModel([plan, repair]),
+        gateway=RecordingModel([plan]),
         runtime_config=_runtime_config(),
         artifact_store=ArtifactStore(tmp_path / "runs"),
         environment_snapshot=_environment(

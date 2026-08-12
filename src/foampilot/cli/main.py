@@ -22,8 +22,6 @@ from foampilot.activity import (
 )
 from foampilot.agent import (
     NativeAgent,
-    author_case_bundle,
-    load_agent_context,
 )
 from foampilot.assets import BundleMember, compute_bundle_manifest_sha256
 from foampilot.artifacts import ArtifactStore
@@ -54,7 +52,6 @@ from foampilot.models import (
     BackendMode,
     BackendRegistry,
     GatewayRequestError,
-    JsonlModelTraceSink,
     InMemoryModelTraceSink,
     ModelBudgetLedger,
     ModelGateway,
@@ -63,11 +60,7 @@ from foampilot.models import (
     doctor_backends,
     load_backend_registry,
 )
-from foampilot.plans import (
-    ExecutionPlan,
-    normalize_execution_plan,
-    validate_execution_plan,
-)
+from foampilot.plans import ExecutionPlan, validate_execution_plan
 from foampilot.performance import build_taskbuilder_performance
 from foampilot.qualification import (
     QualificationReport,
@@ -85,8 +78,6 @@ from foampilot.runtime import (
     resolve_runtime_config,
     run_preflight,
 )
-from foampilot.runtime.protection import runtime_protected_paths
-from foampilot.routing import route_capability
 from foampilot.skills import (
     load_skill_scenarios,
     validate_skill,
@@ -165,6 +156,9 @@ def _parser() -> argparse.ArgumentParser:
     native_plan = subparsers.add_parser("plan")
     native_plan.add_argument("path", type=Path)
     native_plan.add_argument("--output", required=True, type=Path)
+    native_plan.add_argument("--run-root", type=Path)
+    native_plan.add_argument("--public-asset-root", type=Path)
+    native_plan.add_argument("--derived-cache", type=Path)
     _add_backend_options(native_plan)
     _add_runtime_options(native_plan)
     native_plan.add_argument("--json", action="store_true")
@@ -1099,86 +1093,43 @@ def _task_builder(arguments: argparse.Namespace) -> int:
 def _native_plan(arguments: argparse.Namespace) -> int:
     task = load_task_spec(arguments.path)
     resolution = _resolve_runtime(arguments)
-    environment = discover_environment(
-        resolution.config,
-        arguments.output.parent,
-    )
-    execution_task = task.model_copy(
-        update={
-            "protected_paths": [
-                str(path)
-                for path in runtime_protected_paths(
-                    task.protected_paths,
-                    environment,
-                )
-            ]
-        }
-    )
     activity_reporter = _activity_reporter(arguments)
-    gateway = _native_gateway(
-        arguments,
+    run_root = arguments.run_root or (
+        arguments.output.parent / ".foampilot-plan-runs"
+    )
+    outcome = NativeAgent(
+        gateway=_native_gateway(
+            arguments,
+            activity_reporter=activity_reporter,
+        ),
+        runtime_config=resolution.config,
+        runtime_provenance=resolution.provenance,
+        artifact_store=ArtifactStore(run_root),
         activity_reporter=activity_reporter,
-    )
-    ledger = ModelBudgetLedger.start()
-    trace = JsonlModelTraceSink(
-        arguments.output.with_suffix(
-            arguments.output.suffix + ".model-attempts.jsonl"
-        )
-    )
-    corpus = load_knowledge_corpus(
-        Path(__file__).resolve().parents[1] / "knowledge/openfoam10"
-    )
-    capability = route_capability(
+    ).plan(
         task,
-        environment,
-        corpus,
-        gateway=gateway,
-        budget=ledger.open_stage(
-            ModelStage.ROUTING,
-            request_timeout_seconds=60,
-            stage_deadline_seconds=60,
-            max_transport_attempts=1,
-        ),
-        trace=trace,
+        public_asset_root=arguments.public_asset_root,
+        derived_cache=arguments.derived_cache,
     )
-    context = load_agent_context(task, capability)
-    plan = author_case_bundle(
-        execution_task,
-        environment,
-        capability,
-        gateway,
-        context.knowledge_text,
-        context.skills_text,
-        budget=ledger.open_stage(
-            ModelStage.GENERATION,
-            stage_deadline_seconds=360,
-        ),
-        trace=trace,
-    )
-    plan = normalize_execution_plan(
-        plan,
-        execution_task,
-        environment.available_executable_names,
-    ).plan
-    issues = validate_execution_plan(
-        plan,
-        execution_task,
-        environment.available_executable_names,
-    )
-    if issues:
-        raise ValueError(
-            "authored plan is invalid: "
-            + ", ".join(item.code for item in issues)
+    if (
+        outcome.summary.workflow_state != "COMPLETED"
+        or not (outcome.run_dir / "plan-only.json").is_file()
+    ):
+        payload = outcome.model_dump(mode="json")
+        _emit(
+            payload,
+            as_json=arguments.json,
+            human=f"{outcome.status}: artifacts at {outcome.run_dir}.",
         )
+        return _native_outcome_exit_code(outcome)
+    source = outcome.run_dir / "execution-plan.json"
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
-    arguments.output.write_text(
-        plan.model_dump_json(indent=2) + "\n",
-        encoding="utf-8",
-    )
+    arguments.output.write_bytes(source.read_bytes())
     payload = {
         "status": "PASS",
         "task_id": task.task_id,
         "plan": str(arguments.output),
+        "run_dir": str(outcome.run_dir),
     }
     _emit(
         payload,

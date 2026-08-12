@@ -229,7 +229,7 @@ def build_agent_status_snapshot(
         else []
     )
     active_allowed_actions = allowed_actions or (
-        ["author_case_bundle"]
+        ["author_case"]
         if decision_stage == AgentDecisionStage.AUTHOR
         else [
             "add_file",

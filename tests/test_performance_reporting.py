@@ -125,7 +125,9 @@ def test_performance_summary_is_recomputed_from_run_evidence(
         encoding="utf-8",
     )
     plan = {
-        "schema_version": 3,
+        "schema_version": 4,
+        "compiled_from_design_sha256": "a" * 64,
+        "compiler_identities": {"test.fixture": "1.0.0/protocol-1"},
         "manifest": {
             "solver_executable": "icoFoam",
             "solver_family": "incompressible_transient",
@@ -172,6 +174,7 @@ def test_performance_summary_is_recomputed_from_run_evidence(
                         "return_code": 0,
                         "started_at": _at(10).isoformat(),
                         "finished_at": _at(12).isoformat(),
+                        "elapsed_seconds": 2.0,
                         "timed_out": False,
                         "stdout_path": str(attempt / "mesh.out"),
                         "stderr_path": str(attempt / "mesh.err"),
@@ -184,6 +187,7 @@ def test_performance_summary_is_recomputed_from_run_evidence(
                         "return_code": 0,
                         "started_at": _at(12.5).isoformat(),
                         "finished_at": _at(17.5).isoformat(),
+                        "elapsed_seconds": 5.0,
                         "timed_out": False,
                         "stdout_path": str(attempt / "solve.out"),
                         "stderr_path": str(attempt / "solve.err"),

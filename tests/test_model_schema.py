@@ -3,9 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+import pytest
 
+from foampilot.authoring import CaseBundle
 from foampilot.models.schema import strict_response_schema
-from foampilot.plans import ExecutionPlan
+from foampilot.repair import RepairProposal
 
 
 class _Nested(BaseModel):
@@ -59,10 +61,23 @@ def test_strict_response_schema_does_not_mutate_pydantic_schema() -> None:
     assert "default" in original["properties"]["schema_version"]
 
 
-def test_execution_plan_schema_is_strict_for_every_nested_object() -> None:
-    schema = strict_response_schema(ExecutionPlan.model_json_schema())
+@pytest.mark.parametrize("response_model", [CaseBundle, RepairProposal])
+def test_model_response_schema_is_strict_for_every_nested_object(
+    response_model: type[BaseModel],
+) -> None:
+    schema = strict_response_schema(response_model.model_json_schema())
 
     for object_schema in _objects(schema):
         properties = object_schema.get("properties", {})
         assert object_schema["required"] == list(properties)
         assert object_schema["additionalProperties"] is False
+
+    property_names = {
+        name
+        for object_schema in _objects(schema)
+        for name in object_schema.get("properties", {})
+    }
+    assert "commands" not in property_names
+    assert "args" not in property_names
+    assert "mpi_ranks" not in property_names
+    assert "timeout_seconds" not in property_names

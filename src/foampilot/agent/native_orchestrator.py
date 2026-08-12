@@ -105,6 +105,7 @@ from foampilot.authoring import (
 )
 from foampilot.repair import NumericalRepairEnvelope, NumericalRepairRule
 from foampilot.repair import (
+    RepairChangeSet,
     RepairPolicy,
     apply_authorized_repair,
     authorize_repair,
@@ -170,7 +171,6 @@ from .failure import (
     FailureClassificationError,
     classify_native_failure,
 )
-from .repair_patch import RepairChangeSet
 from .repair_scope import RepairScopeError, build_repair_scope
 from .status import (
     AgentDecisionStage,
@@ -504,6 +504,18 @@ def _production_capability_registry(
         if capability.mesh_family.casefold() in {"provided", "openfoam_mesh"}
         else "blockMesh"
     )
+    if mesh_strategy == "auto":
+        mesh_strategy = (
+            "provided"
+            if capability.mesh_family.casefold()
+            in {"provided", "openfoam_mesh"}
+            else "blockMesh"
+        )
+    if mesh_strategy not in {"provided", "blockMesh"}:
+        raise ValueError(
+            "CAPABILITY_UNAVAILABLE: deterministic mesh planning does not "
+            f"support {mesh_strategy!r}"
+        )
     mesh_extension_id = (
         "foampilot.mesh.openfoam-provided"
         if mesh_strategy == "provided"
@@ -763,7 +775,7 @@ def _failure_record(
     message: str,
     attempts: list[AttemptSummary],
 ) -> FailureRecord | None:
-    if status == "PUBLIC_VALIDATION_PASS":
+    if status in {"PUBLIC_VALIDATION_PASS", "PLAN_READY"}:
         return None
     domains = {
         "REQUEST_INCOMPLETE": FailureDomain.TASK,
@@ -1379,6 +1391,22 @@ class NativeAgent:
             _rerun=rerun,
         )
 
+    def plan(
+        self,
+        task: TaskSpec,
+        *,
+        public_asset_root: str | Path | None = None,
+        derived_cache: str | Path | None = None,
+    ) -> NativeAgentOutcome:
+        """Compile the canonical plan and stop before case materialization."""
+
+        return self.solve(
+            task,
+            public_asset_root=public_asset_root,
+            derived_cache=derived_cache,
+            _plan_only=True,
+        )
+
     def solve(
         self,
         task: TaskSpec,
@@ -1388,7 +1416,14 @@ class NativeAgent:
         derived_cache: str | Path | None = None,
         _continuation: ContinuationInput | None = None,
         _rerun: RerunInput | None = None,
+        _plan_only: bool = False,
     ) -> NativeAgentOutcome:
+        if _plan_only and (
+            _continuation is not None
+            or _rerun is not None
+            or reuse_verified_plan is not None
+        ):
+            raise ValueError("plan-only mode does not accept lineage inputs")
         selected_lineage_inputs = sum(
             item is not None
             for item in (_continuation, _rerun, reuse_verified_plan)
@@ -2102,7 +2137,13 @@ class NativeAgent:
         selected_registry: CapabilityRegistry | None = None
         if verified_source is None:
             if _continuation is not None:
-                parent_design = _continuation.parent_run / "case-design.json"
+                parent_design = (
+                    _continuation.active_plan_path.parent / "case-design.json"
+                    if _continuation.from_stage
+                    == WorkflowStage.MODEL_REPAIR_STARTED
+                    and _continuation.active_plan_path is not None
+                    else _continuation.parent_run / "case-design.json"
+                )
                 if not parent_design.is_file():
                     return self._finish(
                         run_dir=run_dir,
@@ -2136,7 +2177,11 @@ class NativeAgent:
                         "risk-decision.json",
                         "case-design.json",
                     ):
-                        source = _continuation.parent_run / name
+                        source = (
+                            parent_design
+                            if name == "case-design.json"
+                            else _continuation.parent_run / name
+                        )
                         if not source.is_file():
                             raise ValueError(
                                 f"parent design checkpoint is missing {name}"
@@ -2955,13 +3000,13 @@ class NativeAgent:
                 repaired.conformance,
             )
             pending_repair_changes = RepairChangeSet(
-                changed_file_paths=[
+                changed_file_paths=tuple(
                     item.path for item in proposal.file_operations
-                ],
-                changed_files=[
+                ),
+                changed_files=tuple(
                     GeneratedFile(path=item.path, content=item.content)
                     for item in proposal.file_operations
-                ],
+                ),
             )
             pending_repair_source_attempt = (
                 _continuation.active_plan_path.parent
@@ -3250,6 +3295,28 @@ class NativeAgent:
                 model_calls=model_calls,
             )
 
+        if _plan_only:
+            _write_json(
+                run_dir / "plan-only.json",
+                {
+                    "schema_version": 1,
+                    "status": "PLAN_READY",
+                    "execution_plan": "execution-plan.json",
+                    "case_design": "case-design.json",
+                    "case_bundle": "case-bundle.json",
+                    "design_conformance": "design-conformance.json",
+                },
+            )
+            return self._finish(
+                run_dir=run_dir,
+                task=task,
+                status="PLAN_READY",
+                attempts=attempts,
+                message="Canonical ExecutionPlan v4 compiled; no case was executed.",
+                model_calls=model_calls,
+                workflow_state=WorkflowState.COMPLETED,
+            )
+
         active_plan = plan
         fingerprints: list[str] = [
             item.failure_fingerprint
@@ -3264,6 +3331,48 @@ class NativeAgent:
             case_root = attempt_root / "case"
             case_root.mkdir(parents=True)
             _write_json(attempt_root / "execution-plan.json", active_plan)
+            if case_design is not None:
+                active_bundle = _bundle_from_plan(active_plan)
+                active_conformance = verify_design_conformance(
+                    design=case_design,
+                    bundle=active_bundle,
+                    mesh_facts=input_mesh_facts,
+                    extensions=selected_registry,
+                )
+                _write_json(attempt_root / "case-design.json", case_design)
+                _write_json(attempt_root / "case-bundle.json", active_bundle)
+                _write_json(
+                    attempt_root / "design-conformance.json",
+                    active_conformance,
+                )
+                if not active_conformance.passed:
+                    return self._finish(
+                        run_dir=run_dir,
+                        task=task,
+                        status="CASE_DESIGN_CONTRADICTED",
+                        attempts=attempts,
+                        message=(
+                            "Active attempt bundle contradicts its compiled "
+                            "CaseDesign."
+                        ),
+                        model_calls=model_calls,
+                        primary_failure=FailureRecord(
+                            domain=FailureDomain.DESIGN,
+                            code="CASE_DESIGN_CONTRADICTED",
+                            detail="; ".join(
+                                f"{item.code}: {item.detail}"
+                                for item in active_conformance.issues
+                            ),
+                            evidence_paths=[
+                                f"attempt-{attempt_number:02d}/case-design.json",
+                                f"attempt-{attempt_number:02d}/case-bundle.json",
+                                (
+                                    f"attempt-{attempt_number:02d}/"
+                                    "design-conformance.json"
+                                ),
+                            ],
+                        ),
+                    )
             repair_preparation = None
 
             try:
@@ -4301,11 +4410,11 @@ class NativeAgent:
                 item.path for item in proposal.file_operations
             ]
             pending_repair_changes = RepairChangeSet(
-                changed_file_paths=attempt_summary.changed_files,
-                changed_files=[
+                changed_file_paths=tuple(attempt_summary.changed_files),
+                changed_files=tuple(
                     GeneratedFile(path=item.path, content=item.content)
                     for item in proposal.file_operations
-                ],
+                ),
             )
             pending_repair_source_attempt = attempt_root
             workflow.checkpoint(
