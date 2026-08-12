@@ -14,11 +14,13 @@ from .provenance import (
 
 __all__ = [
     "ConfirmationRecord",
+    "CaseDesignProposal",
     "DesignCandidate",
     "EvidenceSource",
     "FactEvidence",
     "ImpactLevel",
     "JsonValue",
+    "ExtensionDecision",
     "RequirementConflict",
     "RequirementGap",
     "ResolvedValue",
@@ -26,6 +28,7 @@ __all__ = [
     "SimulationIntent",
     "Uncertainty",
     "canonical_sha256",
+    "design_case",
     "interpret_intent",
     "resolve_requirements",
     "write_json_exclusive",
@@ -37,13 +40,17 @@ def __getattr__(name: str):
     """Load task-dependent stages lazily to keep provenance dependency-free."""
 
     if name in {
+        "CaseDesignProposal",
+        "ExtensionDecision",
         "RequirementConflict",
         "RequirementGap",
         "ResolvedRequirements",
         "SimulationIntent",
+        "design_case",
         "interpret_intent",
         "resolve_requirements",
     }:
+        from .design import CaseDesignProposal, ExtensionDecision, design_case
         from .intent import SimulationIntent, interpret_intent
         from .requirements import (
             RequirementConflict,
@@ -53,10 +60,13 @@ def __getattr__(name: str):
         )
 
         return {
+            "CaseDesignProposal": CaseDesignProposal,
+            "ExtensionDecision": ExtensionDecision,
             "RequirementConflict": RequirementConflict,
             "RequirementGap": RequirementGap,
             "ResolvedRequirements": ResolvedRequirements,
             "SimulationIntent": SimulationIntent,
+            "design_case": design_case,
             "interpret_intent": interpret_intent,
             "resolve_requirements": resolve_requirements,
         }[name]

@@ -22,6 +22,34 @@ from .slots import BASE_SLOTS, ERROR_SLOT, PARALLEL_SLOT, PRUNE_ORDER, ContextSl
 
 
 _REPAIR_EVIDENCE_LIMIT_BYTES = 4096
+_DESIGN_CONTEXT_LIMIT_BYTES = 48 * 1024
+
+
+def public_design_context(
+    context: AgentContext,
+    *,
+    payload_limit_bytes: int = _DESIGN_CONTEXT_LIMIT_BYTES,
+) -> dict[str, object]:
+    """Return only bounded public knowledge and Skill context for design."""
+
+    if payload_limit_bytes < 1:
+        raise ValueError("design context payload limit must be positive")
+    payload: dict[str, object] = {
+        "knowledge_text": context.knowledge_text,
+        "skills_text": context.skills_text,
+        "selected_knowledge_ids": context.selected_knowledge_ids,
+        "selected_source_hashes": context.selected_source_hashes,
+        "skill_names": context.skill_names,
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    if len(encoded) > payload_limit_bytes:
+        raise ValueError("design context exceeds the context payload budget")
+    return payload
 
 
 def _default_package_root() -> Path:
