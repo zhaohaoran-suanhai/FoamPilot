@@ -9,6 +9,7 @@ from .failure import (
     RepairDisposition,
     build_failure_report,
 )
+from .model_diagnostic import append_model_diagnostic
 
 __all__ = [
     "ConfirmedCause",
@@ -18,4 +19,5 @@ __all__ = [
     "ModelDiagnostic",
     "RepairDisposition",
     "build_failure_report",
+    "append_model_diagnostic",
 ]

@@ -17,6 +17,7 @@ class ModelStage(StrEnum):
     GENERATION = "generation"
     REPAIR = "repair"
     ROUTING = "routing"
+    FAILURE_DIAGNOSTIC = "failure_diagnostic"
 
 
 class LineageBudgetExhausted(RuntimeError):
