@@ -1,6 +1,6 @@
 """Plan commands for an immutable provided OpenFOAM polyMesh."""
 
-from foampilot.plans import NativeCommand
+from foampilot.plans.models import NativeCommand
 
 from ..models import CapabilityDescriptor, SupportedTarget
 from ..planning import (

@@ -1,6 +1,6 @@
 """Plan commands for deterministic Foundation blockMesh generation."""
 
-from foampilot.plans import NativeCommand
+from foampilot.plans.models import NativeCommand
 
 from ..models import CapabilityDescriptor, SupportedTarget
 from ..planning import (

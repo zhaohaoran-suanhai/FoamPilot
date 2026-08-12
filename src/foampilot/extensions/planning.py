@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from foampilot.environment import CommandFact
 from foampilot.manifests import CaseManifest
-from foampilot.plans import NativeCommand
+from foampilot.plans.models import NativeCommand
 from foampilot.simulation import CaseDesign
 from foampilot.tasks import OpenFOAMTarget, ResourceBudget
 

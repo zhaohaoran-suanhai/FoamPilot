@@ -1,6 +1,6 @@
 """Serial and Runner-owned-MPI Foundation v10 solver plans."""
 
-from foampilot.plans import NativeCommand
+from foampilot.plans.models import NativeCommand
 
 from ..models import CapabilityDescriptor, SupportedTarget
 from ..planning import (
