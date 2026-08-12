@@ -40,7 +40,12 @@ class CapabilityRegistry:
 
     @classmethod
     def first_party(cls) -> "CapabilityRegistry":
-        return cls(entry_points_enabled=False)
+        registry = cls(entry_points_enabled=False)
+        from foampilot.assets.openfoam_mesh import OpenFOAMPolyMeshAdapter
+
+        adapter = OpenFOAMPolyMeshAdapter()
+        registry.register(adapter.descriptor, adapter)
+        return registry
 
     def register(
         self,

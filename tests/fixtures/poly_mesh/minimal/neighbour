@@ -1,0 +1,10 @@
+FoamFile
+{
+    format ascii;
+    class labelList;
+    object neighbour;
+}
+1
+(
+1
+)

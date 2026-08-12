@@ -1,0 +1,39 @@
+FoamFile
+{
+    format ascii;
+    class polyBoundaryMesh;
+    object boundary;
+}
+5
+(
+inlet
+{
+    type patch;
+    nFaces 1;
+    startFace 1;
+}
+outlet
+{
+    type patch;
+    nFaces 1;
+    startFace 2;
+}
+top
+{
+    type symmetryPlane;
+    nFaces 2;
+    startFace 3;
+}
+bottom
+{
+    type symmetryPlane;
+    nFaces 2;
+    startFace 5;
+}
+frontAndBack
+{
+    type empty;
+    nFaces 4;
+    startFace 7;
+}
+)

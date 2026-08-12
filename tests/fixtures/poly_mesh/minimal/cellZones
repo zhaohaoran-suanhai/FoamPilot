@@ -1,0 +1,18 @@
+FoamFile
+{
+    format ascii;
+    class regIOobject;
+    object cellZones;
+}
+1
+(
+zoneA
+{
+    type cellZone;
+    cellLabels List<label>
+    1
+    (
+        0
+    );
+}
+)

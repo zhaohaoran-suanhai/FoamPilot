@@ -78,7 +78,9 @@ def test_registry_rejects_unsupported_target_and_ambiguous_kind() -> None:
 def test_first_party_registry_does_not_load_entry_points() -> None:
     registry = CapabilityRegistry.first_party()
 
-    assert registry.extension_ids() == ()
+    assert registry.extension_ids() == (
+        "foampilot.asset.openfoam-poly-mesh",
+    )
     assert registry.entry_points_enabled is False
 
 

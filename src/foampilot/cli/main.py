@@ -795,6 +795,11 @@ def _declared_task_assets(
                     f"{member_path.relative_to(root)}"
                 )
             relative_member = member_path.relative_to(source).as_posix()
+            logical_name = (
+                relative_member[:-3]
+                if relative_member.endswith(".gz")
+                else relative_member
+            )
             member_bytes = member_path.stat().st_size
             total_bytes += member_bytes
             if total_bytes > MAX_TASK_ASSET_BYTES:
@@ -809,7 +814,7 @@ def _declared_task_assets(
             members.append(
                 BundleMember(
                     relative_path=relative_member,
-                    logical_name=relative_member,
+                    logical_name=logical_name,
                     sha256=digest.hexdigest(),
                     bytes=member_bytes,
                 )
