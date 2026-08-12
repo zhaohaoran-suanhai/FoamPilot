@@ -51,6 +51,22 @@ class InputMeshFacts(StrictModel):
     raw_content_included: Literal[False] = False
 
 
+class MeshCheckFact(StrictModel):
+    executed: bool
+    executable_identity: str
+    return_code: int | None
+    timed_out: bool
+    mesh_ok: bool | None
+    evidence_paths: tuple[str, ...]
+
+
+class ExecutedMeshFacts(StrictModel):
+    schema_version: Literal[1] = 1
+    source: Literal["pre_authoring_probe"] = "pre_authoring_probe"
+    mesh_check: MeshCheckFact
+    metrics: "MeshQualityReport"
+
+
 class PatchRoleMatch(StrictModel):
     name: str
     role: str

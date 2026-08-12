@@ -49,3 +49,6 @@ foampilot = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+  "real_openfoam: executes a real local Foundation OpenFOAM command",
+]
