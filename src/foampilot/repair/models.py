@@ -27,6 +27,8 @@ class NumericalRepairRule(StrictFrozenModel):
     direction: Literal["increase", "decrease", "either"]
     minimum: float | None = None
     maximum: float | None = None
+    authored_paths: tuple[str, ...] = Field(min_length=1)
+    dictionary_keyword: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
 
     @model_validator(mode="after")
     def validate_rule(self) -> Self:
@@ -38,6 +40,12 @@ class NumericalRepairRule(StrictFrozenModel):
             and self.minimum > self.maximum
         ):
             raise ValueError("numerical repair minimum exceeds maximum")
+        if len(self.authored_paths) != len(set(self.authored_paths)):
+            raise ValueError("numerical repair authored paths must be unique")
+        for value in self.authored_paths:
+            path = PurePosixPath(value)
+            if path.is_absolute() or ".." in path.parts or not path.parts:
+                raise ValueError("repair authored path must be safe and relative")
         return self
 
 
@@ -121,12 +129,33 @@ class RepairAuthorization(StrictFrozenModel):
     confirmation_paths: tuple[str, ...] = ()
 
 
+class DerivedCaseDesignRecord(StrictFrozenModel):
+    schema_version: Literal[1] = 1
+    parent_design_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    design_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    changed_paths: tuple[str, ...] = Field(min_length=1)
+
+
+class RepairDecision(StrictFrozenModel):
+    state: Literal[
+        "MECHANICAL_PATCH",
+        "AUTHORIZED_NUMERICAL_PATCH",
+        "CONFIRMATION_REQUIRED",
+        "FINALIZE_FAILED",
+    ]
+    reason_codes: tuple[str, ...] = Field(min_length=1)
+    proposal: RepairProposal | None = None
+    confirmation_paths: tuple[str, ...] = ()
+
+
 __all__ = [
     "DesignChange",
+    "DerivedCaseDesignRecord",
     "NumericalRepairEnvelope",
     "NumericalRepairRule",
     "RepairAuthorization",
     "RepairCategory",
+    "RepairDecision",
     "RepairFileOperation",
     "RepairPolicy",
     "RepairProposal",

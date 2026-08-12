@@ -58,6 +58,8 @@ def _design():
                 direction="decrease",
                 minimum=0.002,
                 maximum=0.02,
+                authored_paths=("system/controlDict",),
+                dictionary_keyword="deltaT",
             ),
             NumericalRepairRule(
                 field_path="numerics.max_co",
@@ -65,6 +67,8 @@ def _design():
                 direction="decrease",
                 minimum=0.1,
                 maximum=1.0,
+                authored_paths=("system/controlDict",),
+                dictionary_keyword="maxCo",
             ),
         )
     )

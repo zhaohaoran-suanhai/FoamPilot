@@ -20,6 +20,9 @@ _APPLICATION = re.compile(r"(?m)^\s*application\s+([A-Za-z0-9_.+-]+)\s*;")
 _END_TIME = re.compile(
     r"(?m)^\s*endTime\s+([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)\s*;"
 )
+_NUMERICAL_ENTRY = re.compile(
+    r"(?m)^\s*{keyword}\s+([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)\s*;"
+)
 _COMMENTS = re.compile(r"//[^\n]*|/\*.*?\*/", re.DOTALL)
 
 
@@ -137,6 +140,32 @@ def _check_common_facts(
                         "DESIGN_CONFORMANCE_END_TIME_MISMATCH",
                         "controlDict endTime differs from the frozen time design",
                         "system/controlDict:endTime",
+                    )
+                )
+        elif path in {"numerics.delta_t", "numerics.deltaT"}:
+            known_paths.add(path)
+            match = re.compile(
+                _NUMERICAL_ENTRY.pattern.format(keyword="deltaT")
+            ).search(control)
+            if match is None or not _equivalent_number(value, float(match.group(1))):
+                issues.append(
+                    _issue(
+                        "DESIGN_CONFORMANCE_NUMERICAL_VALUE_MISMATCH",
+                        "controlDict deltaT differs from the frozen numerical design",
+                        "system/controlDict:deltaT",
+                    )
+                )
+        elif path in {"numerics.max_co", "numerics.maxCo"}:
+            known_paths.add(path)
+            match = re.compile(
+                _NUMERICAL_ENTRY.pattern.format(keyword="maxCo")
+            ).search(control)
+            if match is None or not _equivalent_number(value, float(match.group(1))):
+                issues.append(
+                    _issue(
+                        "DESIGN_CONFORMANCE_NUMERICAL_VALUE_MISMATCH",
+                        "controlDict maxCo differs from the frozen numerical design",
+                        "system/controlDict:maxCo",
                     )
                 )
         elif path.startswith("boundaries.") and path.endswith(".mesh_type"):

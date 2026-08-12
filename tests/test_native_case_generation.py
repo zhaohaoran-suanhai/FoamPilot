@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 from pydantic import BaseModel
 import pytest
@@ -9,6 +10,8 @@ from foampilot.agent.generation import (
     author_case_bundle,
     materialize_case,
 )
+from foampilot.agent.repair_patch import RepairPatch
+from foampilot.authoring import CaseBundle
 from foampilot.agent.status import AgentStatusSnapshot
 from foampilot.environment import CommandFact, EnvironmentSnapshot
 from foampilot.models import (
@@ -91,7 +94,7 @@ class RecordingModel:
                         field_path="solver.family",
                         value=solver,
                         source="user_text",
-                        impact="high",
+                        impact="low",
                         evidence=(
                             FactEvidence(kind="user_quote", detail=solver),
                         ),
@@ -123,7 +126,21 @@ class RecordingModel:
                 boundary_designs=(),
                 initial_conditions=(),
                 time_design=(),
-                numerical_design=(),
+                numerical_design=(
+                    ResolvedValue(
+                        field_path="numerics.delta_t",
+                        value=0.01,
+                        source="deterministic_rule",
+                        impact="low",
+                        evidence=(
+                            FactEvidence(
+                                kind="test_fixture",
+                                detail="fixture controlDict time step",
+                            ),
+                        ),
+                        confirmed=True,
+                    ),
+                ),
                 region_models=(),
                 extension_decisions=(
                     ExtensionDecision(
@@ -151,10 +168,51 @@ class RecordingModel:
         else:
             self.requests.append(request)
             self.budgets.append(budget)
-            assert budget.stage in {ModelStage.GENERATION, ModelStage.REPAIR}
+            assert budget.stage in {
+                ModelStage.CASE_AUTHORING,
+                ModelStage.GENERATION,
+                ModelStage.REPAIR,
+            }
             reply = self.replies.pop(0)
         if isinstance(reply, Exception):
             raise reply
+        if schema is CaseBundle and isinstance(reply, ExecutionPlan):
+            reply = CaseBundle(
+                manifest=reply.manifest,
+                files=reply.files,
+            )
+        if schema.__name__ == "RepairProposal" and isinstance(reply, RepairPatch):
+            operation = next(
+                (
+                    item
+                    for item in reply.file_operations
+                    if item.path == "system/controlDict"
+                ),
+                None,
+            )
+            if operation is not None:
+                match = re.search(
+                    r"(?m)^\s*deltaT\s+([^;]+);",
+                    operation.content,
+                )
+                new_value = float(match.group(1)) if match is not None else 0.001
+                reply = schema(
+                    category="numerical",
+                    because=reply.because,
+                    design_changes=(
+                        {
+                            "field_path": "numerics.delta_t",
+                            "old_value": 0.01,
+                            "new_value": new_value,
+                            "operator": "replace",
+                        },
+                    ),
+                    file_operations=tuple(
+                        item.model_dump(mode="python")
+                        for item in reply.file_operations
+                    ),
+                    expected_checks=(reply.expected_check,),
+                )
         assert isinstance(reply, schema)
         return ModelResult(
             value=reply,
@@ -252,7 +310,9 @@ def _plan(
     files: list[GeneratedFile] | None = None,
 ) -> ExecutionPlan:
     return ExecutionPlan(
-        schema_version=3,
+        schema_version=4,
+        compiled_from_design_sha256="a" * 64,
+        compiler_identities={"test.fixture": "1.0.0/protocol-1"},
         manifest=CaseManifest(
             solver_executable=application,
             solver_family=(
@@ -308,9 +368,11 @@ def _plan(
             GeneratedFile(
                 path="system/controlDict",
                 content=(
-                    "FoamFile\n{\n class dictionary;\n"
-                    " object controlDict;\n}\n"
+                    "FoamFile\n{\n    format ascii;\n"
+                    "    class dictionary;\n"
+                    "    object controlDict;\n}\n"
                     f"application {application};\n"
+                    "deltaT 0.01;\n"
                 ),
             ),
             GeneratedFile(
@@ -325,6 +387,14 @@ def _plan(
                 content=(
                     "FoamFile\n{\n class dictionary;\n"
                     " object fvSolution;\n}\n"
+                ),
+            ),
+            GeneratedFile(
+                path="system/blockMeshDict",
+                content=(
+                    "FoamFile\n{\n class dictionary;\n"
+                    " object blockMeshDict;\n}\n"
+                    "vertices ();\nblocks ();\n"
                 ),
             ),
             GeneratedFile(
@@ -428,6 +498,7 @@ def test_one_model_call_authors_and_materializes_complete_bundle(
         tmp_path / "system/controlDict",
         tmp_path / "system/fvSchemes",
         tmp_path / "system/fvSolution",
+        tmp_path / "system/blockMeshDict",
         tmp_path / "constant/physicalProperties",
         tmp_path / "0/U",
         tmp_path / "0/p",

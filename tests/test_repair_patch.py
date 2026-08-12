@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from foampilot.agent.repair import request_repair_patch
+from foampilot.agent.repair import request_repair_proposal
 from foampilot.agent.status import AgentStatusSnapshot
 from foampilot.agent.failure import NativeFailureClassification
 from foampilot.agent.repair_patch import (
@@ -18,6 +18,7 @@ from foampilot.models import (
     ModelStage,
 )
 from foampilot.models.schema import strict_response_schema
+from foampilot.repair import RepairProposal
 
 from tests.test_execution_plan import task as task_fixture
 from tests.test_execution_plan import valid_plan
@@ -364,14 +365,25 @@ def test_repair_patch_schema_avoids_provider_unsupported_oneof() -> None:
 
 
 def test_repair_request_uses_scope_not_full_case() -> None:
-    patch = _patch(
-        file_operations=[
+    patch = RepairProposal(
+        category="numerical",
+        because="reduce the failing time step",
+        design_changes=(
+            {
+                "field_path": "numerics.delta_t",
+                "old_value": 0.02,
+                "new_value": 0.01,
+                "operator": "replace",
+            },
+        ),
+        file_operations=(
             {
                 "operation": "replace",
                 "path": "system/controlDict",
-                "content": "FoamFile { class dictionary; }\napplication icoFoam;\n",
-            }
-        ]
+                "content": "FoamFile { class dictionary; }\napplication icoFoam;\ndeltaT 0.01;\n",
+            },
+        ),
+        expected_checks=("rerun failed solver",),
     )
     model = RecordingModel([patch])
     classification = NativeFailureClassification.model_validate(
@@ -431,7 +443,7 @@ def test_repair_request_uses_scope_not_full_case() -> None:
         }
     )
 
-    actual = request_repair_patch(
+    actual = request_repair_proposal(
         task=task_fixture.__wrapped__(),
         plan=valid_plan(),
         classification=classification,
@@ -458,3 +470,4 @@ def test_repair_request_uses_scope_not_full_case() -> None:
     assert model.requests[0].context_artifacts[0].path == (
         "agent-status-repair-01.json"
     )
+    assert "commands" not in model.requests[0].system_prompt.lower()

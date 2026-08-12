@@ -12,7 +12,7 @@ from foampilot.performance import classify_repair_rerun
 from foampilot.plans import GeneratedFile, NativeCommand
 from foampilot.runtime import PlanRunResult, PlanStepResult
 
-from tests.test_native_agent_state_machine import _runtime_config
+from tests.test_native_agent_state_machine import _control_dict, _runtime_config
 from tests.test_native_case_generation import (
     RecordingModel,
     _environment,
@@ -151,7 +151,7 @@ class RepairReuseRunner:
                 )
             elif command.stage == "solve" and call_number == 1:
                 stdout.write_text("Time = 0.1\n", encoding="utf-8")
-                stderr.write_text("solver dictionary error\n", encoding="utf-8")
+                stderr.write_text("Courant number 10\n", encoding="utf-8")
                 return_code = 1
                 failed_step_id = command.step_id
             elif command.stage == "solve":
@@ -185,26 +185,23 @@ class RepairReuseRunner:
         )
 
 
-def test_solver_dictionary_repair_reuses_mesh_and_keeps_parent_immutable(
+def test_numerical_repair_reuses_mesh_and_keeps_parent_immutable(
     tmp_path: Path,
 ) -> None:
     plan = _plan_with_check()
     repair = RepairPatch(
-        because="The solver log points to fvSolution.",
-        evidence=["solver dictionary error"],
+        because="The solver log reports an unstable Courant number.",
+        evidence=["Courant number 10"],
         file_operations=[
             {
                 "operation": "replace",
-                "path": "system/fvSolution",
-                "content": (
-                    "FoamFile { class dictionary; object fvSolution; }\n"
-                    "solvers {}\n"
-                ),
+                "path": "system/controlDict",
+                "content": _control_dict(delta_t=0.001),
             }
         ],
         command_operations=[],
         expected_check="The solver reaches End.",
-        stable_control="The mesh remains unchanged.",
+        stable_control="The mesh and physical design remain unchanged.",
     )
     runner = RepairReuseRunner()
     outcome = NativeAgent(
@@ -239,7 +236,7 @@ def test_solver_dictionary_repair_reuses_mesh_and_keeps_parent_immutable(
         )
     )
     assert [item["step_id"] for item in run_result["reused_steps"]] == [
-        "mesh"
+        "block-mesh-default"
     ]
     assert json.loads(
         (outcome.run_dir / "performance-summary.json").read_text(

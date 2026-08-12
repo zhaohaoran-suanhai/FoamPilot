@@ -2,10 +2,12 @@
 
 from .models import (
     DesignChange,
+    DerivedCaseDesignRecord,
     NumericalRepairEnvelope,
     NumericalRepairRule,
     RepairAuthorization,
     RepairCategory,
+    RepairDecision,
     RepairFileOperation,
     RepairPolicy,
     RepairProposal,
@@ -13,14 +15,19 @@ from .models import (
 
 __all__ = [
     "DesignChange",
+    "DerivedCaseDesignRecord",
     "NumericalRepairEnvelope",
     "NumericalRepairRule",
     "RepairAuthorization",
     "RepairCategory",
+    "RepairDecision",
     "RepairFileOperation",
     "RepairPolicy",
     "RepairProposal",
     "authorize_repair",
+    "AuthorizedRepairResult",
+    "apply_authorized_repair",
+    "coordinate_repair",
 ]
 
 
@@ -29,4 +36,20 @@ def __getattr__(name: str):
         from .envelope import authorize_repair
 
         return authorize_repair
+    if name in {
+        "AuthorizedRepairResult",
+        "apply_authorized_repair",
+        "coordinate_repair",
+    }:
+        from .coordinator import (
+            AuthorizedRepairResult,
+            apply_authorized_repair,
+            coordinate_repair,
+        )
+
+        return {
+            "AuthorizedRepairResult": AuthorizedRepairResult,
+            "apply_authorized_repair": apply_authorized_repair,
+            "coordinate_repair": coordinate_repair,
+        }[name]
     raise AttributeError(name)

@@ -341,6 +341,14 @@ def classify_native_failure(
         ]
         blocks = []
         allowed = ["replace_file"]
+    elif re.search(
+        r"(?:\bnan\b|\binf(?:inity)?\b|floating point exception|courant number)",
+        lowered,
+    ):
+        code = "numerical_instability"
+        files = ["system/controlDict"]
+        blocks = []
+        allowed = ["replace_file"]
     else:
         result = NativeFailureClassification(
             domain=domain,

@@ -18,7 +18,7 @@ from .models import CaseBundle
 
 if TYPE_CHECKING:
     from foampilot.context.models import AgentContext
-    from foampilot.preprocessing.models import InputMeshFacts
+    from foampilot.preprocessing.models import GeometryFacts, InputMeshFacts
     from foampilot.simulation.risk_gate import CaseDesign
 
 
@@ -214,6 +214,7 @@ def author_case(
     *,
     design: CaseDesign,
     mesh_facts: tuple[InputMeshFacts, ...],
+    geometry_facts: GeometryFacts | None = None,
     target_facts: AuthorTargetFacts,
     context: AgentContext,
     gateway: ModelGateway,
@@ -228,6 +229,11 @@ def author_case(
         "authoritative_input_mesh_facts": [
             _mesh_summary(item) for item in mesh_facts
         ],
+        "authoritative_geometry_facts": (
+            geometry_facts.model_dump(mode="json")
+            if geometry_facts is not None
+            else None
+        ),
         "target_facts": target_facts.agent_payload(),
         "public_context": _public_context(context),
         "observation_plan": _observation_payload(observation_plan),

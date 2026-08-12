@@ -45,7 +45,7 @@ def _agent(
         gateway=RecordingModel(replies),
         runtime_config=runtime_config or _runtime_config(),
         artifact_store=ArtifactStore(root),
-        environment_snapshot=_environment("blockMesh", "icoFoam"),
+        environment_snapshot=_environment("blockMesh", "checkMesh", "icoFoam"),
         runner=runner,
         knowledge_text=knowledge_text,
     )
@@ -73,7 +73,7 @@ def _deferred_parent(root: Path):
         root=root,
         replies=[_plan(), _transport_failure()],
         runner=SequencePlanRunner(
-            [(1, "", "FOAM FATAL ERROR: missing keyword")]
+            [(1, "", "Courant number 10\nfloating point exception")]
         ),
     ).solve(_task())
 
@@ -464,7 +464,7 @@ def test_resume_rejects_changed_runtime_executable_identity(
         replies=[_repair()],
         runner=SequencePlanRunner([]),
     )
-    environment = _environment("blockMesh", "icoFoam")
+    environment = _environment("blockMesh", "checkMesh", "icoFoam")
     agent.environment_snapshot = environment.model_copy(
         update={
             "commands": [
@@ -492,7 +492,7 @@ def test_resume_rejects_same_path_executable_rebuild(tmp_path: Path) -> None:
     root = tmp_path / "runs"
     executable = tmp_path / "icoFoam"
     executable.write_text("first build\n", encoding="utf-8")
-    environment = _environment("blockMesh", "icoFoam")
+    environment = _environment("blockMesh", "checkMesh", "icoFoam")
     environment = environment.model_copy(
         update={
             "commands": [
@@ -508,7 +508,7 @@ def test_resume_rejects_same_path_executable_rebuild(tmp_path: Path) -> None:
         root=root,
         replies=[_plan(), _transport_failure()],
         runner=SequencePlanRunner(
-            [(1, "", "FOAM FATAL ERROR: missing keyword")]
+            [(1, "", "Courant number 10\nfloating point exception")]
         ),
     )
     parent_agent.environment_snapshot = environment

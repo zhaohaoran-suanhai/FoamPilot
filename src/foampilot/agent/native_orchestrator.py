@@ -33,7 +33,11 @@ from foampilot.extensions import (
     CapabilityRegistry,
     SupportedTarget,
 )
-from foampilot.inspection import InspectionReport, inspect_native_case
+from foampilot.inspection import (
+    InspectionReport,
+    inspect_native_case,
+    verify_design_conformance,
+)
 from foampilot.knowledge import load_knowledge_corpus
 from foampilot.models import (
     BackendFailureKind,
@@ -48,6 +52,8 @@ from foampilot.models import (
 from foampilot.models.messages_zh import backend_error_payload_zh
 from foampilot.plans import (
     ExecutionPlan,
+    GeneratedFile,
+    compile_execution_plan,
     normalize_execution_plan,
     validate_execution_plan,
 )
@@ -80,6 +86,9 @@ from foampilot.routing import (
 )
 from foampilot.simulation import (
     CaseDesign,
+    ExtensionDecision,
+    FactEvidence,
+    ResolvedValue,
     ResolvedRequirements,
     SimulationIntent,
     design_case,
@@ -87,6 +96,18 @@ from foampilot.simulation import (
     freeze_case_design,
     interpret_intent,
     resolve_requirements,
+)
+from foampilot.authoring import (
+    AuthorTargetFacts,
+    CaseBundle,
+    CaseAuthoringError,
+    author_case,
+)
+from foampilot.repair import NumericalRepairEnvelope, NumericalRepairRule
+from foampilot.repair import (
+    RepairPolicy,
+    apply_authorized_repair,
+    authorize_repair,
 )
 from foampilot.runtime import (
     ExecutionPolicyDecision,
@@ -139,21 +160,17 @@ from foampilot.workflow.lineage import (
 )
 
 from .context import AgentContext, load_agent_context
-from .generation import author_case_bundle, materialize_case
+from .generation import materialize_case
 from .repair import (
     failure_fingerprint,
-    request_repair_patch,
+    request_repair_proposal,
     should_stop_repair,
 )
 from .failure import (
     FailureClassificationError,
     classify_native_failure,
 )
-from .repair_patch import (
-    RepairChangeSet,
-    RepairPatchError,
-    apply_repair_patch,
-)
+from .repair_patch import RepairChangeSet
 from .repair_scope import RepairScopeError, build_repair_scope
 from .status import (
     AgentDecisionStage,
@@ -465,11 +482,11 @@ _NATIVE_STATUSES: set[str] = {
 }
 
 
-def _legacy_capability_registry(
+def _production_capability_registry(
     capability: CapabilityProfile,
     task: TaskSpec,
 ) -> CapabilityRegistry:
-    """Expose the routed solver as one closed Phase-2 bridge extension."""
+    """Freeze deterministic mesh/runner capabilities around the routed solver."""
 
     if not capability.solver_executable:
         raise ValueError("routed capability has no solver executable")
@@ -480,7 +497,28 @@ def _legacy_capability_registry(
     ).strip("-")
     if not token:
         raise ValueError("routed solver executable has no stable identity")
+    planning = CapabilityRegistry.planning_first_party()
     registry = CapabilityRegistry()
+    mesh_strategy = task.mesh.strategy if task.mesh is not None else (
+        "provided"
+        if capability.mesh_family.casefold() in {"provided", "openfoam_mesh"}
+        else "blockMesh"
+    )
+    mesh_extension_id = (
+        "foampilot.mesh.openfoam-provided"
+        if mesh_strategy == "provided"
+        else "foampilot.mesh.block-mesh"
+    )
+    runner_extension_id = (
+        "foampilot.solver.foundation10-parallel"
+        if capability.parallel_expected
+        else "foampilot.solver.foundation10-serial"
+    )
+    for extension_id in (mesh_extension_id, runner_extension_id):
+        registry.register(
+            planning.descriptor(extension_id),
+            planning.provider(extension_id),
+        )
     registry.register(
         CapabilityDescriptor(
             extension_id=f"foampilot.bridge.solver.{token}",
@@ -502,43 +540,221 @@ def _legacy_capability_registry(
     return registry
 
 
-def _legacy_plan_design_conflicts(
-    plan: ExecutionPlan,
-    design: CaseDesign,
-) -> tuple[str, ...]:
-    """Guard the temporary old author bridge against frozen-design drift."""
+def _extension_decision(
+    registry: CapabilityRegistry,
+    extension_id: str,
+    *,
+    values: tuple[ResolvedValue, ...] = (),
+) -> ExtensionDecision:
+    descriptor = registry.descriptor(extension_id)
+    return ExtensionDecision(
+        extension_id=extension_id,
+        schema_version=descriptor.protocol_version,
+        values=values,
+        provenance=(
+            FactEvidence(
+                kind="deterministic_capability",
+                detail="selected from the task and routed execution contract",
+            ),
+        ),
+    )
 
-    conflicts: list[str] = []
-    proposed = design.proposal
-    solver = str(proposed.solver_family.value)
-    if plan.manifest.solver_executable != solver:
-        conflicts.append(
-            "solver executable contradicts frozen design: "
-            f"{plan.manifest.solver_executable} != {solver}"
+
+def _deterministic_fact(path: str, value: object) -> ResolvedValue:
+    return ResolvedValue(
+        field_path=path,
+        value=value,
+        source="deterministic_rule",
+        impact="high",
+        evidence=(
+            FactEvidence(
+                kind="deterministic_capability",
+                detail="resolved by the trusted task and runner contract",
+            ),
+        ),
+        confirmed=True,
+    )
+
+
+def _complete_planning_extensions(
+    proposal,
+    *,
+    registry: CapabilityRegistry,
+    task: TaskSpec,
+    capability: CapabilityProfile,
+):
+    selected = {
+        item.extension_id: item for item in proposal.extension_decisions
+    }
+    mesh_extension_id = next(
+        (
+            extension_id
+            for extension_id in (
+                "foampilot.mesh.openfoam-provided",
+                "foampilot.mesh.block-mesh",
+            )
+            if extension_id in registry.extension_ids()
+        ),
+        None,
+    )
+    runner_extension_id = next(
+        (
+            extension_id
+            for extension_id in (
+                "foampilot.solver.foundation10-serial",
+                "foampilot.solver.foundation10-parallel",
+            )
+            if extension_id in registry.extension_ids()
+        ),
+        None,
+    )
+    if mesh_extension_id is not None and mesh_extension_id not in selected:
+        mesh_value = (
+            "provided"
+            if mesh_extension_id.endswith("openfoam-provided")
+            else "blockMesh"
         )
-    values = {item.field_path: item.value for item in proposed.iter_values()}
-    regime = values.get("physics.regime")
-    if regime is not None and plan.manifest.regime != regime:
-        conflicts.append(
-            "flow regime contradicts frozen design: "
-            f"{plan.manifest.regime} != {regime}"
+        selected[mesh_extension_id] = _extension_decision(
+            registry,
+            mesh_extension_id,
+            values=(_deterministic_fact("mesh.strategy", mesh_value),),
         )
-    physics = values.get("physics.family")
-    if physics is not None and plan.manifest.physics_family != physics:
-        conflicts.append(
-            "physics family contradicts frozen design: "
-            f"{plan.manifest.physics_family} != {physics}"
+    if runner_extension_id is not None and runner_extension_id not in selected:
+        ranks = (
+            min(2, task.resource_budget.max_mpi_ranks)
+            if capability.parallel_expected
+            else 1
         )
-    regions = {item.name: item.kind for item in plan.manifest.regions}
-    for path, value in values.items():
-        parts = path.split(".")
-        if len(parts) >= 3 and parts[0] == "regions" and parts[2] == "role":
-            if regions.get(parts[1]) != value:
-                conflicts.append(
-                    "region role contradicts frozen design: "
-                    f"{parts[1]}={regions.get(parts[1])!r} != {value!r}"
+        selected[runner_extension_id] = _extension_decision(
+            registry,
+            runner_extension_id,
+            values=(_deterministic_fact("execution.mpi_ranks", ranks),),
+        )
+    return proposal.model_copy(
+        update={"extension_decisions": tuple(selected[key] for key in sorted(selected))}
+    )
+
+
+def _default_numerical_repair_envelope(proposal) -> NumericalRepairEnvelope:
+    rules: list[NumericalRepairRule] = []
+    for fact in proposal.numerical_design:
+        if fact.field_path in {"numerics.delta_t", "numerics.deltaT"} and isinstance(
+            fact.value, (int, float)
+        ):
+            current = float(fact.value)
+            if current > 0:
+                rules.append(
+                    NumericalRepairRule(
+                        field_path=fact.field_path,
+                        operators=("replace", "scale"),
+                        direction="decrease",
+                        minimum=current / 100.0,
+                        maximum=current,
+                        authored_paths=("system/controlDict",),
+                        dictionary_keyword="deltaT",
+                    )
                 )
-    return tuple(conflicts)
+        elif fact.field_path in {"numerics.max_co", "numerics.maxCo"} and isinstance(
+            fact.value, (int, float)
+        ):
+            current = float(fact.value)
+            if current > 0:
+                rules.append(
+                    NumericalRepairRule(
+                        field_path=fact.field_path,
+                        operators=("replace", "scale"),
+                        direction="decrease",
+                        minimum=max(current / 10.0, 1.0e-6),
+                        maximum=current,
+                        authored_paths=("system/controlDict",),
+                        dictionary_keyword="maxCo",
+                    )
+                )
+    return NumericalRepairEnvelope(rules=tuple(rules))
+
+
+def _author_target_facts(
+    *,
+    task: TaskSpec,
+    design: CaseDesign,
+    capability: CapabilityProfile,
+) -> AuthorTargetFacts:
+    mesh_value = next(
+        (
+            item.value
+            for item in design.proposal.iter_values()
+            if item.field_path == "mesh.strategy"
+        ),
+        "provided" if capability.mesh_family == "provided" else "blockMesh",
+    )
+    required = [
+        "system/controlDict",
+        "system/fvSchemes",
+        "system/fvSolution",
+    ]
+    if str(mesh_value) == "blockMesh":
+        required.append("system/blockMeshDict")
+    ranks = next(
+        (
+            item.value
+            for item in design.proposal.iter_values()
+            if item.field_path == "execution.mpi_ranks"
+        ),
+        1,
+    )
+    if int(ranks) > 1:
+        required.append("system/decomposeParDict")
+    return AuthorTargetFacts(
+        distribution=task.openfoam_target.distribution,
+        version=task.openfoam_target.version,
+        solver_executable=str(design.proposal.solver_family.value),
+        required_outputs=tuple(task.required_outputs),
+        required_authored_paths=tuple(required),
+        public_asset_install_paths=tuple(
+            item.install_path if item.kind == "directory" else item.path
+            for item in task.public_assets
+            if (item.install_path if item.kind == "directory" else item.path)
+            is not None
+        ),
+        protected_paths=tuple(task.protected_paths),
+    )
+
+
+def _repair_policy(task: TaskSpec) -> RepairPolicy:
+    return RepairPolicy(
+        automatic_numerical_repair=(
+            task.repair_policy.automatic_numerical_repair
+        ),
+        model_diagnostic=task.repair_policy.model_diagnostic,
+    )
+
+
+def _automatic_repair_eligible(
+    classification,
+    design: CaseDesign,
+) -> tuple[bool, str]:
+    if not design.numerical_repair_envelope.rules:
+        return False, "frozen numerical repair envelope is empty"
+    if (
+        classification.code != "numerical_instability"
+        or classification.domain
+        not in {FailureDomain.SOLVER, FailureDomain.VALIDATION}
+    ):
+        return False, (
+            "automatic repair is limited to solver-derived numerical "
+            "stability evidence; "
+            f"observed domain is {classification.domain.value}"
+        )
+    if any(
+        operation not in {"replace_file"}
+        for operation in classification.allowed_operations
+    ):
+        return False, "failure requires a capability or command-plan change"
+    return True, "eligible numerical solver repair"
+
+
+def _bundle_from_plan(plan: ExecutionPlan) -> CaseBundle:
+    return CaseBundle(manifest=plan.manifest, files=plan.files)
 
 
 def _failure_record(
@@ -1460,6 +1676,38 @@ class NativeAgent:
                 ]
             }
         )
+        visible_task = json.dumps(
+            execution_task.agent_payload(),
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        leaked_paths = [
+            path
+            for path in execution_task.protected_paths
+            if path in visible_task
+        ]
+        if leaked_paths:
+            return self._finish(
+                run_dir=run_dir,
+                task=task,
+                status="CASE_GENERATION_FAILED",
+                attempts=attempts,
+                message=(
+                    "Agent-visible task content references a protected runtime "
+                    "path."
+                ),
+                model_calls=model_calls,
+                primary_failure=FailureRecord(
+                    domain=FailureDomain.CASE,
+                    code="CASE_GENERATION_FAILED",
+                    detail=(
+                        "PROTECTED_PATH_IN_PUBLIC_TASK: protected runtime paths "
+                        "must not enter model-visible task content"
+                    ),
+                    message="任务文本引用了运行时受保护路径，未调用模型。",
+                    recovery="移除 tutorial、私有 evaluator 或其他受保护绝对路径。",
+                ),
+            )
 
         effective_public_asset_root: str | Path | None = public_asset_root
         asset_bundles = []
@@ -1914,7 +2162,7 @@ class NativeAgent:
                 if self.gateway is None:
                     raise ValueError("live design requires a model gateway")
                 try:
-                    selected_registry = _legacy_capability_registry(
+                    selected_registry = _production_capability_registry(
                         capability,
                         task,
                     )
@@ -2077,6 +2325,12 @@ class NativeAgent:
                         ),
                         trace=model_trace,
                     )
+                    proposal = _complete_planning_extensions(
+                        proposal,
+                        registry=selected_registry,
+                        task=execution_task,
+                        capability=capability,
+                    )
                     _write_json(
                         run_dir / "case-design-proposal.json",
                         proposal,
@@ -2169,6 +2423,9 @@ class NativeAgent:
                         proposal=proposal,
                         decision=decision,
                         intent=intent,
+                        numerical_repair_envelope=(
+                            _default_numerical_repair_envelope(proposal)
+                        ),
                     )
                     _write_json(run_dir / "case-design.json", case_design)
                     workflow.checkpoint("case-design", case_design)
@@ -2214,6 +2471,42 @@ class NativeAgent:
                             recovery="查看结构化设计产物与模型 trace 后修正输入。",
                         ),
                     )
+
+        if case_design is not None and selected_registry is None:
+            try:
+                resumed_registry = _production_capability_registry(
+                    capability,
+                    task,
+                )
+                resumed_identities = {
+                    extension_id: (
+                        f"{resumed_registry.descriptor(extension_id).extension_version}"
+                        f"/protocol-{resumed_registry.descriptor(extension_id).protocol_version}"
+                    )
+                    for extension_id in resumed_registry.extension_ids()
+                }
+                if resumed_identities != case_design.extension_identities:
+                    raise ValueError(
+                        "frozen extension identities do not match the current "
+                        "trusted capability registry"
+                    )
+                selected_registry = resumed_registry
+            except (LookupError, ValueError) as error:
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status="CASE_DESIGN_CHECKPOINT_INVALID",
+                    attempts=attempts,
+                    message=f"Frozen CaseDesign capabilities cannot be rebound: {error}",
+                    model_calls=model_calls,
+                    primary_failure=FailureRecord(
+                        domain=FailureDomain.DESIGN,
+                        code="CASE_DESIGN_EXTENSION_IDENTITY_MISMATCH",
+                        detail=str(error),
+                        message="冻结设计与当前受信任扩展身份不一致。",
+                        recovery="使用 rerun 重新执行完整设计和编译。",
+                    ),
+                )
 
         if self.gateway is not None:
             fingerprint = build_resume_fingerprint(
@@ -2289,6 +2582,8 @@ class NativeAgent:
             if not log_text:
                 log_text = report.feedback()
             parent_attempt = attempts[-1].attempt
+            assert case_design is not None
+            assert selected_registry is not None
             try:
                 parent_inspection_path = (
                     _continuation.active_plan_path.parent
@@ -2319,6 +2614,65 @@ class NativeAgent:
                     f"failure-classification-attempt-{parent_attempt:02d}.json"
                 )
                 _write_json(run_dir / classification_name, classification)
+                eligible, ineligible_reason = _automatic_repair_eligible(
+                    classification,
+                    case_design,
+                )
+                if not eligible:
+                    return self._finish(
+                        run_dir=run_dir,
+                        task=task,
+                        status=(
+                            _continuation.parent_summary.native_status
+                            or attempts[-1].status
+                        ),
+                        attempts=attempts,
+                        message=(
+                            "Automatic repair is not authorized: "
+                            + ineligible_reason
+                        ),
+                        model_calls=model_calls,
+                        workflow_state=WorkflowState.FAILED,
+                        primary_failure=(
+                            _continuation.parent_summary.primary_failure
+                        ),
+                        terminal_blocker=FailureRecord(
+                            domain=FailureDomain.DESIGN,
+                            code="AUTOMATIC_REPAIR_NOT_AUTHORIZED",
+                            detail=ineligible_reason,
+                            message="续跑失败不属于冻结设计允许的自动数值修复。",
+                            recovery="使用 rerun 补充信息或重新设计。",
+                            evidence_paths=[classification_name],
+                        ),
+                    )
+                policy = _repair_policy(execution_task)
+                if not policy.automatic_numerical_repair:
+                    return self._finish(
+                        run_dir=run_dir,
+                        task=task,
+                        status=(
+                            _continuation.parent_summary.native_status
+                            or attempts[-1].status
+                        ),
+                        attempts=attempts,
+                        message="Automatic numerical repair is disabled.",
+                        model_calls=model_calls,
+                        workflow_state=WorkflowState.FAILED,
+                        primary_failure=(
+                            _continuation.parent_summary.primary_failure
+                        ),
+                        terminal_blocker=FailureRecord(
+                            domain=FailureDomain.DESIGN,
+                            code="AUTOMATIC_NUMERICAL_REPAIR_DISABLED",
+                            detail=(
+                                "task repair policy disables automatic "
+                                "numerical repair"
+                            ),
+                            message="任务按配置未执行自动数值修复。",
+                            recovery="调整 repair_policy 后使用 rerun。",
+                            evidence_paths=[classification_name],
+                        ),
+                    )
                 repair_context = self._context(
                     task,
                     capability,
@@ -2406,7 +2760,7 @@ class NativeAgent:
                     snapshot=repair_status,
                 )
                 model_calls += 1
-                patch = request_repair_patch(
+                proposal = request_repair_proposal(
                     task=execution_task,
                     plan=parent_plan,
                     classification=classification,
@@ -2427,15 +2781,44 @@ class NativeAgent:
                     ),
                     trace=model_trace,
                 )
-                patch_result = apply_repair_patch(
-                    patch,
-                    scope=repair_scope,
-                    task=execution_task,
-                    plan=parent_plan,
-                    available_executables=(
-                        environment.available_executable_names
+                authorization = authorize_repair(
+                    proposal=proposal,
+                    design=case_design,
+                    policy=policy,
+                )
+                if authorization.state != "AUTHORIZED_AUTOMATIC":
+                    raise ValueError(
+                        "REPAIR_NOT_AUTOMATICALLY_AUTHORIZED: "
+                        + ", ".join(authorization.reason_codes)
+                    )
+                repaired = apply_authorized_repair(
+                    proposal=proposal,
+                    authorization=authorization,
+                    design=case_design,
+                    bundle=_bundle_from_plan(parent_plan),
+                    mesh_facts=input_mesh_facts,
+                    extensions=selected_registry,
+                    public_asset_install_paths=tuple(
+                        item.install_path
+                        if item.kind == "directory"
+                        else item.path
+                        for item in execution_task.public_assets
+                        if (
+                            item.install_path
+                            if item.kind == "directory"
+                            else item.path
+                        )
+                        is not None
                     ),
-                    current_files=current_files,
+                    protected_paths=tuple(execution_task.protected_paths),
+                )
+                case_design = repaired.design
+                plan = compile_execution_plan(
+                    design=case_design,
+                    bundle=repaired.bundle,
+                    environment=environment,
+                    task=execution_task,
+                    registry=selected_registry,
                 )
             except OperationCancelled:
                 return self._finish_cancelled(
@@ -2448,7 +2831,6 @@ class NativeAgent:
             except (
                 FailureClassificationError,
                 RepairScopeError,
-                RepairPatchError,
             ) as error:
                 status = (
                     _continuation.parent_summary.native_status
@@ -2561,15 +2943,26 @@ class NativeAgent:
                         _continuation.parent_summary.primary_failure
                     ),
                 )
-            patch_name = f"repair-patch-attempt-{parent_attempt:02d}.json"
-            _write_json(run_dir / patch_name, patch)
+            patch_name = f"repair-proposal-attempt-{parent_attempt:02d}.json"
+            derived_name = (
+                f"derived-case-design-attempt-{parent_attempt:02d}.json"
+            )
+            _write_json(run_dir / patch_name, proposal)
+            _write_json(run_dir / derived_name, repaired.derived)
             _write_json(
                 run_dir
-                / f"repair-patch-normalization-attempt-{parent_attempt:02d}.json",
-                patch_result.normalizations,
+                / f"design-conformance-attempt-{parent_attempt:02d}.json",
+                repaired.conformance,
             )
-            plan = patch_result.plan
-            pending_repair_changes = patch_result.changes
+            pending_repair_changes = RepairChangeSet(
+                changed_file_paths=[
+                    item.path for item in proposal.file_operations
+                ],
+                changed_files=[
+                    GeneratedFile(path=item.path, content=item.content)
+                    for item in proposal.file_operations
+                ],
+            )
             pending_repair_source_attempt = (
                 _continuation.active_plan_path.parent
             )
@@ -2578,7 +2971,7 @@ class NativeAgent:
                 stage=WorkflowStage.REPAIR_APPLIED,
                 state=WorkflowEventState.COMPLETED,
                 attempt=parent_attempt,
-                evidence_paths=[patch_name],
+                evidence_paths=[patch_name, derived_name],
             )
         else:
             try:
@@ -2605,27 +2998,26 @@ class NativeAgent:
                     current_attempt=1,
                     execution_seconds_used=execution_seconds_used,
                 )
-                author_status_artifact = _write_status_artifact(
+                _write_status_artifact(
                     run_dir=run_dir,
                     name="agent-status-author-01.json",
                     snapshot=author_status,
                 )
                 model_calls += 1
-                plan = author_case_bundle(
-                    execution_task,
-                    environment,
-                    capability,
-                    self.gateway,
-                    context.knowledge_text,
-                    context.skills_text,
+                assert case_design is not None
+                bundle = author_case(
+                    design=case_design,
+                    mesh_facts=input_mesh_facts,
                     geometry_facts=geometry_facts,
-                    input_mesh_facts=input_mesh_facts,
-                    executed_mesh_facts=executed_mesh_facts,
-                    status_snapshot=author_status,
-                    status_artifact=author_status_artifact,
-                    case_design=case_design,
+                    target_facts=_author_target_facts(
+                        task=execution_task,
+                        design=case_design,
+                        capability=capability,
+                    ),
+                    context=context,
+                    gateway=self.gateway,
                     budget=model_ledger.open_stage(
-                        ModelStage.GENERATION,
+                        ModelStage.CASE_AUTHORING,
                         request_timeout_seconds=(
                             GENERATION_REQUEST_TIMEOUT_SECONDS
                         ),
@@ -2636,35 +3028,32 @@ class NativeAgent:
                     ),
                     trace=model_trace,
                 )
-                assert case_design is not None
-                design_conflicts = _legacy_plan_design_conflicts(
-                    plan,
-                    case_design,
+                _write_json(run_dir / "case-bundle.json", bundle)
+                conformance = verify_design_conformance(
+                    design=case_design,
+                    bundle=bundle,
+                    mesh_facts=input_mesh_facts,
+                    extensions=selected_registry,
                 )
-                if design_conflicts:
-                    _write_json(
-                        run_dir / "design-conformance.json",
-                        {
-                            "schema_version": 1,
-                            "passed": False,
-                            "conflicts": design_conflicts,
-                            "design_sha256": case_design.design_sha256,
-                        },
-                    )
+                _write_json(run_dir / "design-conformance.json", conformance)
+                if not conformance.passed:
                     return self._finish(
                         run_dir=run_dir,
                         task=task,
                         status="CASE_DESIGN_CONTRADICTED",
                         attempts=attempts,
                         message=(
-                            "Temporary author bridge contradicted the frozen "
+                            "Authored CaseBundle contradicts the frozen "
                             "CaseDesign."
                         ),
                         model_calls=model_calls,
                         primary_failure=FailureRecord(
                             domain=FailureDomain.DESIGN,
                             code="CASE_DESIGN_CONTRADICTED",
-                            detail="; ".join(design_conflicts),
+                            detail="; ".join(
+                                f"{item.code}: {item.detail}"
+                                for item in conformance.issues
+                            ),
                             message="生成的 case 与冻结设计不一致，未执行。",
                             recovery=(
                                 "检查 case-design.json 与 design-conformance.json；"
@@ -2676,6 +3065,13 @@ class NativeAgent:
                             ],
                         ),
                     )
+                plan = compile_execution_plan(
+                    design=case_design,
+                    bundle=bundle,
+                    environment=environment,
+                    task=execution_task,
+                    registry=selected_registry,
+                )
             except OperationCancelled:
                 return self._finish_cancelled(
                     run_dir=run_dir,
@@ -2703,7 +3099,7 @@ class NativeAgent:
                         status="GENERATION_INVALID",
                         attempts=attempts,
                         message=(
-                            "模型输出未能形成有效的 ExecutionPlan："
+                            "模型输出未能形成有效的 CaseBundle："
                             f"{error.failure.detail}"
                         ),
                         model_calls=model_calls,
@@ -2712,7 +3108,7 @@ class NativeAgent:
                             domain=FailureDomain.PLAN,
                             code="GENERATION_INVALID",
                             detail=error.failure.detail,
-                            message="模型输出的执行计划结构无效。",
+                            message="模型输出的算例文件包结构无效。",
                             recovery=(
                                 "调整生成上下文或模型后重新生成；"
                                 "该错误不是模型服务不可用。"
@@ -2768,6 +3164,36 @@ class NativeAgent:
                         detail=str(error),
                     ),
                 )
+            except CaseAuthoringError as error:
+                _write_json(
+                    run_dir / "authoring-error.json",
+                    {
+                        "schema_version": 1,
+                        "code": str(error).partition(":")[0],
+                        "detail": str(error),
+                        "design_sha256": (
+                            case_design.design_sha256
+                            if case_design is not None
+                            else None
+                        ),
+                    },
+                )
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status="CASE_DESIGN_CONTRADICTED",
+                    attempts=attempts,
+                    message=f"Case Author contradicted the frozen design: {error}",
+                    model_calls=model_calls,
+                    primary_failure=FailureRecord(
+                        domain=FailureDomain.DESIGN,
+                        code="CASE_DESIGN_CONTRADICTED",
+                        detail=str(error),
+                        message="生成的算例文件与冻结设计不一致，未执行。",
+                        recovery="检查 case-design.json 和 authoring-error.json。",
+                        evidence_paths=["case-design.json", "authoring-error.json"],
+                    ),
+                )
             except Exception as error:
                 return self._finish(
                     run_dir=run_dir,
@@ -2778,7 +3204,7 @@ class NativeAgent:
                     model_calls=model_calls,
                 )
         if verified_source is None:
-            _write_json(run_dir / "authored-execution-plan.json", plan)
+            _write_json(run_dir / "compiled-execution-plan.json", plan)
         normalization = normalize_execution_plan(
             plan,
             execution_task,
@@ -2820,7 +3246,7 @@ class NativeAgent:
                 task=task,
                 status="PLAN_INVALID",
                 attempts=attempts,
-                message="The model-authored bundle violates safety policy.",
+                message="The compiled execution plan violates safety policy.",
                 model_calls=model_calls,
             )
 
@@ -3561,6 +3987,53 @@ class NativeAgent:
                 )
 
             current_files = _read_declared_files(case_root, active_plan)
+            assert case_design is not None
+            eligible, ineligible_reason = _automatic_repair_eligible(
+                classification,
+                case_design,
+            )
+            if not eligible:
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status=status,
+                    attempts=attempts,
+                    message=(
+                        "Automatic repair is not authorized: "
+                        + ineligible_reason
+                    ),
+                    model_calls=model_calls,
+                    primary_failure=classified_failure,
+                    terminal_blocker=FailureRecord(
+                        domain=FailureDomain.DESIGN,
+                        code="AUTOMATIC_REPAIR_NOT_AUTHORIZED",
+                        detail=ineligible_reason,
+                        message="当前失败不属于已冻结的自动数值修复范围。",
+                        recovery=(
+                            "补充或确认所需物理/能力信息后重新设计；"
+                            "不要让 repair 模型临时修改命令或物理模型。"
+                        ),
+                        evidence_paths=[classification_name],
+                    ),
+                )
+            policy = _repair_policy(execution_task)
+            if not policy.automatic_numerical_repair:
+                return self._finish(
+                    run_dir=run_dir,
+                    task=task,
+                    status=status,
+                    attempts=attempts,
+                    message="Automatic numerical repair is disabled.",
+                    model_calls=model_calls,
+                    primary_failure=classified_failure,
+                    terminal_blocker=FailureRecord(
+                        domain=FailureDomain.DESIGN,
+                        code="AUTOMATIC_NUMERICAL_REPAIR_DISABLED",
+                        detail="task repair policy disables automatic numerical repair",
+                        message="任务按配置未执行自动数值修复。",
+                        recovery="调整 repair_policy 后以新任务重新求解。",
+                    ),
+                )
             try:
                 if self.gateway is None:
                     raise ValueError("repair requires a model gateway")
@@ -3667,7 +4140,7 @@ class NativeAgent:
                     snapshot=repair_status,
                 )
                 model_calls += 1
-                patch = request_repair_patch(
+                proposal = request_repair_proposal(
                     task=execution_task,
                     plan=active_plan,
                     classification=classification,
@@ -3688,15 +4161,44 @@ class NativeAgent:
                     ),
                     trace=model_trace,
                 )
-                patch_result = apply_repair_patch(
-                    patch,
-                    scope=repair_scope,
-                    task=execution_task,
-                    plan=active_plan,
-                    available_executables=(
-                        environment.available_executable_names
+                authorization = authorize_repair(
+                    proposal=proposal,
+                    design=case_design,
+                    policy=policy,
+                )
+                if authorization.state != "AUTHORIZED_AUTOMATIC":
+                    raise ValueError(
+                        "REPAIR_NOT_AUTOMATICALLY_AUTHORIZED: "
+                        + ", ".join(authorization.reason_codes)
+                    )
+                repaired = apply_authorized_repair(
+                    proposal=proposal,
+                    authorization=authorization,
+                    design=case_design,
+                    bundle=_bundle_from_plan(active_plan),
+                    mesh_facts=input_mesh_facts,
+                    extensions=selected_registry,
+                    public_asset_install_paths=tuple(
+                        item.install_path
+                        if item.kind == "directory"
+                        else item.path
+                        for item in execution_task.public_assets
+                        if (
+                            item.install_path
+                            if item.kind == "directory"
+                            else item.path
+                        )
+                        is not None
                     ),
-                    current_files=current_files,
+                    protected_paths=tuple(execution_task.protected_paths),
+                )
+                case_design = repaired.design
+                active_plan = compile_execution_plan(
+                    design=case_design,
+                    bundle=repaired.bundle,
+                    environment=environment,
+                    task=execution_task,
+                    registry=selected_registry,
                 )
             except OperationCancelled:
                 return self._finish_cancelled(
@@ -3706,7 +4208,7 @@ class NativeAgent:
                     model_calls=model_calls,
                     stage="repair",
                 )
-            except (RepairScopeError, RepairPatchError) as error:
+            except RepairScopeError as error:
                 return self._finish(
                     run_dir=run_dir,
                     task=task,
@@ -3784,18 +4286,27 @@ class NativeAgent:
                     message=f"Repair proposal failed: {error}",
                     model_calls=model_calls,
                 )
-            patch_name = f"repair-patch-attempt-{attempt_number:02d}.json"
-            _write_json(run_dir / patch_name, patch)
+            patch_name = f"repair-proposal-attempt-{attempt_number:02d}.json"
+            derived_name = (
+                f"derived-case-design-attempt-{attempt_number:02d}.json"
+            )
+            _write_json(run_dir / patch_name, proposal)
+            _write_json(run_dir / derived_name, repaired.derived)
             _write_json(
                 run_dir
-                / f"repair-patch-normalization-attempt-{attempt_number:02d}.json",
-                patch_result.normalizations,
+                / f"design-conformance-attempt-{attempt_number:02d}.json",
+                repaired.conformance,
             )
-            attempt_summary.changed_files = (
-                patch_result.changes.changed_file_paths
+            attempt_summary.changed_files = [
+                item.path for item in proposal.file_operations
+            ]
+            pending_repair_changes = RepairChangeSet(
+                changed_file_paths=attempt_summary.changed_files,
+                changed_files=[
+                    GeneratedFile(path=item.path, content=item.content)
+                    for item in proposal.file_operations
+                ],
             )
-            active_plan = patch_result.plan
-            pending_repair_changes = patch_result.changes
             pending_repair_source_attempt = attempt_root
             workflow.checkpoint(
                 f"active-plan-attempt-{attempt_number + 1:02d}",
@@ -3808,6 +4319,7 @@ class NativeAgent:
                 attempt=attempt_number,
                 evidence_paths=[
                     patch_name,
+                    derived_name,
                     (
                         "checkpoints/active-plan-attempt-"
                         f"{attempt_number + 1:02d}.json"

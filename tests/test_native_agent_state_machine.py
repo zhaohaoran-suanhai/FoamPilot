@@ -333,8 +333,8 @@ def _provided_plan():
                 for name, patch_type in (
                     ("inlet", "patch"),
                     ("outlet", "patch"),
-                    ("top", "wall"),
-                    ("bottom", "wall"),
+                    ("top", "symmetryPlane"),
+                    ("bottom", "symmetryPlane"),
                     ("frontAndBack", "empty"),
                 )
             ],
@@ -343,6 +343,11 @@ def _provided_plan():
     return plan.model_copy(
         update={
             "manifest": manifest,
+            "files": [
+                item
+                for item in plan.files
+                if item.path != "system/blockMeshDict"
+            ],
             "commands": [plan.commands[-1]],
         }
     )
@@ -375,7 +380,7 @@ def test_provided_mesh_facts_exist_before_first_model_call(
     assert (outcome.run_dir / "asset-bundles.json").is_file()
     assert (outcome.run_dir / "input-mesh-facts.json").is_file()
     assert (outcome.run_dir / "pre-authoring-mesh-facts.json").is_file()
-    assert "AUTHORITATIVE INPUT MESH FACTS" in model.requests[0].user_prompt
+    assert "authoritative_input_mesh_facts" in model.requests[0].user_prompt
     assert "points\n(" not in model.requests[0].user_prompt
 
 
@@ -393,7 +398,7 @@ def _agent(
         gateway=model,
         runtime_config=_runtime_config(),
         artifact_store=ArtifactStore(tmp_path / "runs"),
-        environment_snapshot=_environment("blockMesh", "icoFoam"),
+        environment_snapshot=_environment("blockMesh", "checkMesh", "icoFoam"),
         runner=runner,
     )
 
@@ -432,12 +437,14 @@ def test_native_agent_reaches_public_validation_pass(
         "openfoam-author-native-case",
         "openfoam-incompressible-pressure-velocity",
     ]
-    assert (run_dir / "authored-execution-plan.json").is_file()
+    assert (run_dir / "case-bundle.json").is_file()
+    assert (run_dir / "design-conformance.json").is_file()
+    assert (run_dir / "compiled-execution-plan.json").is_file()
     assert (run_dir / "plan-normalization.json").is_file()
     assert (run_dir / "execution-plan.json").is_file()
     assert json.loads(
         (run_dir / "execution-plan.json").read_text(encoding="utf-8")
-    )["schema_version"] == 3
+    )["schema_version"] == 4
     assert (run_dir / "attempt-01/execution-plan.json").is_file()
     assert (
         run_dir / "attempt-01/case/system/controlDict"
@@ -451,10 +458,8 @@ def test_native_agent_reaches_public_validation_pass(
     assert ArtifactStore(tmp_path / "runs").verify(run_dir) == []
     assert runner.calls == 1
     assert len(model.requests) == 1
-    assert model.requests[0].context_artifacts[0].path == (
-        "agent-status-author-01.json"
-    )
-    assert "DETERMINISTIC AGENT STATUS" in model.requests[0].user_prompt
+    assert model.requests[0].context_artifacts == ()
+    assert "frozen_case_design" in model.requests[0].user_prompt
     assert model.budgets[0].request_timeout_seconds == 420
     generation_deadline_remaining = (
         model.budgets[0].stage_deadline_monotonic - time.monotonic()
@@ -471,7 +476,7 @@ def test_native_agent_reaches_public_validation_pass(
     assert '"stage":"ROUTING_READY"' in workflow_events
 
 
-def test_ready_design_is_frozen_before_legacy_author_call(
+def test_ready_design_is_frozen_before_case_author_call(
     tmp_path: Path,
 ) -> None:
     model = RecordingModel([_plan()])
@@ -494,9 +499,9 @@ def test_ready_design_is_frozen_before_legacy_author_call(
     assert [item.purpose for item in model.all_requests[:3]] == [
         "interpret-simulation-intent",
         "design-openfoam-case",
-        "author-openfoam-case-bundle",
+        "author-openfoam-case",
     ]
-    assert "FROZEN CASE DESIGN" in model.requests[0].user_prompt
+    assert "frozen_case_design" in model.requests[0].user_prompt
 
 
 class ConfirmationDesignModel(RecordingModel):
@@ -768,7 +773,7 @@ def test_native_agent_maps_policy_block_to_environment_without_repair(
         gateway=model,
         runtime_config=_runtime_config(),
         artifact_store=ArtifactStore(tmp_path / "runs"),
-        environment_snapshot=_environment("blockMesh", "icoFoam"),
+        environment_snapshot=_environment("blockMesh", "checkMesh", "icoFoam"),
         runner=runner,
     ).solve(_task())
 
@@ -871,7 +876,7 @@ def test_native_agent_probes_geometry_before_routing_and_generation(
     assert stages.index("GEOMETRY_READY") < stages.index(
         "MODEL_GENERATION_STARTED"
     )
-    assert "PUBLIC GEOMETRY FACTS" in model.requests[0].user_prompt
+    assert "authoritative_geometry_facts" in model.requests[0].user_prompt
 
 
 def test_native_agent_persists_mesh_quality_report(
@@ -957,7 +962,7 @@ def test_mesh_quality_threshold_has_distinct_native_status(
     assert outcome.summary.primary_failure.domain == "mesh"
 
 
-def test_native_agent_normalizes_simple_mpi_launcher_before_policy(
+def test_native_agent_ignores_model_authored_mpi_launcher(
     tmp_path: Path,
 ) -> None:
     plan = _plan()
@@ -973,8 +978,8 @@ def test_native_agent_normalizes_simple_mpi_launcher_before_policy(
     ).solve(_task())
 
     assert outcome.status == "PUBLIC_VALIDATION_PASS"
-    raw = json.loads(
-        (outcome.run_dir / "authored-execution-plan.json").read_text(
+    bundle = json.loads(
+        (outcome.run_dir / "case-bundle.json").read_text(
             encoding="utf-8"
         )
     )
@@ -988,12 +993,12 @@ def test_native_agent_normalizes_simple_mpi_launcher_before_policy(
             encoding="utf-8"
         )
     )
-    assert raw["commands"][-1]["executable"] == "mpirun"
+    assert "commands" not in bundle
     assert normalized["commands"][-1]["executable"] == "icoFoam"
-    assert records[0]["original_launcher"] == "mpirun"
+    assert records == []
 
 
-def test_native_agent_records_known_utility_stage_normalization(
+def test_native_agent_ignores_model_authored_optional_utility(
     tmp_path: Path,
 ) -> None:
     plan = _plan()
@@ -1012,6 +1017,7 @@ def test_native_agent_records_known_utility_stage_normalization(
         artifact_store=ArtifactStore(tmp_path / "runs"),
         environment_snapshot=_environment(
             "blockMesh",
+            "checkMesh",
             "icoFoam",
             "postProcess",
         ),
@@ -1021,8 +1027,8 @@ def test_native_agent_records_known_utility_stage_normalization(
     outcome = agent.solve(_task())
 
     assert outcome.status == "PUBLIC_VALIDATION_PASS"
-    raw = json.loads(
-        (outcome.run_dir / "authored-execution-plan.json").read_text(
+    bundle = json.loads(
+        (outcome.run_dir / "case-bundle.json").read_text(
             encoding="utf-8"
         )
     )
@@ -1036,10 +1042,11 @@ def test_native_agent_records_known_utility_stage_normalization(
             encoding="utf-8"
         )
     )
-    assert raw["commands"][-1]["stage"] == "solve"
-    assert normalized["commands"][-1]["stage"] == "postprocess"
-    assert records[-1]["executable"] == "postProcess"
-    assert records[-1]["normalized_stage"] == "postprocess"
+    assert "commands" not in bundle
+    assert "postProcess" not in {
+        item["executable"] for item in normalized["commands"]
+    }
+    assert records == []
 
 
 def test_native_agent_rejects_incomplete_public_route_before_generation(
@@ -1109,7 +1116,7 @@ def test_native_agent_applies_one_evidence_scoped_repair(
         / "attempt-02/case/system/controlDict"
     ).read_text() == _control_dict(delta_t=0.001)
     assert (
-        outcome.run_dir / "repair-patch-attempt-01.json"
+        outcome.run_dir / "repair-proposal-attempt-01.json"
     ).is_file()
     assert (outcome.run_dir / "agent-status-repair-01.json").is_file()
     assert (
@@ -1123,7 +1130,7 @@ def test_native_agent_applies_one_evidence_scoped_repair(
     assert runner.calls == 2
 
 
-def test_native_agent_recomputes_execution_risk_after_repair(
+def test_native_agent_rejects_undeclared_dynamic_code_during_repair(
     tmp_path: Path,
 ) -> None:
     coded_control = (
@@ -1157,23 +1164,13 @@ def test_native_agent_recomputes_execution_risk_after_repair(
         runner=runner,
     ).solve(_task())
 
-    first = json.loads(
-        (outcome.run_dir / "attempt-01/execution-risk-report.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    second = json.loads(
-        (outcome.run_dir / "attempt-02/execution-risk-report.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    assert first["risk_level"] == "low"
-    assert second["risk_level"] == "high"
-    assert second["scanned_file_sha256"] != first["scanned_file_sha256"]
-    assert [report.risk_level for report in runner.risk_reports] == ["low", "high"]
+    assert outcome.status == "PUBLIC_VALIDATION_FAILED"
+    assert "UNDECLARED_SEMANTIC_CHANGE" in outcome.summary.message
+    assert not (outcome.run_dir / "attempt-02/execution-plan.json").exists()
+    assert [report.risk_level for report in runner.risk_reports] == ["low"]
 
 
-def test_native_agent_repairs_blocking_static_issue_before_execution(
+def test_native_agent_does_not_model_repair_blocking_static_issue(
     tmp_path: Path,
 ) -> None:
     bad_control = GeneratedFile(
@@ -1220,22 +1217,25 @@ functions
         runner=runner,
     ).solve(_task())
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS"
-    assert len(outcome.summary.attempts) == 2
+    assert outcome.status == "STATIC_INSPECTION_FAILED"
+    assert len(outcome.summary.attempts) == 1
     assert outcome.summary.attempts[0].status == "STATIC_INSPECTION_FAILED"
-    assert runner.calls == 1
+    assert outcome.summary.terminal_blocker is not None
+    assert (
+        outcome.summary.terminal_blocker.code
+        == "AUTOMATIC_REPAIR_NOT_AUTHORIZED"
+    )
+    assert runner.calls == 0
     assert (
         outcome.run_dir / "attempt-01/public-validation.json"
     ).is_file()
-    assert (
-        outcome.run_dir / "repair-patch-attempt-01.json"
-    ).is_file()
-    assert (
-        outcome.run_dir / "attempt-02/case/system/controlDict"
-    ).read_text(encoding="utf-8") == _control_dict()
+    assert not (
+        outcome.run_dir / "repair-proposal-attempt-01.json"
+    ).exists()
+    assert not (outcome.run_dir / "attempt-02").exists()
 
 
-def test_native_agent_repair_can_add_a_safe_required_dictionary(
+def test_native_agent_repair_cannot_invent_missing_physics_dictionary(
     tmp_path: Path,
 ) -> None:
     plan = _plan()
@@ -1275,15 +1275,17 @@ def test_native_agent_repair_can_add_a_safe_required_dictionary(
         runner=runner,
     ).solve(_task())
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS"
+    assert outcome.status == "SOLVER_FAILED"
+    assert outcome.summary.terminal_blocker is not None
     assert (
-        outcome.run_dir
-        / "attempt-02/case/constant/physicalProperties.water"
-    ).read_text() == property_file.content
-    assert runner.calls == 2
+        outcome.summary.terminal_blocker.code
+        == "AUTOMATIC_REPAIR_NOT_AUTHORIZED"
+    )
+    assert not (outcome.run_dir / "attempt-02").exists()
+    assert runner.calls == 1
 
 
-def test_native_agent_repair_can_insert_missing_typed_command(
+def test_native_agent_repair_cannot_insert_missing_typed_command(
     tmp_path: Path,
 ) -> None:
     plan = _plan()
@@ -1319,25 +1321,21 @@ def test_native_agent_repair_can_insert_missing_typed_command(
         runtime_config=_runtime_config(),
         artifact_store=ArtifactStore(tmp_path / "runs"),
         environment_snapshot=_environment(
-            "blockMesh", "setFields", "icoFoam"
+            "blockMesh", "checkMesh", "setFields", "icoFoam"
         ),
         runner=runner,
     ).solve(_task())
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS"
-    repaired_plan = json.loads(
-        (outcome.run_dir / "attempt-02/execution-plan.json").read_text(
-            encoding="utf-8"
-        )
+    assert outcome.status == "SOLVER_FAILED"
+    assert outcome.summary.terminal_blocker is not None
+    assert (
+        outcome.summary.terminal_blocker.code
+        == "AUTOMATIC_REPAIR_NOT_AUTHORIZED"
     )
-    assert [item["step_id"] for item in repaired_plan["commands"]] == [
-        "mesh",
-        "set-fields",
-        "solve",
-    ]
+    assert not (outcome.run_dir / "attempt-02/execution-plan.json").exists()
 
 
-def test_native_agent_repair_can_remove_unsupported_typed_command(
+def test_native_agent_repair_cannot_remove_typed_command(
     tmp_path: Path,
 ) -> None:
     plan = _plan().model_copy(deep=True)
@@ -1373,20 +1371,17 @@ def test_native_agent_repair_can_remove_unsupported_typed_command(
         runtime_config=_runtime_config(),
         artifact_store=ArtifactStore(tmp_path / "runs"),
         environment_snapshot=_environment(
-            "blockMesh", "icoFoam", "postProcess"
+            "blockMesh", "checkMesh", "icoFoam", "postProcess"
         ),
         runner=runner,
     ).solve(_task())
 
-    assert outcome.status == "PUBLIC_VALIDATION_PASS"
-    repaired_plan = json.loads(
-        (outcome.run_dir / "attempt-02/execution-plan.json").read_text(
-            encoding="utf-8"
-        )
+    assert outcome.status == "SOLVER_FAILED"
+    assert outcome.summary.terminal_blocker is not None
+    assert (
+        outcome.summary.terminal_blocker.code
+        == "AUTOMATIC_REPAIR_NOT_AUTHORIZED"
     )
-    assert "optional-post" not in {
-        item["step_id"] for item in repaired_plan["commands"]
-    }
 
 
 def test_native_agent_does_not_repair_environment_failure(
@@ -1520,7 +1515,7 @@ def test_solver_failure_survives_repair_backend_blocker(
 ) -> None:
     model = RecordingModel([_plan(), _transport_failure()])
     runner = SequencePlanRunner(
-        [(1, "", "FOAM FATAL ERROR: missing keyword")]
+        [(1, "", "Courant number 10\nfloating point exception")]
     )
 
     outcome = _agent(
@@ -1560,7 +1555,7 @@ def test_native_agent_preserves_invalid_plan_issues_without_json_crash(
 
     assert outcome.status == "CASE_DESIGN_CONTRADICTED"
     assert (outcome.run_dir / "case-design.json").is_file()
-    assert (outcome.run_dir / "design-conformance.json").is_file()
+    assert (outcome.run_dir / "authoring-error.json").is_file()
     assert not (outcome.run_dir / "execution-plan.json").exists()
     assert ArtifactStore(tmp_path / "runs").verify(outcome.run_dir) == []
 
@@ -1569,7 +1564,7 @@ def test_native_agent_adds_discovered_tutorial_to_execution_guards(
     tmp_path: Path,
 ) -> None:
     tutorial_root = tmp_path / "OpenFOAM-10/tutorials"
-    environment = _environment("blockMesh", "icoFoam").model_copy(
+    environment = _environment("blockMesh", "checkMesh", "icoFoam").model_copy(
         update={"tutorial_root": tutorial_root}
     )
     plan = _plan(
@@ -1593,9 +1588,9 @@ def test_native_agent_adds_discovered_tutorial_to_execution_guards(
         runner=SequencePlanRunner([]),
     ).solve(_task().model_copy(update={"protected_paths": []}))
 
-    assert outcome.status == "PLAN_INVALID"
-    assert "PROTECTED_REFERENCE" in (
-        outcome.run_dir / "plan-issues.json"
+    assert outcome.status == "CASE_DESIGN_CONTRADICTED"
+    assert "AUTHOR_PROTECTED_PATH_LEAK" in (
+        outcome.run_dir / "authoring-error.json"
     ).read_text(encoding="utf-8")
     author_status = json.loads(
         (outcome.run_dir / "agent-status-author-01.json").read_text(
@@ -1609,7 +1604,7 @@ def test_runtime_tutorial_path_is_protected_before_model_authoring(
     tmp_path: Path,
 ) -> None:
     tutorial_root = tmp_path / "OpenFOAM-10/tutorials"
-    environment = _environment("blockMesh", "icoFoam").model_copy(
+    environment = _environment("blockMesh", "checkMesh", "icoFoam").model_copy(
         update={"tutorial_root": tutorial_root}
     )
     model = RecordingModel([_plan()])
