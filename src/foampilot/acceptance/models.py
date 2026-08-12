@@ -141,11 +141,44 @@ class AcceptancePlan(_StrictFrozenModel):
         return sha256(payload).hexdigest()
 
 
+class ConditionResult(_StrictFrozenModel):
+    condition_id: str
+    observation_id: str
+    status: Literal["PASS", "FAIL", "NOT_EVALUATED"]
+    observed_value: float | None = None
+    unit: str | None = None
+    detail: str = Field(min_length=1)
+    evidence_refs: tuple[str, ...] = ()
+
+
+class ObservationResult(_StrictFrozenModel):
+    observation_id: str
+    status: Literal["AVAILABLE", "UNAVAILABLE", "PARTIAL"]
+    latest_value: float | tuple[float, ...] | None = None
+    unit: str | None = None
+    evidence_refs: tuple[str, ...] = ()
+
+
+class ResultReport(_StrictFrozenModel):
+    schema_version: Literal[1] = 1
+    verdict: Literal["PASS", "FAIL", "INCOMPLETE", "NOT_REQUESTED"]
+    acceptance_plan_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    observation_plan_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    run_facts_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    derived_metrics_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    conditions: tuple[ConditionResult, ...]
+    observations: tuple[ObservationResult, ...]
+    missing_evidence: tuple[str, ...] = ()
+
+
 __all__ = [
     "AcceptanceCondition",
     "AcceptanceOperator",
     "AcceptancePlan",
     "AcceptanceRequest",
     "AcceptanceScope",
+    "ConditionResult",
+    "ObservationResult",
+    "ResultReport",
     "UncompiledRequirement",
 ]
