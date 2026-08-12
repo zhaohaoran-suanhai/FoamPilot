@@ -35,6 +35,10 @@ def test_task_cli_subcommands_parse_explicit_paths() -> None:
             "/tmp/request.md",
             "--asset",
             "geometry/body.stl",
+            "--asset-dir",
+            "mesh/native",
+            "--asset-install-path",
+            "constant/polyMesh",
             "--output",
             "/tmp/draft.yaml",
         ]
@@ -55,6 +59,8 @@ def test_task_cli_subcommands_parse_explicit_paths() -> None:
 
     assert draft.task_command == "draft"
     assert draft.asset == [Path("geometry/body.stl")]
+    assert draft.asset_dir == [Path("mesh/native")]
+    assert draft.asset_install_path == [Path("constant/polyMesh")]
     assert validate.task_command == "validate-draft"
     assert compile_args.task_command == "compile"
 
@@ -111,6 +117,93 @@ def test_task_draft_writes_model_output_without_calling_solver(
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "PASS"
     assert payload["draft_status"] == "confirmed"
+
+
+def test_task_draft_declares_poly_mesh_directory_as_one_asset(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    request = tmp_path / "request.md"
+    request.write_text("Use the supplied native mesh.", encoding="utf-8")
+    mesh = tmp_path / "mesh/native"
+    mesh.mkdir(parents=True)
+    for name, content in {
+        "points": b"points\n",
+        "faces": b"faces\n",
+        "owner": b"owner\n",
+        "neighbour": b"neighbour\n",
+        "boundary": b"boundary\n",
+        "cellZones": b"zones\n",
+    }.items():
+        (mesh / name).write_bytes(content)
+    output = tmp_path / "draft.yaml"
+    expected = _complete_draft()
+    captured = []
+
+    monkeypatch.setattr(
+        "foampilot.cli.main._native_gateway",
+        lambda arguments, **kwargs: object(),
+    )
+
+    def fake_extract(request_text, assets, gateway, **kwargs):
+        del request_text, gateway, kwargs
+        captured.extend(assets)
+        return expected.model_copy(update={"assets": assets})
+
+    monkeypatch.setattr("foampilot.cli.main.extract_task_draft", fake_extract)
+
+    assert main(
+        [
+            "task",
+            "draft",
+            "--request-file",
+            str(request),
+            "--asset-dir",
+            "mesh/native",
+            "--asset-install-path",
+            "constant/polyMesh",
+            "--output",
+            str(output),
+            "--json",
+        ]
+    ) == 0
+
+    assert len(captured) == 1
+    asset = captured[0]
+    assert asset.kind == "directory"
+    assert asset.path == "mesh/native"
+    assert asset.install_path == "constant/polyMesh"
+    assert asset.sha256 == asset.bundle_manifest_sha256
+    payload = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert len(payload["assets"]) == 1
+    assert "members" not in payload["assets"][0]
+
+
+def test_task_draft_rejects_unpaired_directory_arguments(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    request = tmp_path / "request.md"
+    request.write_text("Use the supplied native mesh.", encoding="utf-8")
+
+    assert main(
+        [
+            "task",
+            "draft",
+            "--request-file",
+            str(request),
+            "--asset-dir",
+            "mesh/native",
+            "--output",
+            str(tmp_path / "draft.yaml"),
+            "--json",
+        ]
+    ) == 2
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "INVALID_INPUT"
+    assert "paired" in payload["error"]
 
 
 def test_validate_draft_returns_four_for_blocking_review(

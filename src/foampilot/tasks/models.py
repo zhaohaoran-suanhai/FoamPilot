@@ -37,6 +37,12 @@ class PublicAsset(StrictModel):
     path: str = Field(min_length=1)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     purpose: str = Field(min_length=1)
+    kind: Literal["file", "directory"] = "file"
+    install_path: str | None = None
+    bundle_manifest_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
 
     @field_validator("path")
     @classmethod
@@ -57,6 +63,48 @@ class PublicAsset(StrictModel):
         if not normalized:
             raise ValueError("public asset purpose must not be blank")
         return normalized
+
+    @field_validator("install_path")
+    @classmethod
+    def validate_install_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parsed = PurePosixPath(value)
+        if (
+            parsed.is_absolute()
+            or ".." in parsed.parts
+            or not parsed.parts
+            or ".foampilot" in parsed.parts
+        ):
+            raise ValueError(
+                "public asset install path must be a safe relative path: "
+                f"{value!r}"
+            )
+        return parsed.as_posix()
+
+    @model_validator(mode="after")
+    def validate_asset_kind(self) -> Self:
+        if self.kind == "file":
+            if (
+                self.install_path is not None
+                or self.bundle_manifest_sha256 is not None
+            ):
+                raise ValueError(
+                    "file asset must not declare directory-only fields"
+                )
+            return self
+        if (
+            self.install_path is None
+            or self.bundle_manifest_sha256 is None
+        ):
+            raise ValueError(
+                "directory asset requires install path and manifest hash"
+            )
+        if self.sha256 != self.bundle_manifest_sha256:
+            raise ValueError(
+                "directory asset sha256 must equal bundle manifest SHA256"
+            )
+        return self
 
 
 type JsonParameter = float | int | str | bool

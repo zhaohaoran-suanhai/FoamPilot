@@ -173,6 +173,96 @@ def test_public_asset_rejects_internal_foampilot_namespace() -> None:
         )
 
 
+def test_legacy_file_asset_remains_valid() -> None:
+    task = TaskSpec.model_validate(
+        _payload(
+            public_assets=[
+                {
+                    "path": "geometry/body.stl",
+                    "sha256": "a" * 64,
+                    "purpose": "public geometry",
+                }
+            ]
+        )
+    )
+
+    assert task.public_assets[0].kind == "file"
+    assert task.public_assets[0].install_path is None
+    assert task.public_assets[0].bundle_manifest_sha256 is None
+
+
+def test_directory_asset_requires_install_path_and_manifest_hash() -> None:
+    asset = TaskSpec.model_validate(
+        _payload(
+            public_assets=[
+                {
+                    "path": "mesh/native",
+                    "sha256": "1" * 64,
+                    "purpose": "provided mesh",
+                    "kind": "directory",
+                    "install_path": "constant/polyMesh",
+                    "bundle_manifest_sha256": "1" * 64,
+                }
+            ]
+        )
+    ).public_assets[0]
+
+    assert asset.kind == "directory"
+    assert asset.install_path == "constant/polyMesh"
+
+    base = asset.model_dump(mode="json")
+    for missing in ("install_path", "bundle_manifest_sha256"):
+        invalid = dict(base)
+        invalid[missing] = None
+        with pytest.raises(ValidationError, match="directory asset requires"):
+            TaskSpec.model_validate(
+                _payload(public_assets=[invalid])
+            )
+
+
+def test_directory_asset_digest_and_install_path_are_strict() -> None:
+    base = {
+        "path": "mesh/native",
+        "sha256": "1" * 64,
+        "purpose": "provided mesh",
+        "kind": "directory",
+        "install_path": "constant/polyMesh",
+        "bundle_manifest_sha256": "2" * 64,
+    }
+    with pytest.raises(ValidationError, match="must equal"):
+        TaskSpec.model_validate(_payload(public_assets=[base]))
+
+    with pytest.raises(ValidationError, match="safe relative"):
+        TaskSpec.model_validate(
+            _payload(
+                public_assets=[
+                    {
+                        **base,
+                        "sha256": "2" * 64,
+                        "install_path": "../constant/polyMesh",
+                    }
+                ]
+            )
+        )
+
+
+def test_file_asset_rejects_directory_only_fields() -> None:
+    with pytest.raises(ValidationError, match="file asset must not"):
+        TaskSpec.model_validate(
+            _payload(
+                public_assets=[
+                    {
+                        "path": "geometry/body.stl",
+                        "sha256": "a" * 64,
+                        "purpose": "public geometry",
+                        "kind": "file",
+                        "install_path": "constant/polyMesh",
+                    }
+                ]
+            )
+        )
+
+
 def test_v2_accepts_parametric_surface_gmsh_and_provided_mesh_inputs() -> None:
     asset = {
         "path": "geometry/body.stl",

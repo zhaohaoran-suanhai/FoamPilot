@@ -25,6 +25,7 @@ from foampilot.agent import (
     author_case_bundle,
     load_agent_context,
 )
+from foampilot.assets import BundleMember, compute_bundle_manifest_sha256
 from foampilot.artifacts import ArtifactStore
 from foampilot.environment import discover_environment
 from foampilot.inspection import inspect_native_case
@@ -227,6 +228,18 @@ def _parser() -> argparse.ArgumentParser:
     task_draft = task_commands.add_parser("draft")
     task_draft.add_argument("--request-file", required=True, type=Path)
     task_draft.add_argument("--asset", action="append", type=Path, default=[])
+    task_draft.add_argument(
+        "--asset-dir",
+        action="append",
+        type=Path,
+        default=[],
+    )
+    task_draft.add_argument(
+        "--asset-install-path",
+        action="append",
+        type=Path,
+        default=[],
+    )
     task_draft.add_argument("--asset-root", type=Path)
     task_draft.add_argument(
         "--protected-path",
@@ -718,6 +731,9 @@ def _declared_task_assets(
     request_file: Path,
     paths: list[Path],
     asset_root: Path | None,
+    *,
+    directory_paths: list[Path] | None = None,
+    install_paths: list[Path] | None = None,
 ) -> list[PublicAsset]:
     root = (asset_root or request_file.parent).resolve()
     result: list[PublicAsset] = []
@@ -743,6 +759,83 @@ def _declared_task_assets(
                 purpose="user-declared public task asset",
             )
         )
+    directories = directory_paths or []
+    destinations = install_paths or []
+    if len(directories) != len(destinations):
+        raise ValueError(
+            "--asset-dir and --asset-install-path must be paired one-to-one"
+        )
+    for relative, install_path in zip(directories, destinations, strict=True):
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError(
+                "--asset-dir must be a safe path relative to --asset-root"
+            )
+        if install_path.is_absolute() or ".." in install_path.parts:
+            raise ValueError(
+                "--asset-install-path must be a safe case-relative path"
+            )
+        source = root / relative
+        if source.is_symlink() or not source.is_dir():
+            raise ValueError(
+                f"declared asset directory is missing or unsafe: {relative}"
+            )
+        members: list[BundleMember] = []
+        total_bytes = 0
+        for member_path in sorted(source.rglob("*")):
+            if member_path.is_symlink():
+                raise ValueError(
+                    "declared asset directory contains a symlink: "
+                    f"{member_path.relative_to(root)}"
+                )
+            if member_path.is_dir():
+                continue
+            if not member_path.is_file():
+                raise ValueError(
+                    "declared asset directory contains a non-regular member: "
+                    f"{member_path.relative_to(root)}"
+                )
+            relative_member = member_path.relative_to(source).as_posix()
+            member_bytes = member_path.stat().st_size
+            total_bytes += member_bytes
+            if total_bytes > MAX_TASK_ASSET_BYTES:
+                raise ValueError(
+                    "declared asset exceeds the 256 MiB size limit: "
+                    f"{relative}"
+                )
+            digest = sha256()
+            with member_path.open("rb") as stream:
+                while chunk := stream.read(1024 * 1024):
+                    digest.update(chunk)
+            members.append(
+                BundleMember(
+                    relative_path=relative_member,
+                    logical_name=relative_member,
+                    sha256=digest.hexdigest(),
+                    bytes=member_bytes,
+                )
+            )
+        if not members:
+            raise ValueError(
+                f"declared asset directory contains no files: {relative}"
+            )
+        manifest_sha256 = compute_bundle_manifest_sha256(
+            adapter_id="foampilot.asset.openfoam-poly-mesh",
+            kind="openfoam_poly_mesh",
+            source_path=relative.as_posix(),
+            install_path=install_path.as_posix(),
+            region=None,
+            members=members,
+        )
+        result.append(
+            PublicAsset(
+                path=relative.as_posix(),
+                sha256=manifest_sha256,
+                purpose="user-declared OpenFOAM polyMesh directory asset",
+                kind="directory",
+                install_path=install_path.as_posix(),
+                bundle_manifest_sha256=manifest_sha256,
+            )
+        )
     return result
 
 
@@ -755,6 +848,8 @@ def _task_builder(arguments: argparse.Namespace) -> int:
             arguments.request_file,
             arguments.asset,
             arguments.asset_root,
+            directory_paths=arguments.asset_dir,
+            install_paths=arguments.asset_install_path,
         )
         protected = tuple(
             dict.fromkeys(

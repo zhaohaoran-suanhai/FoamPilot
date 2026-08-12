@@ -179,7 +179,17 @@ def extract_task_draft(
                 {
                     "request": normalized,
                     "declared_assets": [
-                        item.model_dump(mode="json") for item in assets
+                        {
+                            "path": item.path,
+                            "sha256": item.sha256,
+                            "purpose": item.purpose,
+                            "kind": item.kind,
+                            "install_path": item.install_path,
+                            "bundle_manifest_sha256": (
+                                item.bundle_manifest_sha256
+                            ),
+                        }
+                        for item in assets
                     ],
                 },
                 ensure_ascii=False,
