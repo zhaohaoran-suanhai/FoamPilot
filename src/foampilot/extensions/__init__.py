@@ -6,12 +6,22 @@ from .registry import (
     CapabilityRegistry,
     CapabilityResolutionError,
 )
+from .planning import (
+    ComposedPlanFragments,
+    PlanContext,
+    PlanContributionError,
+    PlanFragment,
+)
 
 __all__ = [
     "CapabilityDescriptor",
     "CapabilityRegistrationError",
     "CapabilityRegistry",
     "CapabilityResolutionError",
+    "ComposedPlanFragments",
+    "PlanContext",
+    "PlanContributionError",
+    "PlanFragment",
     "RequiredFact",
     "SupportedTarget",
 ]

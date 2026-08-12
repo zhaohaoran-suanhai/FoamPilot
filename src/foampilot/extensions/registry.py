@@ -48,6 +48,26 @@ class CapabilityRegistry:
             registry.register(adapter.descriptor, adapter)
         return registry
 
+    @classmethod
+    def planning_first_party(cls) -> "CapabilityRegistry":
+        """Build the closed set of command-authority contributors."""
+
+        from .mesh import BlockMeshPlanContributor, ProvidedMeshPlanContributor
+        from .solver import (
+            Foundation10ParallelSolverPlanContributor,
+            Foundation10SerialSolverPlanContributor,
+        )
+
+        registry = cls(entry_points_enabled=False)
+        for contributor in (
+            ProvidedMeshPlanContributor(),
+            BlockMeshPlanContributor(),
+            Foundation10SerialSolverPlanContributor(),
+            Foundation10ParallelSolverPlanContributor(),
+        ):
+            registry.register(contributor.descriptor, contributor)
+        return registry
+
     def register(
         self,
         descriptor: CapabilityDescriptor,
@@ -72,6 +92,77 @@ class CapabilityRegistry:
             raise CapabilityResolutionError(
                 f"CAPABILITY_EXTENSION_UNKNOWN: {extension_id}"
             ) from error
+
+    def provider(self, extension_id: str) -> object:
+        try:
+            return self._registrations[extension_id].provider
+        except KeyError as error:
+            raise CapabilityResolutionError(
+                f"CAPABILITY_EXTENSION_UNKNOWN: {extension_id}"
+            ) from error
+
+    def plan_for(self, context):
+        """Compose frozen-design planning contributors, never execute them."""
+
+        from .planning import ComposedPlanFragments, PlanContributionError
+
+        fragments = []
+        selected_ids = set(context.design.extension_identities)
+        for extension_id in sorted(selected_ids):
+            descriptor = self.descriptor(extension_id)
+            incompatible = sorted(
+                selected_ids & set(descriptor.incompatible_extensions)
+            )
+            if incompatible:
+                raise PlanContributionError(
+                    "PLAN_CONTRIBUTORS_INCOMPATIBLE: "
+                    + ", ".join((extension_id, *incompatible))
+                )
+            provider = self.provider(extension_id)
+            if not hasattr(provider, "contribute"):
+                continue
+            fragment = provider.contribute(context)
+            if fragment.contributor_id != extension_id:
+                raise PlanContributionError(
+                    "PLAN_CONTRIBUTOR_ID_MISMATCH: " + extension_id
+                )
+            expected = context.design.extension_identities[extension_id]
+            if fragment.contributor_identity != expected:
+                raise PlanContributionError(
+                    "PLAN_CONTRIBUTOR_IDENTITY_MISMATCH: " + extension_id
+                )
+            fragments.append(fragment)
+        fragments.sort(key=lambda item: item.contributor_id)
+        commands = tuple(
+            command
+            for fragment in fragments
+            for command in fragment.commands
+        )
+        step_ids = [item.step_id for item in commands]
+        if len(step_ids) != len(set(step_ids)):
+            raise PlanContributionError("PLAN_DUPLICATE_STEP_ID")
+        if (
+            sum(item.timeout_seconds for item in commands)
+            > context.resource_budget.max_wall_seconds
+        ):
+            raise PlanContributionError("PLAN_TIMEOUT_BUDGET_EXCEEDED")
+        paths = tuple(
+            path
+            for fragment in fragments
+            for path in fragment.required_authored_paths
+        )
+        if len(paths) != len(set(paths)):
+            raise PlanContributionError("PLAN_DUPLICATE_REQUIRED_PATH")
+        if not commands:
+            raise PlanContributionError("PLAN_NO_COMMAND_CONTRIBUTORS")
+        return ComposedPlanFragments(
+            commands=commands,
+            required_authored_paths=paths,
+            contributor_identities={
+                fragment.contributor_id: fragment.contributor_identity
+                for fragment in fragments
+            },
+        )
 
     def resolve(self, kind: str, target: TargetLike) -> object:
         kind_matches = [
