@@ -286,7 +286,7 @@ class ContinuationInput(StrictModel):
     parent_summary: RunSummary
     active_plan_path: Path | None = None
     public_validation_path: Path | None = None
-    failed_log_paths: list[Path] = Field(default_factory=list)
+    run_facts_path: Path | None = None
     transport_attempts_used: int = Field(ge=0, le=7)
     continuation_index_for_stage: int = Field(ge=1, le=2)
     continuation_counts: dict[str, int] = Field(default_factory=dict)
@@ -530,7 +530,7 @@ def prepare_continuation(
 
     active_plan_path: Path | None = None
     validation_path: Path | None = None
-    log_paths: list[Path] = []
+    run_facts_path: Path | None = None
     if from_stage == WorkflowStage.MODEL_REPAIR_STARTED:
         if not summary.attempts:
             raise ResumeCompatibilityError("repair_evidence")
@@ -539,8 +539,7 @@ def prepare_continuation(
         if copied_evidence.is_dir():
             active_plan_path = copied_evidence / "execution-plan.json"
             validation_path = copied_evidence / "public-validation.json"
-            log_paths = sorted(copied_evidence.glob("failed-log-*.log"))
-            evidence_path = copied_evidence / "repair-evidence.json"
+            run_facts_path = copied_evidence / "run-facts.json"
         else:
             evidence_run = parent
             evidence_summary = summary
@@ -562,25 +561,14 @@ def prepare_continuation(
             attempt_root = evidence_run / f"attempt-{attempt:02d}"
             active_plan_path = attempt_root / "execution-plan.json"
             validation_path = attempt_root / "public-validation.json"
-            evidence_path = (
-                evidence_run
-                / "checkpoints"
-                / f"repair-evidence-attempt-{attempt:02d}.json"
-            )
-        if not active_plan_path.is_file() or not validation_path.is_file():
+            run_facts_path = attempt_root / "run-facts.json"
+        if (
+            not active_plan_path.is_file()
+            or not validation_path.is_file()
+            or run_facts_path is None
+            or not run_facts_path.is_file()
+        ):
             raise ResumeCompatibilityError("repair_evidence")
-        if evidence_path.is_file() and not log_paths:
-            evidence = _checkpoint_payload(evidence_path)
-            raw_paths = evidence.get("log_paths", [])
-            if isinstance(raw_paths, list):
-                for raw_path in raw_paths:
-                    candidate = (evidence_run / str(raw_path)).resolve()
-                    if (
-                        candidate.is_relative_to(evidence_run)
-                        and candidate.is_file()
-                    ):
-                        log_paths.append(candidate)
-
     return ContinuationInput(
         parent_run=parent,
         parent_manifest_sha256=manifest_sha256,
@@ -588,7 +576,7 @@ def prepare_continuation(
         parent_summary=summary,
         active_plan_path=active_plan_path,
         public_validation_path=validation_path,
-        failed_log_paths=log_paths,
+        run_facts_path=run_facts_path,
         transport_attempts_used=transport_attempts,
         continuation_index_for_stage=continuation_index,
         continuation_counts=continuation_counts,

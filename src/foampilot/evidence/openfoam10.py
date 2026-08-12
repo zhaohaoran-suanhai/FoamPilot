@@ -15,9 +15,11 @@ from .extractors import EvidenceExtractionError
 from .models import (
     ContinuityFact,
     CourantFact,
+    FieldOperationFact,
     MeshCheckFact,
     NativeErrorFact,
     RawCommandEvidence,
+    ReusedCommandEvidence,
     ResidualFact,
     RunFacts,
     SolverProgressFact,
@@ -53,6 +55,10 @@ _COURANT_ALT = re.compile(
     rf"Mean and max Courant Numbers\s*=\s*({_NUMBER})\s+({_NUMBER})",
     re.IGNORECASE,
 )
+_COURANT_BARE = re.compile(
+    rf"Courant Number\s*[:=]?\s*({_NUMBER})",
+    re.IGNORECASE,
+)
 _COUNT = {
     "points": re.compile(r"^\s*points\s*:\s*(\d+)\b", re.IGNORECASE),
     "faces": re.compile(r"^\s*faces\s*:\s*(\d+)\b", re.IGNORECASE),
@@ -74,6 +80,30 @@ _NON_FINITE = re.compile(
     r"(?<![A-Za-z])(?:nan|[-+]?inf)(?![A-Za-z])",
     re.IGNORECASE,
 )
+_FIELD_OPERATION = re.compile(
+    rf"\b(min|max|volIntegrate)\s*"
+    rf"(?:\(\s*([^\s)]+)\s*\)|\(\s*\)\s+of\s+([^\s=]+))"
+    rf"\s*=\s*({_NUMBER})",
+    re.IGNORECASE,
+)
+_MISSING_KEYWORD = re.compile(
+    r"\bkeyword\s+([^\s]+)\s+(?:is\s+)?(?:undefined|not\s+found)",
+    re.IGNORECASE,
+)
+_MISSING_OBJECT = re.compile(
+    r"(?:cannot\s+find|could\s+not\s+find|unknown)\s+"
+    r"(?:object|field)\s+([^\s,;]+)",
+    re.IGNORECASE,
+)
+_MISSING_CASE_FILE = re.compile(
+    r"(?:cannot\s+find|could\s+not\s+find|no\s+such\s+file)\s+"
+    r"(?:file\s+)?((?:0|constant|system)/[^\s,;]+)",
+    re.IGNORECASE,
+)
+_CASE_PATH = re.compile(
+    r"(?:^|\s)(?:/[^\s:]*/case/|/case/)"
+    r"((?:0|constant|system)/[^\s:,;\[\]]+)"
+)
 
 
 @dataclass
@@ -87,6 +117,7 @@ class _StepAccumulator:
     continuity: list[ContinuityFact] = field(default_factory=list)
     courant: list[CourantFact] = field(default_factory=list)
     errors: list[NativeErrorFact] = field(default_factory=list)
+    field_operations: list[FieldOperationFact] = field(default_factory=list)
     error_codes: set[str] = field(default_factory=set)
     normal_end: bool = False
     mesh_ok_marker: bool = False
@@ -98,9 +129,17 @@ class _StepAccumulator:
     max_skewness: float | None = None
     negative_volume_cells: int | None = None
     parse_truncated: bool = False
+    mesh_diagnostics: list[str] = field(default_factory=list)
     line_number: int = 0
 
-    def _error(self, code: str, detail: str) -> None:
+    def _error(
+        self,
+        code: str,
+        detail: str,
+        *,
+        subject: str | None = None,
+        path: str | None = None,
+    ) -> None:
         if code in self.error_codes:
             return
         self.error_codes.add(code)
@@ -109,6 +148,8 @@ class _StepAccumulator:
                 step_id=self.step_id,
                 code=code,
                 detail=detail[:500],
+                subject=subject,
+                path=path,
                 line_number=self.line_number,
             )
         )
@@ -156,17 +197,20 @@ class _StepAccumulator:
                     line_number=self.line_number,
                 )
             )
-        courant_match = _COURANT.search(stripped) or _COURANT_ALT.search(
-            stripped
+        courant_match = (
+            _COURANT.search(stripped)
+            or _COURANT_ALT.search(stripped)
+            or _COURANT_BARE.search(stripped)
         )
         if courant_match is not None:
+            maximum_group = 2 if courant_match.lastindex == 2 else 1
             self.courant.append(
                 CourantFact(
                     step_id=self.step_id,
                     simulation_time=self.simulation_time,
                     region=self.region,
                     mean=float(courant_match.group(1)),
-                    maximum=float(courant_match.group(2)),
+                    maximum=float(courant_match.group(maximum_group)),
                     line_number=self.line_number,
                 )
             )
@@ -183,12 +227,71 @@ class _StepAccumulator:
         negative_volumes = _NEGATIVE_VOLUMES.search(stripped)
         if negative_volumes is not None:
             self.negative_volume_cells = int(negative_volumes.group(1))
+        if stripped.lstrip().startswith("***") or re.search(
+            r"\bFailed\s+\d+\s+mesh checks?\b", stripped
+        ):
+            diagnostic = stripped.lstrip("*").strip()[:500]
+            if diagnostic and diagnostic not in self.mesh_diagnostics:
+                self.mesh_diagnostics.append(diagnostic)
+        field_operation = _FIELD_OPERATION.search(stripped)
+        if field_operation is not None:
+            self.field_operations.append(
+                FieldOperationFact(
+                    step_id=self.step_id,
+                    simulation_time=self.simulation_time,
+                    operation=field_operation.group(1),
+                    field=field_operation.group(2) or field_operation.group(3),
+                    value=float(field_operation.group(4)),
+                    line_number=self.line_number,
+                )
+            )
 
         if re.fullmatch(r"\s*End\s*", stripped):
             self.normal_end = True
         if re.search(r"\bMesh OK\b", stripped):
             self.mesh_ok_marker = True
-        if re.search(
+        keyword = _MISSING_KEYWORD.search(stripped)
+        missing_object = _MISSING_OBJECT.search(stripped)
+        missing_file = _MISSING_CASE_FILE.search(stripped)
+        path_match = _CASE_PATH.search(stripped)
+        if re.match(r"^\s*(?:bwrap|prlimit):", stripped):
+            self._error("EXECUTION_BACKEND_ERROR", stripped)
+        elif keyword is not None:
+            self._error(
+                "MISSING_DICTIONARY_KEYWORD",
+                stripped,
+                subject=keyword.group(1).rstrip(".:,;"),
+                path=(
+                    path_match.group(1).rstrip(".\")'")
+                    if path_match is not None
+                    else None
+                ),
+            )
+        elif missing_object is not None:
+            self._error(
+                "MISSING_REGISTRY_OBJECT",
+                stripped,
+                subject=missing_object.group(1).rstrip(".:,;"),
+            )
+        elif missing_file is not None:
+            self._error(
+                "MISSING_CASE_FILE",
+                stripped,
+                path=missing_file.group(1).rstrip(".:,;\")'"),
+            )
+        elif "unknown function type" in stripped.casefold() or (
+            "unknown function object" in stripped.casefold()
+        ):
+            self._error("UNKNOWN_FUNCTION_OBJECT_TYPE", stripped)
+        elif "different dimensions" in stripped.casefold() or (
+            "inconsistent dimensions" in stripped.casefold()
+        ) or "dimension mismatch" in stripped.casefold():
+            self._error("DIMENSION_MISMATCH", stripped)
+        elif "invalid option" in stripped.casefold() or (
+            "unknown option" in stripped.casefold()
+        ) or "unrecognized option" in stripped.casefold():
+            self._error("INVALID_OPTION", stripped)
+        elif re.search(
             r"^\s*(?:floating point exception\b|"
             r".*(?:caught|received|signal).*\bsigfpe\b)",
             stripped,
@@ -339,6 +442,7 @@ class OpenFOAM10EvidenceExtractor:
         continuity: list[ContinuityFact] = []
         courant: list[CourantFact] = []
         errors: list[NativeErrorFact] = []
+        field_operations: list[FieldOperationFact] = []
         sources: dict[str, str] = {}
 
         for result_step in run_result.steps:
@@ -375,6 +479,7 @@ class OpenFOAM10EvidenceExtractor:
             continuity.extend(accumulator.continuity)
             courant.extend(accumulator.courant)
             errors.extend(accumulator.errors)
+            field_operations.extend(accumulator.field_operations)
             if str(command.stage) == "check":
                 successful = (
                     result_step.return_code == 0
@@ -402,6 +507,7 @@ class OpenFOAM10EvidenceExtractor:
                             accumulator.negative_volume_cells
                         ),
                         parse_truncated=accumulator.parse_truncated,
+                        diagnostics=tuple(accumulator.mesh_diagnostics[:3]),
                     )
                 )
 
@@ -419,6 +525,18 @@ class OpenFOAM10EvidenceExtractor:
             continuity=tuple(continuity),
             courant=tuple(courant),
             native_errors=tuple(errors),
+            field_operations=tuple(field_operations),
+            reused_steps=tuple(
+                ReusedCommandEvidence(
+                    step_id=item.step_id,
+                    stage=item.stage,
+                    executable=item.executable,
+                    source_kind=item.source_kind,
+                    source_id=item.source_id,
+                    reason_codes=tuple(item.reason_codes),
+                )
+                for item in run_result.reused_steps
+            ),
             written_times=written_times,
             output_files=output_files,
             source_sha256=sources,

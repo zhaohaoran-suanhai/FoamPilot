@@ -1,7 +1,7 @@
 """Public preprocessing contracts and probes."""
 
 from .geometry_probe import GeometryProbeError, probe_geometry
-from .mesh_quality import build_mesh_quality_report
+from .mesh_quality import mesh_quality_from_run_facts
 from .mesh_probe import probe_provided_mesh
 from .models import (
     BoundingBox,
@@ -28,7 +28,7 @@ __all__ = [
     "PatchRoleMatch",
     "MeshZoneFact",
     "PolyMeshInspectionError",
-    "build_mesh_quality_report",
+    "mesh_quality_from_run_facts",
     "probe_geometry",
     "probe_provided_mesh",
     "inspect_poly_mesh",

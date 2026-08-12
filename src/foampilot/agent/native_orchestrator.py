@@ -28,6 +28,7 @@ from foampilot.environment import (
     EnvironmentSnapshot,
     discover_environment,
 )
+from foampilot.evidence import EvidenceExtractorRegistry, RunFacts
 from foampilot.extensions import (
     CapabilityDescriptor,
     CapabilityRegistry,
@@ -74,7 +75,7 @@ from foampilot.preprocessing import (
     InputMeshFacts,
     MeshQualityReport,
     PolyMeshInspectionError,
-    build_mesh_quality_report,
+    mesh_quality_from_run_facts,
     inspect_poly_mesh,
     probe_geometry,
     probe_provided_mesh,
@@ -871,17 +872,6 @@ def _read_declared_files(
     return values
 
 
-def _run_log(run: PlanRunResult) -> str:
-    parts: list[str] = []
-    for step in run.steps:
-        for path in (step.stdout_path, step.stderr_path):
-            if path.is_file():
-                parts.append(
-                    path.read_text(encoding="utf-8", errors="replace")
-                )
-    return "\n".join(parts)
-
-
 def _generation_trace(
     case_root: Path,
     plan: ExecutionPlan,
@@ -1559,14 +1549,13 @@ class NativeAgent:
                     reused_evidence_paths.append(
                         "continuation-evidence/public-validation.json"
                     )
-                for index, source in enumerate(
-                    _continuation.failed_log_paths,
-                    start=1,
-                ):
-                    target = evidence_root / f"failed-log-{index:02d}.log"
-                    target.write_bytes(source.read_bytes())
+                if _continuation.run_facts_path is not None:
+                    facts_copy = evidence_root / "run-facts.json"
+                    facts_copy.write_bytes(
+                        _continuation.run_facts_path.read_bytes()
+                    )
                     reused_evidence_paths.append(
-                        target.relative_to(run_dir).as_posix()
+                        "continuation-evidence/run-facts.json"
                     )
             _write_json(
                 run_dir / "continuation.json",
@@ -2599,6 +2588,7 @@ class NativeAgent:
             parent_plan = load_parent_plan(_continuation)
             assert _continuation.public_validation_path is not None
             assert _continuation.active_plan_path is not None
+            assert _continuation.run_facts_path is not None
             report = PublicValidationReport.model_validate_json(
                 _continuation.public_validation_path.read_text(
                     encoding="utf-8"
@@ -2620,12 +2610,14 @@ class NativeAgent:
                 parent_case,
                 parent_plan,
             )
-            log_text = "\n".join(
-                path.read_text(encoding="utf-8", errors="replace")
-                for path in _continuation.failed_log_paths
+            run_facts = RunFacts.model_validate_json(
+                _continuation.run_facts_path.read_text(encoding="utf-8")
             )
-            if not log_text:
-                log_text = report.feedback()
+            log_text = json.dumps(
+                run_facts.model_dump(mode="json"),
+                ensure_ascii=False,
+                sort_keys=True,
+            )
             parent_attempt = attempts[-1].attempt
             assert case_design is not None
             assert selected_registry is not None
@@ -2644,7 +2636,7 @@ class NativeAgent:
                 classification = classify_native_failure(
                     report=report,
                     plan=parent_plan,
-                    log_tail=log_text,
+                    run_facts=run_facts,
                     inspection=(
                         parent_inspection
                         if parent_inspection is not None
@@ -2810,7 +2802,7 @@ class NativeAgent:
                     plan=parent_plan,
                     classification=classification,
                     repair_scope=repair_scope,
-                    failed_log=log_text,
+                    run_facts=run_facts,
                     knowledge_text=repair_context.knowledge_text,
                     skills_text=repair_context.skills_text,
                     geometry_facts=geometry_facts,
@@ -3859,9 +3851,19 @@ class NativeAgent:
                             ],
                             occurred_at=step.finished_at,
                         )
-                mesh_quality = build_mesh_quality_report(
-                    run_result,
+                run_facts = (
+                    EvidenceExtractorRegistry.first_party()
+                    .resolve(
+                        self.runtime_config.distribution,
+                        self.runtime_config.version,
+                    )
+                    .extract(run_result, active_plan, case_root)
+                )
+                _write_json(attempt_root / "run-facts.json", run_facts)
+                mesh_quality = mesh_quality_from_run_facts(
+                    run_facts,
                     task.mesh,
+                    case_root,
                 )
                 if (
                     task.mesh is not None
@@ -3958,17 +3960,41 @@ class NativeAgent:
                     ],
                 )
                 report = validate_native_run(
-                    task=task,
-                    run_result=run_result,
-                    case_root=case_root,
+                    task,
+                    run_facts,
+                    case_root,
                 )
                 if task.mesh is not None:
                     report = _with_mesh_quality(report, mesh_quality)
-                log_text = _run_log(run_result)
+                log_text = json.dumps(
+                    run_facts.model_dump(mode="json"),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
             else:
                 report = _inspection_validation_report(inspection)
-                log_text = "\n".join(
-                    check.detail for check in report.checks
+                run_facts = RunFacts(
+                    run_id=run_dir.name,
+                    attempt=attempt_number,
+                    plan_sha256=sha256(
+                        json.dumps(
+                            active_plan.model_dump(mode="json"),
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode("utf-8")
+                    ).hexdigest(),
+                    extractor_identities={
+                        "static-inspection": "foampilot.inspection/1.0.0"
+                    },
+                    raw_steps=(),
+                    source_sha256={},
+                )
+                _write_json(attempt_root / "run-facts.json", run_facts)
+                log_text = json.dumps(
+                    run_facts.model_dump(mode="json"),
+                    ensure_ascii=False,
+                    sort_keys=True,
                 )
             _write_json(
                 attempt_root / "public-validation.json",
@@ -4012,7 +4038,7 @@ class NativeAgent:
 
             fingerprint = failure_fingerprint(
                 report,
-                log_tail=log_text,
+                run_facts=run_facts,
             )
             assert isinstance(fingerprint, str)
             fingerprints.append(fingerprint)
@@ -4028,7 +4054,7 @@ class NativeAgent:
                 classification = classify_native_failure(
                     report=report,
                     plan=active_plan,
-                    log_tail=log_text,
+                    run_facts=run_facts,
                     inspection=(inspection if not inspection.passed else None),
                 )
             except FailureClassificationError as error:
@@ -4200,18 +4226,9 @@ class NativeAgent:
                             f"attempt-{attempt_number:02d}/"
                             "public-validation.json"
                         ),
-                        "log_paths": [
-                            path.relative_to(run_dir).as_posix()
-                            for step in (
-                                run_result.steps
-                                if inspection.passed
-                                else []
-                            )
-                            for path in (
-                                step.stdout_path,
-                                step.stderr_path,
-                            )
-                        ],
+                        "run_facts_path": (
+                            f"attempt-{attempt_number:02d}/run-facts.json"
+                        ),
                     },
                 )
                 _record_event(
@@ -4254,7 +4271,7 @@ class NativeAgent:
                     plan=active_plan,
                     classification=classification,
                     repair_scope=repair_scope,
-                    failed_log=log_text,
+                    run_facts=run_facts,
                     knowledge_text=repair_context.knowledge_text,
                     skills_text=repair_context.skills_text,
                     geometry_facts=geometry_facts,

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from pathlib import Path
+
 from foampilot.physics import (
     PatchHeatFlow,
     RiemannState,
     heat_balance,
     solve_ideal_gas_riemann,
 )
-from foampilot.runtime import parse_openfoam_log
+from foampilot.evidence import OpenFOAM10EvidenceExtractor
+from foampilot.plans import NativeCommand
+from foampilot.runtime import PlanRunResult, PlanStepResult
 from foampilot.validation import (
     BuoyantPolicy,
     ShockTubePolicy,
@@ -16,6 +21,7 @@ from foampilot.validation import (
     check_shock_tube_run,
     parse_time_control,
 )
+from tests.test_execution_plan import valid_plan
 
 
 RHOCENTRAL = ShockTubePolicy(
@@ -174,11 +180,52 @@ def _balance(imbalance: float):
     )
 
 
-def test_buoyant_self_check_uses_residual_continuity_and_true_heat_flux() -> None:
+def _run_facts(tmp_path: Path, text: str):
+    stdout = tmp_path / "solve.out"
+    stderr = tmp_path / "solve.err"
+    stdout.write_text(text, encoding="utf-8")
+    stderr.write_text("", encoding="utf-8")
+    now = datetime.now(timezone.utc)
+    result = PlanRunResult(
+        case_dir=tmp_path,
+        steps=[
+            PlanStepResult(
+                step_id="solve",
+                command=["buoyantFoam"],
+                return_code=0,
+                started_at=now,
+                finished_at=now,
+                elapsed_seconds=0,
+                timed_out=False,
+                stdout_path=stdout,
+                stderr_path=stderr,
+                execution_backend="host",
+            )
+        ],
+    )
+    plan = valid_plan().model_copy(
+        update={
+            "commands": [
+                NativeCommand(
+                    step_id="solve",
+                    stage="solve",
+                    executable="buoyantFoam",
+                    timeout_seconds=30,
+                )
+            ]
+        }
+    )
+    return OpenFOAM10EvidenceExtractor().extract(result, plan, tmp_path)
+
+
+def test_buoyant_self_check_uses_residual_continuity_and_true_heat_flux(
+    tmp_path: Path,
+) -> None:
     report = check_buoyant_run(
         BUOYANT,
-        log=parse_openfoam_log(
-            _buoyant_log(first=0.5, last=1e-3, local_continuity=1e-4)
+        run_facts=_run_facts(
+            tmp_path,
+            _buoyant_log(first=0.5, last=1e-3, local_continuity=1e-4),
         ),
         wall_heat_balance=_balance(0.02),
     )
@@ -191,11 +238,14 @@ def test_buoyant_self_check_uses_residual_continuity_and_true_heat_flux() -> Non
     }
 
 
-def test_buoyant_self_check_rejects_unconverged_or_unbalanced_run() -> None:
+def test_buoyant_self_check_rejects_unconverged_or_unbalanced_run(
+    tmp_path: Path,
+) -> None:
     report = check_buoyant_run(
         BUOYANT,
-        log=parse_openfoam_log(
-            _buoyant_log(first=0.01, last=0.02, local_continuity=0.03)
+        run_facts=_run_facts(
+            tmp_path,
+            _buoyant_log(first=0.01, last=0.02, local_continuity=0.03),
         ),
         wall_heat_balance=_balance(0.2),
     )

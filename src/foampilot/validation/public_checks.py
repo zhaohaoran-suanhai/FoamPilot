@@ -9,7 +9,7 @@ import statistics
 from pydantic import BaseModel, ConfigDict, Field
 
 from foampilot.physics import RiemannSolution, WallHeatBalance
-from foampilot.runtime import OpenFOAMLogSummary
+from foampilot.evidence import RunFacts
 
 from .policies import BuoyantPolicy, ShockTubePolicy
 
@@ -213,7 +213,7 @@ def _matches_residual_field(observed: str, expected: str) -> bool:
 def check_buoyant_run(
     policy: BuoyantPolicy,
     *,
-    log: OpenFOAMLogSummary,
+    run_facts: RunFacts,
     wall_heat_balance: WallHeatBalance | None,
 ) -> PublicCheckReport:
     """Check convergence, continuity, and actual transport-model heat flow."""
@@ -223,7 +223,7 @@ def check_buoyant_run(
     for field in policy.residual_fields:
         values = [
             item.initial
-            for item in log.residuals
+            for item in run_facts.residuals
             if _matches_residual_field(item.field, field)
         ]
         if len(values) < 2:
@@ -280,7 +280,9 @@ def check_buoyant_run(
         },
     )
 
-    last_continuity = log.continuity[-1] if log.continuity else None
+    last_continuity = (
+        run_facts.continuity[-1] if run_facts.continuity else None
+    )
     continuity_ok = (
         last_continuity is not None
         and abs(last_continuity.local)

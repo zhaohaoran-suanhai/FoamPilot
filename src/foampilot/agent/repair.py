@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from hashlib import sha256
 import json
-import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -16,6 +15,7 @@ from foampilot.models import (
     ModelRequest,
     ModelTraceSink,
 )
+from foampilot.evidence import RunFacts
 from foampilot.plans import ExecutionPlan
 from foampilot.preprocessing import GeometryFacts, MeshQualityReport
 from foampilot.tasks import TaskSpec
@@ -46,14 +46,34 @@ class RepairStop(StrictModel):
 def failure_fingerprint(
     report: PublicValidationReport,
     *,
-    log_tail: str = "",
+    run_facts: RunFacts,
 ) -> str:
-    """Hash normalized public evidence and the relevant failed-log tail."""
+    """Hash the report plus canonical observations, never raw log text."""
 
-    normalized_tail = re.sub(r"\s+", " ", log_tail).strip()
     payload = {
         "report": report.model_dump(mode="json"),
-        "log_tail": normalized_tail[-4000:],
+        "run_facts": {
+            "steps": [
+                {
+                    "step_id": item.step_id,
+                    "stage": item.stage,
+                    "return_code": item.return_code,
+                    "timed_out": item.timed_out,
+                    "cancelled": item.cancelled,
+                }
+                for item in run_facts.raw_steps
+            ],
+            "mesh_checks": [
+                item.model_dump(mode="json") for item in run_facts.mesh_checks
+            ],
+            "solver_progress": [
+                item.model_dump(mode="json")
+                for item in run_facts.solver_progress[-4:]
+            ],
+            "native_errors": [
+                item.model_dump(mode="json") for item in run_facts.native_errors
+            ],
+        },
     }
     encoded = json.dumps(
         payload,
@@ -92,7 +112,7 @@ def request_repair_proposal(
     plan: ExecutionPlan,
     classification: NativeFailureClassification,
     repair_scope: RepairScope,
-    failed_log: str,
+    run_facts: RunFacts,
     knowledge_text: str,
     skills_text: str,
     status_snapshot: AgentStatusSnapshot,
@@ -117,7 +137,38 @@ def request_repair_proposal(
         "failure_classification": classification.model_dump(mode="json"),
         "repair_scope": repair_scope.model_dump(mode="json"),
         "relevant_typed_commands": relevant_commands,
-        "failed_step_log_tail": failed_log[-6000:],
+        "failed_run_facts": {
+            "raw_steps": [
+                {
+                    "step_id": item.step_id,
+                    "stage": item.stage,
+                    "return_code": item.return_code,
+                    "timed_out": item.timed_out,
+                    "cancelled": item.cancelled,
+                    "execution_backend": item.execution_backend,
+                }
+                for item in run_facts.raw_steps
+            ],
+            "mesh_checks": [
+                item.model_dump(mode="json") for item in run_facts.mesh_checks
+            ],
+            "solver_progress": [
+                item.model_dump(mode="json")
+                for item in run_facts.solver_progress[-8:]
+            ],
+            "residuals": [
+                item.model_dump(mode="json") for item in run_facts.residuals[-24:]
+            ],
+            "continuity": [
+                item.model_dump(mode="json") for item in run_facts.continuity[-8:]
+            ],
+            "courant": [
+                item.model_dump(mode="json") for item in run_facts.courant[-8:]
+            ],
+            "native_errors": [
+                item.model_dump(mode="json") for item in run_facts.native_errors
+            ],
+        },
         "dynamic_public_knowledge": knowledge_text,
         "portable_workflow_skill": skills_text,
         "deterministic_agent_status": status_snapshot.model_dump(mode="json"),

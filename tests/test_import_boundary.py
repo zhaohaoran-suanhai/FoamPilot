@@ -194,3 +194,19 @@ def test_authoring_layer_never_constructs_native_commands() -> None:
                     f"{path.relative_to(SOURCE_ROOT)}:{node.lineno}"
                 )
     assert violations == []
+
+
+def test_only_evidence_package_contains_solver_log_patterns() -> None:
+    patterns = ("Solving for", "Courant Number", "Mesh OK")
+    violations: list[str] = []
+    evidence_root = SOURCE_ROOT / "evidence"
+    for path in sorted(SOURCE_ROOT.rglob("*.py")):
+        if path.is_relative_to(evidence_root):
+            continue
+        text = path.read_text(encoding="utf-8")
+        for pattern in patterns:
+            if pattern in text:
+                violations.append(
+                    f"{path.relative_to(SOURCE_ROOT)} contains {pattern!r}"
+                )
+    assert violations == []

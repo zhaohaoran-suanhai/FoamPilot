@@ -5,13 +5,10 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path, PurePosixPath
-import re
 
-from foampilot.runtime import (
-    OpenFOAMLogSummary,
-    PlanRunResult,
-    PlanStepResult,
-    parse_openfoam_log,
+from foampilot.evidence import (
+    RawCommandEvidence,
+    RunFacts,
 )
 from foampilot.tasks import PublicCheck, TaskSpec
 
@@ -22,7 +19,6 @@ from .models import (
 )
 
 
-_NUMBER = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
 _MESH_COMMANDS = {
     "blockMesh",
     "checkMesh",
@@ -61,37 +57,24 @@ def _command_executable(command: list[str]) -> str:
 
 
 def _field_values(
-    text: str,
+    run_facts: RunFacts,
     *,
     operation: str,
     field: str,
 ) -> list[float]:
-    expression = re.compile(
-        rf"\b{re.escape(operation)}\s*"
-        rf"(?:\(\s*{re.escape(field)}\s*\)"
-        rf"|\(\s*\)\s+of\s+{re.escape(field)})"
-        rf"\s*=\s*({_NUMBER})"
+    return [
+        item.value
+        for item in run_facts.field_operations
+        if item.operation == operation and item.field == field
+    ]
+
+
+def _successful(step: RawCommandEvidence) -> bool:
+    return (
+        step.return_code == 0
+        and not step.timed_out
+        and not step.cancelled
     )
-    return [float(item) for item in expression.findall(text)]
-
-
-def _step_text(step: PlanStepResult) -> str:
-    return "\n".join(
-        (
-            step.stdout_path.read_text(
-                encoding="utf-8",
-                errors="replace",
-            ),
-            step.stderr_path.read_text(
-                encoding="utf-8",
-                errors="replace",
-            ),
-        )
-    )
-
-
-def _successful(step: PlanStepResult) -> bool:
-    return step.return_code == 0 and not step.timed_out
 
 
 def _nonempty_file(path: Path, root: Path) -> bool:
@@ -149,27 +132,15 @@ def _requested_output_path(
 
 
 def _check_mesh_diagnostics(
-    steps: list[PlanStepResult],
-    texts: list[str],
+    run_facts: RunFacts,
 ) -> str | None:
-    diagnostics: list[str] = []
-    for step, text in zip(reversed(steps), reversed(texts), strict=True):
-        if _command_executable(step.command) != "checkMesh":
-            continue
-        for raw_line in text.splitlines():
-            line = raw_line.strip()
-            if not (
-                line.startswith("***")
-                or re.search(r"\bFailed\s+\d+\s+mesh checks?\b", line)
-            ):
-                continue
-            normalized = line.lstrip("*").strip()[:500]
-            if normalized and normalized not in diagnostics:
-                diagnostics.append(normalized)
-            if len(diagnostics) == 3:
-                break
-        if diagnostics:
-            break
+    diagnostics = list(
+        dict.fromkeys(
+            item
+            for check in reversed(run_facts.mesh_checks)
+            for item in check.diagnostics
+        )
+    )[:3]
     if not diagnostics:
         return None
     return "; ".join(diagnostics)[:1000]
@@ -258,35 +229,30 @@ def _check(
     expectation: PublicCheck,
     *,
     case_root: Path,
-    steps: list[PlanStepResult],
+    run_facts: RunFacts,
+    steps: list[RawCommandEvidence],
     reused_executables: set[str],
-    texts: list[str],
-    combined: str,
-    summaries: list[OpenFOAMLogSummary],
     field_cache: dict[str, dict[str, list[float]]],
 ) -> PublicValidationCheck:
     kind = expectation.kind
     parameters = expectation.parameters
 
     if kind == "mesh_ok":
-        matched = any(
-            _successful(step)
-            and _command_executable(step.command) == "checkMesh"
-            and bool(re.search(r"\bMesh OK\b", text))
-            for step, text in zip(steps, texts, strict=True)
+        matched = any(check.mesh_ok is True for check in run_facts.mesh_checks)
+        diagnostic = (
+            None if matched else _check_mesh_diagnostics(run_facts)
         )
-        diagnostic = None if matched else _check_mesh_diagnostics(steps, texts)
         return PublicValidationCheck(
             name=expectation.name,
             passed=matched,
             detail=(
-                "A successful checkMesh step reports Mesh OK."
+                "A successful mesh-check step reports the canonical pass fact."
                 if matched
                 else (
-                    "No successful checkMesh step reports Mesh OK. "
+                    "No successful mesh-check step reports the canonical pass fact. "
                     f"checkMesh diagnostics: {diagnostic}"
                     if diagnostic
-                    else "No successful checkMesh step reports Mesh OK."
+                    else "No successful mesh-check step reports the canonical pass fact."
                 )
             ),
             observed={
@@ -300,7 +266,7 @@ def _check(
         configured = parameters.get("executable")
         executable = str(configured) if isinstance(configured, str) else ""
         executed = any(
-            executable == _command_executable(step.command)
+            executable == step.executable
             and _successful(step)
             for step in steps
         )
@@ -329,8 +295,8 @@ def _check(
     if kind == "completion":
         all_successful = bool(steps) and all(_successful(step) for step in steps)
         solver_completion = any(
-            summary.completed and summary.latest_time is not None
-            for summary in summaries
+            progress.completed_normally is True
+            for progress in run_facts.solver_progress
         )
         passed = all_successful and solver_completion
         return PublicValidationCheck(
@@ -355,11 +321,7 @@ def _check(
             if isinstance(configured, (int, float))
             else None
         )
-        times = [
-            summary.latest_time
-            for summary in summaries
-            if summary.latest_time is not None
-        ]
+        times = [item.simulation_time for item in run_facts.solver_progress]
         latest = max(times) if times else None
         passed = (
             minimum is not None
@@ -394,9 +356,9 @@ def _check(
             else None
         )
         values = [
-            summary.last_cumulative_continuity_error
-            for summary in summaries
-            if summary.last_cumulative_continuity_error is not None
+            item.cumulative
+            for item in run_facts.continuity
+            if item.cumulative is not None
         ]
         observed = values[-1] if values else None
         passed = (
@@ -418,7 +380,11 @@ def _check(
         )
 
     if kind == "finite_fields":
-        non_finite = any(summary.non_finite for summary in summaries)
+        non_finite = any(
+            item.code
+            in {"NON_FINITE_VALUE", "FLOATING_POINT_EXCEPTION"}
+            for item in run_facts.native_errors
+        )
         return PublicValidationCheck(
             name=expectation.name,
             passed=bool(steps) and not non_finite,
@@ -460,12 +426,12 @@ def _check(
     if kind == "bounded_field":
         field = parameters.get("field")
         minimum_values = (
-            _field_values(combined, operation="min", field=field)
+            _field_values(run_facts, operation="min", field=field)
             if isinstance(field, str)
             else []
         )
         maximum_values = (
-            _field_values(combined, operation="max", field=field)
+            _field_values(run_facts, operation="max", field=field)
             if isinstance(field, str)
             else []
         )
@@ -531,7 +497,7 @@ def _check(
     if kind == "conservation":
         field = parameters.get("field")
         samples = (
-            _field_values(combined, operation="volIntegrate", field=field)
+            _field_values(run_facts, operation="volIntegrate", field=field)
             if isinstance(field, str)
             else []
         )
@@ -594,10 +560,23 @@ def _check(
     )
 
 
-def _failure_layer(step: PlanStepResult, text: str) -> FailureLayer:
-    if re.search(r"(?m)^(?:bwrap|prlimit):", text):
+def _failure_layer(
+    step: RawCommandEvidence,
+    run_facts: RunFacts,
+) -> FailureLayer:
+    if any(
+        item.step_id == step.step_id
+        and item.code == "EXECUTION_BACKEND_ERROR"
+        for item in run_facts.native_errors
+    ):
         return "ENVIRONMENT_BLOCKED"
-    executable = _command_executable(step.command)
+    if step.stage == "mesh" or step.stage == "check":
+        return "MESH_FAILED"
+    if step.stage == "initialize":
+        return "INITIALIZATION_FAILED"
+    if step.stage == "postprocess":
+        return "POSTPROCESS_FAILED"
+    executable = step.executable
     if executable in _MESH_COMMANDS:
         return "MESH_FAILED"
     if executable in _INITIALIZATION_COMMANDS:
@@ -608,25 +587,22 @@ def _failure_layer(step: PlanStepResult, text: str) -> FailureLayer:
 
 
 def validate_native_run(
-    *,
     task: TaskSpec,
-    run_result: PlanRunResult,
+    run_facts: RunFacts,
     case_root: str | Path,
 ) -> PublicValidationReport:
     """Apply evaluator-owned checks to observed execution and case files."""
 
     root = Path(case_root).resolve()
-    steps = list(run_result.steps)
+    steps = list(run_facts.raw_steps)
     reused_executables = {
-        step.executable for step in run_result.reused_steps
+        step.executable for step in run_facts.reused_steps
     }
-    texts = [_step_text(step) for step in steps]
-    by_id = {step.step_id: (step, text) for step, text in zip(steps, texts)}
     field_cache: dict[str, dict[str, list[float]]] = {}
 
-    if run_result.failed_step_id is not None:
-        failed, text = by_id[run_result.failed_step_id]
-        layer = _failure_layer(failed, text)
+    failed = next((step for step in steps if not _successful(step)), None)
+    if failed is not None:
+        layer = _failure_layer(failed, run_facts)
         return PublicValidationReport(
             checks=[
                 PublicValidationCheck(
@@ -644,17 +620,13 @@ def validate_native_run(
             failed_step_id=failed.step_id,
         )
 
-    combined = "\n".join(texts)
-    summaries = [parse_openfoam_log(text) for text in texts]
     checks = [
         _check(
             expectation,
             case_root=root,
+            run_facts=run_facts,
             steps=steps,
             reused_executables=reused_executables,
-            texts=texts,
-            combined=combined,
-            summaries=summaries,
             field_cache=field_cache,
         )
         for expectation in task.public_checks

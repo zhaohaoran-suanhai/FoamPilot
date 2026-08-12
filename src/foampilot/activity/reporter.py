@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from foampilot.evidence import MetricsWriter
 
 if TYPE_CHECKING:
-    from foampilot.runtime.telemetry import ResidualMetric
+    from foampilot.evidence.telemetry import ResidualMetric
 
 from .models import (
     ActivityEvent,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from foampilot.runtime.telemetry import IncrementalOpenFOAMLogParser
+from foampilot.evidence.telemetry import IncrementalOpenFOAMLogParser
 
 
 def test_incremental_parser_retains_step_across_split_chunks() -> None:

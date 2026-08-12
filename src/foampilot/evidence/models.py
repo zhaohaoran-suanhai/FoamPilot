@@ -69,6 +69,7 @@ class MeshCheckFact(StrictFrozenModel):
     max_skewness: float | None = Field(default=None, ge=0)
     negative_volume_cells: int | None = Field(default=None, ge=0)
     parse_truncated: bool = False
+    diagnostics: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def validate_execution_state(self) -> Self:
@@ -118,7 +119,27 @@ class NativeErrorFact(StrictFrozenModel):
     step_id: str
     code: str = Field(pattern=r"^[A-Z][A-Z0-9_]*$")
     detail: str = Field(min_length=1)
+    subject: str | None = None
+    path: str | None = None
     line_number: int | None = Field(default=None, ge=1)
+
+
+class FieldOperationFact(StrictFrozenModel):
+    step_id: str
+    simulation_time: float | None = Field(default=None, ge=0)
+    operation: Literal["min", "max", "volIntegrate"]
+    field: str = Field(min_length=1)
+    value: float
+    line_number: int | None = Field(default=None, ge=1)
+
+
+class ReusedCommandEvidence(StrictFrozenModel):
+    step_id: str
+    stage: str
+    executable: str
+    source_kind: str
+    source_id: str
+    reason_codes: tuple[str, ...] = ()
 
 
 class RunFacts(StrictFrozenModel):
@@ -134,6 +155,8 @@ class RunFacts(StrictFrozenModel):
     continuity: tuple[ContinuityFact, ...] = ()
     courant: tuple[CourantFact, ...] = ()
     native_errors: tuple[NativeErrorFact, ...] = ()
+    field_operations: tuple[FieldOperationFact, ...] = ()
+    reused_steps: tuple[ReusedCommandEvidence, ...] = ()
     written_times: tuple[float, ...] = ()
     output_files: tuple[str, ...] = ()
     source_sha256: dict[str, str]
@@ -182,6 +205,7 @@ class RunFacts(StrictFrozenModel):
             self.continuity,
             self.courant,
             self.native_errors,
+            self.field_operations,
         )
         if any(
             fact.step_id not in known_steps
@@ -214,6 +238,8 @@ __all__ = [
     "CourantFact",
     "MeshCheckFact",
     "NativeErrorFact",
+    "FieldOperationFact",
+    "ReusedCommandEvidence",
     "RawCommandEvidence",
     "ResidualFact",
     "RunFacts",

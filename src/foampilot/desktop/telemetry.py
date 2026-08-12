@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from foampilot.runtime.telemetry import IncrementalOpenFOAMLogParser
+from foampilot.evidence.telemetry import IncrementalOpenFOAMLogParser
 from .viewmodels import ResidualSample
 
 

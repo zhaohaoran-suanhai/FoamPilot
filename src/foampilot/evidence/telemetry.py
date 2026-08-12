@@ -1,4 +1,4 @@
-"""Incremental parsing of public Foundation OpenFOAM solver metrics."""
+"""Incremental one-pass parsing of Foundation OpenFOAM live metrics."""
 
 from __future__ import annotations
 

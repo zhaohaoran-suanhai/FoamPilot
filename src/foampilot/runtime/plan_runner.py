@@ -37,7 +37,10 @@ from .sandbox import (
     not_requested_probe,
     probe_sandbox,
 )
-from .telemetry import IncrementalOpenFOAMLogParser, ResidualMetric
+from foampilot.evidence.telemetry import (
+    IncrementalOpenFOAMLogParser,
+    ResidualMetric,
+)
 
 
 _SOURCE_AND_EXEC_HOST = (

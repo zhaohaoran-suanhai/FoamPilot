@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from foampilot.runtime.telemetry import IncrementalOpenFOAMLogParser
+from foampilot.evidence.telemetry import IncrementalOpenFOAMLogParser
 
 from .viewmodels import ResidualSample
 

@@ -24,7 +24,7 @@ def _classification(**overrides) -> NativeFailureClassification:
         "failed_step_id": "solve-a",
         "evidence": [
             {
-                "kind": "log_pattern",
+                "kind": "run_fact",
                 "value": "keyword div(phi,U) is undefined",
             }
         ],
@@ -162,7 +162,7 @@ def test_scope_preserves_grouped_field_name_and_target_file() -> None:
         code="missing_registry_object",
         evidence=[
             {
-                "kind": "log_pattern",
+                "kind": "run_fact",
                 "value": "cannot find object thermo:rho",
             }
         ],

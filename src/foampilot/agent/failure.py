@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from foampilot.inspection import InspectionReport
+from foampilot.evidence import NativeErrorFact, RunFacts
 from foampilot.plans import ExecutionPlan
 from foampilot.validation.models import PublicValidationReport
 from foampilot.workflow import FailureDomain, FailureRecord
@@ -31,7 +31,7 @@ class StrictModel(BaseModel):
 class FailureEvidence(StrictModel):
     kind: Literal[
         "inspection_issue",
-        "log_pattern",
+        "run_fact",
         "public_report",
         "prior_failure",
     ]
@@ -86,26 +86,6 @@ _LAYER_FACTS: dict[str, tuple[FailureDomain, str | None]] = {
     "PUBLIC_VALIDATION_FAILED": (FailureDomain.VALIDATION, None),
 }
 
-_CASE_PATH = re.compile(
-    r"(?:^|\s)(?:/[^\s:]*/case/|/case/)"
-    r"((?:0|constant|system)/[^\s:,;\[\]]+)"
-)
-_MISSING_KEYWORD = re.compile(
-    r"\bkeyword\s+([^\s]+)\s+(?:is\s+)?(?:undefined|not\s+found)",
-    re.IGNORECASE,
-)
-_MISSING_OBJECT = re.compile(
-    r"(?:cannot\s+find|could\s+not\s+find|unknown)\s+"
-    r"(?:object|field)\s+([^\s,;]+)",
-    re.IGNORECASE,
-)
-_MISSING_CASE_FILE = re.compile(
-    r"(?:cannot\s+find|could\s+not\s+find|no\s+such\s+file)\s+"
-    r"(?:file\s+)?((?:0|constant|system)/[^\s,;]+)",
-    re.IGNORECASE,
-)
-
-
 def _base_facts(
     report: PublicValidationReport,
 ) -> tuple[FailureDomain, str | None]:
@@ -128,18 +108,10 @@ def _command_stage(
     return command.stage.value if command is not None else fallback
 
 
-def _path_from_log(log_tail: str) -> str | None:
-    match = _CASE_PATH.search(log_tail)
-    if match is None:
-        return None
-    return match.group(1).rstrip(".\")'")
-
-
 def _keyword_hints(
     keyword: str,
-    log_tail: str,
+    explicit_path: str | None,
 ) -> tuple[list[str], list[str]]:
-    explicit_path = _path_from_log(log_tail)
     if explicit_path is not None:
         files = [explicit_path]
     elif keyword.startswith("div(") or keyword.startswith("grad("):
@@ -208,7 +180,7 @@ def classify_native_failure(
     *,
     report: PublicValidationReport,
     plan: ExecutionPlan,
-    log_tail: str,
+    run_facts: RunFacts,
     inspection: InspectionReport | None = None,
     prior_failure: FailureRecord | None = None,
 ) -> NativeFailureClassification:
@@ -257,70 +229,57 @@ def classify_native_failure(
         validate_failure_classification(result, report=report)
         return result
 
-    combined = report.feedback() + "\n" + log_tail[-12000:]
-    lowered = combined.lower()
-    keyword_match = _MISSING_KEYWORD.search(combined)
+    errors = list(run_facts.native_errors)
+    by_code: dict[str, NativeErrorFact] = {
+        item.code: item for item in errors
+    }
     has_mesh_command = any(
         command.stage.value == "mesh" for command in plan.commands
     )
     missing_poly_mesh = (
-        "constant/polymesh" in lowered
-        or (
-            'cannot find file "points"' in lowered
-            and 'directory "polymesh"' in lowered
-        )
+        (missing := by_code.get("MISSING_CASE_FILE")) is not None
+        and missing.path is not None
+        and missing.path.casefold().startswith("constant/polymesh/")
     )
     if missing_poly_mesh and not has_mesh_command:
         code = "missing_typed_command"
         files, blocks = [], []
         allowed = ["insert_command_before", "insert_command_after"]
-    elif keyword_match is not None:
-        keyword = keyword_match.group(1).rstrip(".:,;")
-        files, blocks = _keyword_hints(keyword, combined)
+    elif (keyword_fact := by_code.get("MISSING_DICTIONARY_KEYWORD")) is not None:
+        keyword = keyword_fact.subject or "unknown"
+        files, blocks = _keyword_hints(keyword, keyword_fact.path)
         code = "missing_dictionary_keyword"
         allowed: list[RepairOperationName] = ["replace_file"]
     elif (
-        "unknown function type" in lowered
-        or "unknown function object" in lowered
+        "UNKNOWN_FUNCTION_OBJECT_TYPE" in by_code
     ):
         code = "unknown_function_object_type"
         files, blocks = ["system/controlDict"], ["functions"]
         allowed = ["replace_file"]
     elif (
-        "required initialization command" in lowered
-        and "missing" in lowered
+        report.failed_step_id is None
+        and report.failure_layer == "INITIALIZATION_FAILED"
     ):
         code = "missing_typed_command"
         files, blocks = [], []
         allowed = ["insert_command_before", "insert_command_after"]
     elif (
-        "unsupported optional command" in lowered
-        or ("command" in lowered and "is not required" in lowered)
-        or (
-            (
-                failed_stage == "postprocess"
-                or (report.failed_step_id or "").startswith("optional")
-            )
-            and any(
-                marker in lowered
-                for marker in (
-                    "invalid option",
-                    "unknown option",
-                    "unrecognized option",
-                )
-            )
+        "INVALID_OPTION" in by_code
+        and (
+            failed_stage == "postprocess"
+            or (report.failed_step_id or "").startswith("optional")
         )
     ):
         code = "unsupported_typed_command"
         files, blocks = [], []
         allowed = ["remove_command"]
-    elif (file_match := _MISSING_CASE_FILE.search(combined)) is not None:
+    elif (file_fact := by_code.get("MISSING_CASE_FILE")) is not None:
         code = "missing_case_file"
-        files = [file_match.group(1).rstrip(".:,;\")'")]
+        files = [file_fact.path] if file_fact.path is not None else []
         blocks = []
         allowed = ["add_file"]
-    elif (object_match := _MISSING_OBJECT.search(combined)) is not None:
-        object_name = object_match.group(1).rstrip(".:,;")
+    elif (object_fact := by_code.get("MISSING_REGISTRY_OBJECT")) is not None:
+        object_name = object_fact.subject or "unknown"
         code = "missing_registry_object"
         files = (
             ["0/p_rgh"]
@@ -330,21 +289,19 @@ def classify_native_failure(
         blocks = []
         allowed = ["add_file", "replace_file"]
     elif (
-        "different dimensions" in lowered
-        or "inconsistent dimensions" in lowered
-        or "dimension mismatch" in lowered
+        "DIMENSION_MISMATCH" in by_code
     ):
         code = "dimension_mismatch"
         files = [
-            _path_from_log(combined)
+            by_code["DIMENSION_MISMATCH"].path
             or "constant/physicalProperties"
         ]
         blocks = []
         allowed = ["replace_file"]
-    elif re.search(
-        r"(?:\bnan\b|\binf(?:inity)?\b|floating point exception|courant number)",
-        lowered,
-    ):
+    elif any(
+        item.code in {"NON_FINITE_VALUE", "FLOATING_POINT_EXCEPTION"}
+        for item in errors
+    ) or any(item.maximum > 1 for item in run_facts.courant):
         code = "numerical_instability"
         files = ["system/controlDict"]
         blocks = []
@@ -379,7 +336,7 @@ def classify_native_failure(
         evidence=[
             *evidence,
             FailureEvidence(
-                kind="log_pattern",
+                kind="run_fact",
                 value=code,
             ),
         ],

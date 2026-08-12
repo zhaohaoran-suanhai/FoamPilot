@@ -6,7 +6,7 @@ from pathlib import Path
 
 from foampilot.activity import ActivityReporter
 from foampilot.evidence import MetricsProjection, MetricsWriter
-from foampilot.runtime.telemetry import IncrementalOpenFOAMLogParser
+from foampilot.evidence.telemetry import IncrementalOpenFOAMLogParser
 
 
 def test_ten_thousand_residuals_do_not_flood_activity(

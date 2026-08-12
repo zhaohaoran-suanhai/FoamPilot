@@ -3,18 +3,22 @@
 from .models import (
     ContinuityFact,
     CourantFact,
+    FieldOperationFact,
     MeshCheckFact,
     NativeErrorFact,
     RawCommandEvidence,
+    ReusedCommandEvidence,
     ResidualFact,
     RunFacts,
     SolverProgressFact,
 )
 from .metrics import MetricPoint, MetricsProjection, MetricsWriter
+from .telemetry import IncrementalOpenFOAMLogParser, ResidualMetric
 
 __all__ = [
     "ContinuityFact",
     "CourantFact",
+    "FieldOperationFact",
     "EvidenceExtractionError",
     "EvidenceExtractor",
     "EvidenceExtractorRegistry",
@@ -22,9 +26,12 @@ __all__ = [
     "MetricPoint",
     "MetricsProjection",
     "MetricsWriter",
+    "IncrementalOpenFOAMLogParser",
     "NativeErrorFact",
     "RawCommandEvidence",
+    "ReusedCommandEvidence",
     "ResidualFact",
+    "ResidualMetric",
     "RunFacts",
     "SolverProgressFact",
     "OpenFOAM10EvidenceExtractor",

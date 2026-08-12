@@ -12,11 +12,11 @@ import yaml
 from foampilot.authoring import CaseBundle
 from foampilot.artifacts import ArtifactStore
 from foampilot.environment import EnvironmentSnapshot
+from foampilot.evidence import RunFacts
 from foampilot.extensions import CapabilityRegistry
 from foampilot.inspection import InspectionReport, verify_design_conformance
 from foampilot.plans import ExecutionPlan
 from foampilot.routing import CapabilityProfile
-from foampilot.runtime import PlanRunResult, parse_openfoam_log
 from foampilot.simulation import CaseDesign
 from foampilot.tasks import TaskSpec
 
@@ -94,23 +94,6 @@ def _covered_path(
             f"source manifest does not cover {relative}",
         )
     return relative
-
-
-def _step_log(
-    step,
-    *,
-    source_run: Path,
-    manifest_files: set[str],
-) -> str:
-    parts: list[str] = []
-    for path in (step.stdout_path, step.stderr_path):
-        _covered_path(
-            path,
-            source_run=source_run,
-            manifest_files=manifest_files,
-        )
-        parts.append(path.read_text(encoding="utf-8", errors="replace"))
-    return "\n".join(parts)
 
 
 def _validate_assets(task: TaskSpec, asset_root: Path) -> None:
@@ -277,6 +260,7 @@ def load_verified_plan_source(
         bundle_path = attempt_root / "case-bundle.json"
         conformance_path = attempt_root / "design-conformance.json"
         result_path = attempt_root / "run-result.json"
+        facts_path = attempt_root / "run-facts.json"
         if not all(
             path.is_file()
             for path in (
@@ -285,6 +269,7 @@ def load_verified_plan_source(
                 bundle_path,
                 conformance_path,
                 result_path,
+                facts_path,
             )
         ):
             continue
@@ -294,6 +279,7 @@ def load_verified_plan_source(
             bundle_path,
             conformance_path,
             result_path,
+            facts_path,
         ):
             _covered_path(
                 evidence_path,
@@ -313,8 +299,8 @@ def load_verified_plan_source(
             conformance = InspectionReport.model_validate_json(
                 conformance_path.read_text(encoding="utf-8")
             )
-            run_result = PlanRunResult.model_validate_json(
-                result_path.read_text(encoding="utf-8")
+            run_facts = RunFacts.model_validate_json(
+                facts_path.read_text(encoding="utf-8")
             )
         except ValueError:
             continue
@@ -357,7 +343,7 @@ def load_verified_plan_source(
                 "MPI_RESOURCE_MISMATCH",
                 "source plan exceeds the current MPI resource limit",
             )
-        steps = {item.step_id: item for item in run_result.steps}
+        steps = {item.step_id: item for item in run_facts.raw_steps}
         mesh_commands = [
             item for item in plan.commands if item.stage == "mesh"
         ]
@@ -389,33 +375,18 @@ def load_verified_plan_source(
         ):
             continue
         if not any(
-            "Mesh OK" in _step_log(
-                steps[command.step_id],
-                source_run=source,
-                manifest_files=manifest_files,
-            )
-            for command in check_commands
+            check.step_id in {item.step_id for item in check_commands}
+            and check.mesh_ok is True
+            for check in run_facts.mesh_checks
         ):
             continue
-        solver_ok = False
-        for command in solver_commands:
-            step = steps.get(command.step_id)
-            if (
-                step is None
-                or step.return_code != 0
-                or step.timed_out
-            ):
-                continue
-            log = parse_openfoam_log(
-                _step_log(
-                    step,
-                    source_run=source,
-                    manifest_files=manifest_files,
-                )
-            )
-            if log.completed and log.latest_time is not None:
-                solver_ok = True
-                break
+        solver_ids = {item.step_id for item in solver_commands}
+        solver_ok = any(
+            item.step_id in solver_ids
+            and item.completed_normally is True
+            and item.simulation_time is not None
+            for item in run_facts.solver_progress
+        )
         if not solver_ok:
             continue
         return VerifiedPlanSource(
@@ -432,5 +403,5 @@ def load_verified_plan_source(
         )
     raise PlanReuseError(
         "SOURCE_RUN_NOT_ELIGIBLE",
-        "no manifested attempt has mesh, Mesh OK, and normal solver completion",
+        "no manifested attempt has mesh, a passing mesh check, and normal solver completion",
     )

@@ -1,11 +1,5 @@
 """Local Foundation v10 preflight, typed Runner, and log parsing."""
 
-from .logs import (
-    ContinuitySample,
-    EquationResidual,
-    OpenFOAMLogSummary,
-    parse_openfoam_log,
-)
 from .config import probe_openfoam_root, resolve_runtime_config
 from .models import (
     ExecutionPolicyDecision,
@@ -28,12 +22,9 @@ from .risk import scan_execution_risk
 from .plan_runner import PlanRunner, RuntimeExecutionError
 
 __all__ = [
-    "ContinuitySample",
-    "EquationResidual",
     "ExecutionPolicyDecision",
     "ExecutionRiskReport",
     "IsolationPolicy",
-    "OpenFOAMLogSummary",
     "PlanRunResult",
     "PlanRunner",
     "PlanStepResult",
@@ -48,7 +39,6 @@ __all__ = [
     "RuntimeExecutionError",
     "SandboxProbe",
     "decide_execution_policy",
-    "parse_openfoam_log",
     "preflight_passed",
     "probe_openfoam_root",
     "resolve_runtime_config",

@@ -10,6 +10,7 @@ from foampilot.models import (
     ModelStage,
 )
 from foampilot.models.schema import strict_response_schema
+from tests.test_failure_classifier import _facts
 from foampilot.repair import RepairProposal
 
 from tests.test_execution_plan import task as task_fixture
@@ -47,7 +48,7 @@ def _classification() -> NativeFailureClassification:
             "confidence": "high",
             "failed_stage": "solve",
             "failed_step_id": "solve-a",
-            "evidence": [{"kind": "log_pattern", "value": "Courant number 10"}],
+            "evidence": [{"kind": "run_fact", "value": "COURANT_GROWTH"}],
             "scope_hints": {
                 "files": ["system/controlDict"],
                 "dictionary_blocks": [],
@@ -144,7 +145,7 @@ def test_repair_request_uses_scope_not_full_case() -> None:
         plan=valid_plan(),
         classification=_classification(),
         repair_scope=_scope(),
-        failed_log="Courant number 10",
+        run_facts=_facts(),
         knowledge_text="public rule",
         skills_text="minimal repair",
         status_snapshot=_status(),

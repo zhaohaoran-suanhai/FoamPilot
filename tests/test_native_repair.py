@@ -5,6 +5,7 @@ from foampilot.validation.models import (
     PublicValidationCheck,
     PublicValidationReport,
 )
+from tests.test_failure_classifier import _facts
 
 
 def _report() -> PublicValidationReport:
@@ -24,10 +25,10 @@ def _report() -> PublicValidationReport:
 
 
 def test_repair_fingerprint_is_stable_and_stops_repeat() -> None:
-    first = failure_fingerprint(_report(), log_tail="nan in U")
+    first = failure_fingerprint(_report(), run_facts=_facts())
     second = failure_fingerprint(
         _report().model_copy(deep=True),
-        log_tail="  nan   in U  ",
+        run_facts=_facts(),
     )
 
     assert first == second

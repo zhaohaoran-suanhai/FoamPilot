@@ -118,7 +118,7 @@ def _classification(
         confidence=confidence,
         failed_stage="solve",
         failed_step_id="solve",
-        evidence=[FailureEvidence(kind="log_pattern", value=code)],
+        evidence=[FailureEvidence(kind="run_fact", value=code)],
         scope_hints=FailureScopeHints(
             files=["system/controlDict"],
             commands=["solve"],

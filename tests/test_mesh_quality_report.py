@@ -3,9 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from foampilot.preprocessing import build_mesh_quality_report
+from foampilot.evidence import OpenFOAM10EvidenceExtractor
+from foampilot.plans import NativeCommand
+from foampilot.preprocessing import mesh_quality_from_run_facts
 from foampilot.runtime import PlanRunResult, PlanStepResult
 from foampilot.tasks import MeshIntent
+from tests.test_execution_plan import valid_plan
 
 
 def _run(
@@ -42,10 +45,35 @@ def _run(
     )
 
 
+def _report(
+    run: PlanRunResult,
+    intent: MeshIntent,
+):
+    executable = Path(run.steps[0].command[0]).name
+    plan = valid_plan().model_copy(
+        update={
+            "commands": [
+                NativeCommand(
+                    step_id=run.steps[0].step_id,
+                    stage="check",
+                    executable=executable,
+                    timeout_seconds=30,
+                )
+            ]
+        }
+    )
+    facts = OpenFOAM10EvidenceExtractor().extract(
+        run,
+        plan,
+        run.case_dir,
+    )
+    return mesh_quality_from_run_facts(facts, intent, run.case_dir)
+
+
 def test_mesh_quality_report_recognizes_canonical_check_mesh_path(
     tmp_path: Path,
 ) -> None:
-    report = build_mesh_quality_report(
+    report = _report(
         _run(
             tmp_path,
             """
@@ -73,7 +101,7 @@ Mesh OK.
 def test_mesh_quality_report_parses_native_check_mesh_observations(
     tmp_path: Path,
 ) -> None:
-    report = build_mesh_quality_report(
+    report = _report(
         _run(
             tmp_path,
             """
@@ -114,7 +142,7 @@ Mesh OK.
 def test_mesh_quality_report_preserves_failed_check_and_thresholds(
     tmp_path: Path,
 ) -> None:
-    report = build_mesh_quality_report(
+    report = _report(
         _run(
             tmp_path,
             """
@@ -151,7 +179,7 @@ Failed 2 mesh checks.
 def test_mesh_quality_report_marks_required_missing_metrics_unavailable(
     tmp_path: Path,
 ) -> None:
-    report = build_mesh_quality_report(
+    report = _report(
         _run(tmp_path, "Mesh OK.\n"),
         MeshIntent(
             strategy="provided",

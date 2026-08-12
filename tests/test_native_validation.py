@@ -8,11 +8,13 @@ import numpy as np
 import pyvista as pv
 import pytest
 
-import foampilot.validation.native as native_validation
+from foampilot.evidence import OpenFOAM10EvidenceExtractor, RunFacts
+from foampilot.plans import NativeCommand
 from foampilot.runtime import PlanRunResult, PlanStepResult, ReusedStepResult
 from foampilot.tasks import TaskSpec
 from tests.support.tasks import canonical_task_payload
 from foampilot.validation.native import validate_native_run
+from tests.test_execution_plan import valid_plan
 
 
 def _task(
@@ -158,6 +160,33 @@ def _successful_result(root: Path, *, final_time: float = 1.0) -> PlanRunResult:
     )
 
 
+def _facts(result: PlanRunResult) -> RunFacts:
+    commands = []
+    for step in result.steps:
+        executable = Path(step.command[0]).name
+        stage = (
+            "check"
+            if executable == "checkMesh"
+            else "initialize"
+            if executable == "setFields"
+            else "solve"
+        )
+        commands.append(
+            NativeCommand(
+                step_id=step.step_id,
+                stage=stage,
+                executable=executable,
+                timeout_seconds=30,
+            )
+        )
+    plan = valid_plan().model_copy(update={"commands": commands})
+    return OpenFOAM10EvidenceExtractor().extract(
+        result,
+        plan,
+        result.case_dir,
+    )
+
+
 def test_task_owned_checks_validate_all_gate_evidence(
     tmp_path: Path,
 ) -> None:
@@ -166,9 +195,9 @@ def test_task_owned_checks_validate_all_gate_evidence(
     output.write_text("velocity", encoding="utf-8")
 
     report = validate_native_run(
-        task=_task(),
-        run_result=_successful_result(tmp_path),
-        case_root=tmp_path,
+        _task(),
+        _facts(_successful_result(tmp_path)),
+        tmp_path,
     )
 
     assert report.passed
@@ -206,7 +235,7 @@ def test_command_check_accepts_audited_reused_step(
     ]
 
     report = validate_native_run(
-        task=_task(
+        _task(
             checks=[
                 {
                     "name": "initialized",
@@ -215,29 +244,22 @@ def test_command_check_accepts_audited_reused_step(
                 }
             ]
         ),
-        run_result=result,
-        case_root=tmp_path,
+        _facts(result),
+        tmp_path,
     )
 
     assert report.passed
     assert report.checks[0].observed["evidence_source"] == "reused_step"
 
 
-def test_each_native_log_is_parsed_once_per_validation(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    original = native_validation.parse_openfoam_log
-    parsed: list[str] = []
-
-    def counted(text: str):
-        parsed.append(text)
-        return original(text)
-
-    monkeypatch.setattr(native_validation, "parse_openfoam_log", counted)
+def test_validation_does_not_reopen_native_logs(tmp_path: Path) -> None:
+    facts = _facts(_successful_result(tmp_path))
+    for step in facts.raw_steps:
+        (tmp_path / step.stdout_path).unlink()
+        (tmp_path / step.stderr_path).unlink()
 
     report = validate_native_run(
-        task=_task(
+        _task(
             checks=[
                 {"name": "completion", "kind": "completion", "parameters": {}},
                 {
@@ -247,18 +269,14 @@ def test_each_native_log_is_parsed_once_per_validation(
                 },
             ]
         ),
-        run_result=_successful_result(tmp_path),
-        case_root=tmp_path,
+        facts,
+        tmp_path,
     )
 
     assert report.passed
-    assert len(parsed) == 3
 
 
-def test_failed_step_classification_does_not_parse_all_logs(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_failed_step_classification_uses_run_facts(tmp_path: Path) -> None:
     failed = _step(
         tmp_path,
         step_id="solve",
@@ -267,23 +285,16 @@ def test_failed_step_classification_does_not_parse_all_logs(
         stdout="FOAM FATAL ERROR\n",
     )
 
-    def unexpected_parse(_text: str):
-        raise AssertionError("failed-step classification must not parse logs")
-
-    monkeypatch.setattr(
-        native_validation,
-        "parse_openfoam_log",
-        unexpected_parse,
-    )
-
     report = validate_native_run(
-        task=_task(),
-        run_result=PlanRunResult(
-            case_dir=tmp_path,
-            steps=[failed],
-            failed_step_id="solve",
+        _task(),
+        _facts(
+            PlanRunResult(
+                case_dir=tmp_path,
+                steps=[failed],
+                failed_step_id="solve",
+            )
         ),
-        case_root=tmp_path,
+        tmp_path,
     )
 
     assert report.failure_layer == "SOLVER_FAILED"
@@ -307,13 +318,13 @@ def test_failed_mesh_check_exposes_bounded_checkmesh_diagnostics(
     )
 
     report = validate_native_run(
-        task=_task(
+        _task(
             checks=[
                 {"name": "mesh", "kind": "mesh_ok", "parameters": {}},
             ]
         ),
-        run_result=PlanRunResult(case_dir=tmp_path, steps=[mesh]),
-        case_root=tmp_path,
+        _facts(PlanRunResult(case_dir=tmp_path, steps=[mesh])),
+        tmp_path,
     )
 
     check = report.checks[0]
@@ -332,9 +343,9 @@ def test_validation_matches_canonical_executable_paths(tmp_path: Path) -> None:
     result.steps[2].command = ["/opt/OpenFOAM-10/bin/interFoam"]
 
     report = validate_native_run(
-        task=_task(),
-        run_result=result,
-        case_root=tmp_path,
+        _task(),
+        _facts(result),
+        tmp_path,
     )
 
     assert report.passed
@@ -395,9 +406,9 @@ def test_field_checks_fall_back_to_written_openfoam_fields(
     monkeypatch.setattr(pv, "OpenFOAMReader", FakeReader)
 
     report = validate_native_run(
-        task=_task(),
-        run_result=run_result,
-        case_root=tmp_path,
+        _task(),
+        _facts(run_result),
+        tmp_path,
     )
 
     assert report.passed
@@ -421,7 +432,7 @@ def test_unknown_evaluator_kind_fails_without_invalidating_plan(
     tmp_path: Path,
 ) -> None:
     report = validate_native_run(
-        task=_task(
+        _task(
             checks=[
                 {
                     "name": "future-check",
@@ -430,8 +441,8 @@ def test_unknown_evaluator_kind_fails_without_invalidating_plan(
                 }
             ]
         ),
-        run_result=_successful_result(tmp_path),
-        case_root=tmp_path,
+        _facts(_successful_result(tmp_path)),
+        tmp_path,
     )
 
     assert report.failure_layer == "PUBLIC_VALIDATION_FAILED"
@@ -451,13 +462,15 @@ def test_failed_setfields_is_classified_as_initialization(
     )
 
     report = validate_native_run(
-        task=_task(),
-        run_result=PlanRunResult(
-            case_dir=tmp_path,
-            steps=[failed],
-            failed_step_id="initialize",
+        _task(),
+        _facts(
+            PlanRunResult(
+                case_dir=tmp_path,
+                steps=[failed],
+                failed_step_id="initialize",
+            )
         ),
-        case_root=tmp_path,
+        tmp_path,
     )
 
     assert report.failure_layer == "INITIALIZATION_FAILED"
@@ -466,7 +479,7 @@ def test_failed_setfields_is_classified_as_initialization(
 
 def test_requested_output_rejects_path_escape(tmp_path: Path) -> None:
     report = validate_native_run(
-        task=_task(
+        _task(
             checks=[
                 {
                     "name": "escaped",
@@ -475,8 +488,8 @@ def test_requested_output_rejects_path_escape(tmp_path: Path) -> None:
                 }
             ]
         ),
-        run_result=_successful_result(tmp_path),
-        case_root=tmp_path,
+        _facts(_successful_result(tmp_path)),
+        tmp_path,
     )
 
     assert not report.passed
@@ -497,7 +510,7 @@ def test_numeric_time_checks_accept_roundoff_equivalent_directory(
         stdout="Iteration: 9.99999999996\nEnd\n",
     )
     report = validate_native_run(
-        task=_task(
+        _task(
             checks=[
                 {
                     "name": "completion",
@@ -516,8 +529,8 @@ def test_numeric_time_checks_accept_roundoff_equivalent_directory(
                 },
             ]
         ),
-        run_result=PlanRunResult(case_dir=tmp_path, steps=[solve]),
-        case_root=tmp_path,
+        _facts(PlanRunResult(case_dir=tmp_path, steps=[solve])),
+        tmp_path,
     )
 
     assert report.passed

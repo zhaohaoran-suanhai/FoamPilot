@@ -251,7 +251,7 @@ def test_solver_metrics_use_separate_sink_and_bounded_heartbeat(
         tmp_path / "activity.jsonl",
         metrics_path=tmp_path / "metrics.jsonl",
     )
-    from foampilot.runtime.telemetry import ResidualMetric
+    from foampilot.evidence.telemetry import ResidualMetric
 
     metric = ResidualMetric(
         simulation_time=0.1,
