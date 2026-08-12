@@ -16,6 +16,41 @@ class BoundingBox(StrictModel):
     maximum: tuple[float, float, float]
 
 
+class MeshPatchFact(StrictModel):
+    name: str
+    patch_type: str
+    start_face: int = Field(ge=0)
+    face_count: int = Field(ge=0)
+
+
+class MeshZoneFact(StrictModel):
+    name: str
+    element_count: int = Field(ge=0)
+
+
+class InputMeshFacts(StrictModel):
+    schema_version: Literal[1] = 1
+    bundle_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    inspector_id: str
+    inspector_version: str
+    region: str | None
+    declared_length_unit: str
+    source_member_sha256: dict[str, str]
+    points: int = Field(ge=0)
+    faces: int = Field(ge=0)
+    internal_faces: int = Field(ge=0)
+    cells: int = Field(ge=0)
+    bounding_box_m: BoundingBox
+    patches: tuple[MeshPatchFact, ...]
+    cell_zones: tuple[MeshZoneFact, ...]
+    face_zones: tuple[MeshZoneFact, ...]
+    point_zones: tuple[MeshZoneFact, ...]
+    dimensionality_observations: tuple[str, ...]
+    topology_observations: tuple[str, ...]
+    warnings: tuple[str, ...]
+    raw_content_included: Literal[False] = False
+
+
 class PatchRoleMatch(StrictModel):
     name: str
     role: str
