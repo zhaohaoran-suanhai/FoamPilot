@@ -15,6 +15,7 @@ from .provenance import (
 __all__ = [
     "ConfirmationRecord",
     "CaseDesignProposal",
+    "CaseDesign",
     "DesignCandidate",
     "EvidenceSource",
     "FactEvidence",
@@ -25,10 +26,15 @@ __all__ = [
     "RequirementGap",
     "ResolvedValue",
     "ResolvedRequirements",
+    "RiskDecision",
+    "RiskGateError",
+    "RiskState",
     "SimulationIntent",
     "Uncertainty",
     "canonical_sha256",
     "design_case",
+    "evaluate_design_risk",
+    "freeze_case_design",
     "interpret_intent",
     "resolve_requirements",
     "write_json_exclusive",
@@ -41,12 +47,18 @@ def __getattr__(name: str):
 
     if name in {
         "CaseDesignProposal",
+        "CaseDesign",
         "ExtensionDecision",
         "RequirementConflict",
         "RequirementGap",
         "ResolvedRequirements",
+        "RiskDecision",
+        "RiskGateError",
+        "RiskState",
         "SimulationIntent",
         "design_case",
+        "evaluate_design_risk",
+        "freeze_case_design",
         "interpret_intent",
         "resolve_requirements",
     }:
@@ -58,15 +70,29 @@ def __getattr__(name: str):
             ResolvedRequirements,
             resolve_requirements,
         )
+        from .risk_gate import (
+            CaseDesign,
+            RiskDecision,
+            RiskGateError,
+            RiskState,
+            evaluate_design_risk,
+            freeze_case_design,
+        )
 
         return {
             "CaseDesignProposal": CaseDesignProposal,
+            "CaseDesign": CaseDesign,
             "ExtensionDecision": ExtensionDecision,
             "RequirementConflict": RequirementConflict,
             "RequirementGap": RequirementGap,
             "ResolvedRequirements": ResolvedRequirements,
+            "RiskDecision": RiskDecision,
+            "RiskGateError": RiskGateError,
+            "RiskState": RiskState,
             "SimulationIntent": SimulationIntent,
             "design_case": design_case,
+            "evaluate_design_risk": evaluate_design_risk,
+            "freeze_case_design": freeze_case_design,
             "interpret_intent": interpret_intent,
             "resolve_requirements": resolve_requirements,
         }[name]
