@@ -1,12 +1,19 @@
 {
+  "cancelled": false,
   "case_dir": "case",
+  "execution_error_code": null,
+  "execution_policy": null,
   "failed_step_id": null,
+  "reused_steps": [],
+  "sandbox_probe": null,
   "steps": [
     {
       "backend_fallback_reason": null,
+      "cancelled": false,
       "command": [
         "blockMesh"
       ],
+      "elapsed_seconds": null,
       "execution_backend": "host",
       "finished_at": "2026-01-01T00:00:00Z",
       "return_code": 0,
@@ -18,9 +25,11 @@
     },
     {
       "backend_fallback_reason": null,
+      "cancelled": false,
       "command": [
         "checkMesh"
       ],
+      "elapsed_seconds": null,
       "execution_backend": "host",
       "finished_at": "2026-01-01T00:00:00Z",
       "return_code": 0,
@@ -32,9 +41,11 @@
     },
     {
       "backend_fallback_reason": null,
+      "cancelled": false,
       "command": [
         "decomposePar"
       ],
+      "elapsed_seconds": null,
       "execution_backend": "host",
       "finished_at": "2026-01-01T00:00:00Z",
       "return_code": 0,
@@ -46,9 +57,11 @@
     },
     {
       "backend_fallback_reason": null,
+      "cancelled": false,
       "command": [
         "icoFoam"
       ],
+      "elapsed_seconds": null,
       "execution_backend": "host",
       "finished_at": "2026-01-01T00:00:00Z",
       "return_code": 0,
@@ -60,9 +73,11 @@
     },
     {
       "backend_fallback_reason": null,
+      "cancelled": false,
       "command": [
         "reconstructPar"
       ],
+      "elapsed_seconds": null,
       "execution_backend": "host",
       "finished_at": "2026-01-01T00:00:00Z",
       "return_code": 0,

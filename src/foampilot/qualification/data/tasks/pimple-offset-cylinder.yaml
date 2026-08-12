@@ -1,32 +1,91 @@
-schema_version: 2
+schema_version: 3
 task_id: pimple-offset-cylinder
 title: Laminar transient flow around an offset cylinder
-prompt: >-
-  Starting from an empty case directory, build the Foundation OpenFOAM v10
-  offset-cylinder pimpleFoam problem as a two-dimensional annular eccentric
-  domain. Place a stationary circular inner wall off centre inside a larger
-  circular outer boundary, use a body-fitted multi-block mesh with one empty
-  spanwise cell and at least 12000 cells, and preserve innerCylinder,
-  outerCylinder and frontAndBack patches. Use a Newtonian incompressible fluid
-  with nu=1e-5 m2/s. Drive the flow by rotating the outer wall tangentially at
-  1 m/s while keeping the inner cylinder fixed, use a consistent pressure
-  reference, and integrate with pimpleFoam from 0 to 2 s using deltaT=0.0025 s
-  and writes every 0.1 s. Generate all case files, run blockMesh/checkMesh and
-  preserve U and p. Do not read or copy an existing case.
-openfoam_target: {distribution: foundation, version: "10"}
-resource_budget: {max_attempts: 2, max_wall_seconds: 1200, max_mpi_ranks: 1, memory_mib: 2048}
+openfoam_target:
+  distribution: foundation
+  version: '10'
+resource_budget:
+  max_attempts: 2
+  max_wall_seconds: 1200
+  max_mpi_ranks: 1
+  memory_mib: 2048
 required_outputs:
-  - valid body-fitted mesh and completed pimpleFoam log
-  - velocity and pressure fields through 2 s
-acceptance_requirements:
-  - checkMesh reports Mesh OK
-  - pimpleFoam reaches 2 s and ends normally
-  - required fields remain finite
-public_checks:
-  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
-  - {name: target-solver, kind: command_executed, parameters: {executable: pimpleFoam}}
-  - {name: normal-completion, kind: completion, parameters: {}}
-  - {name: final-time, kind: final_time, parameters: {minimum: 2.0}}
-  - {name: finite-fields, kind: finite_fields, parameters: {}}
+- valid body-fitted mesh and completed pimpleFoam log
+- velocity and pressure fields through 2 s
 public_assets: []
 protected_paths: []
+request_text: Starting from an empty case directory, build the Foundation OpenFOAM
+  v10 offset-cylinder pimpleFoam problem as a two-dimensional annular eccentric domain.
+  Place a stationary circular inner wall off centre inside a larger circular outer
+  boundary, use a body-fitted multi-block mesh with one empty spanwise cell and at
+  least 12000 cells, and preserve innerCylinder, outerCylinder and frontAndBack patches.
+  Use a Newtonian incompressible fluid with nu=1e-5 m2/s. Drive the flow by rotating
+  the outer wall tangentially at 1 m/s while keeping the inner cylinder fixed, use
+  a consistent pressure reference, and integrate with pimpleFoam from 0 to 2 s using
+  deltaT=0.0025 s and writes every 0.1 s. Generate all case files, run blockMesh/checkMesh
+  and preserve U and p. Do not read or copy an existing case.
+acceptance_intent:
+- checkMesh reports Mesh OK
+- pimpleFoam reaches 2 s and ends normally
+- required fields remain finite
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
+    kind: mesh_ok
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.target-solver
+  value:
+    name: target-solver
+    kind: command_executed
+    parameters:
+      executable: pimpleFoam
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
+    kind: completion
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-time
+  value:
+    name: final-time
+    kind: final_time
+    parameters:
+      minimum: 2.0
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
+    kind: finite_fields
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

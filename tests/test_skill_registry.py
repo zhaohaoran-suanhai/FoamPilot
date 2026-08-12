@@ -9,6 +9,7 @@ from foampilot.context.skill_registry import (
 from foampilot.routing import CapabilityProfile
 from foampilot.tasks import MeshIntent
 from tests.test_execution_plan import task as task_fixture
+from tests.support.tasks import replace_explicit_fact
 
 
 def _capability(solver: str) -> CapabilityProfile:
@@ -79,9 +80,14 @@ def test_registry_leaves_narrow_unmapped_solvers_on_general_skill(
 
 
 def test_registry_adds_mesh_skill_only_for_mesh_enabled_task() -> None:
-    task = task_fixture.__wrapped__().model_copy(
-        update={"mesh": MeshIntent(strategy="blockMesh")}
+    base = task_fixture.__wrapped__()
+    payload = base.model_dump(mode="json")
+    replace_explicit_fact(
+        payload,
+        "mesh.intent",
+        MeshIntent(strategy="blockMesh").model_dump(mode="json"),
     )
+    task = base.model_validate(payload)
 
     assert select_skill_names(_capability("icoFoam"), task=task) == (
         GENERAL_SKILL,

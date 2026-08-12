@@ -1,4 +1,4 @@
-"""Minimal evaluator-facing task contract for native OpenFOAM agents."""
+"""Canonical authoring request contract for native OpenFOAM agents."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+
+from foampilot.simulation import JsonValue, ResolvedValue
 
 from .geometry import GeometryInput, MeshIntent
 
@@ -111,6 +113,8 @@ type JsonParameter = float | int | str | bool
 
 
 class PublicCheck(StrictModel):
+    """Temporary internal projection consumed by the Phase 2 author bridge."""
+
     name: str = Field(min_length=1)
     kind: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
     parameters: dict[str, JsonParameter] = Field(default_factory=dict)
@@ -124,24 +128,28 @@ class PublicCheck(StrictModel):
         return normalized
 
 
+class RepairPolicyInput(StrictModel):
+    automatic_numerical_repair: bool = True
+    model_diagnostic: bool = True
+
+
 class TaskSpec(StrictModel):
-    schema_version: Literal[2]
+    schema_version: Literal[3] = 3
     task_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]*$")
     title: str = Field(min_length=1)
-    prompt: str = Field(min_length=1)
+    request_text: str = Field(min_length=1)
     openfoam_target: OpenFOAMTarget
     resource_budget: ResourceBudget
     required_outputs: list[str] = Field(min_length=1)
-    acceptance_requirements: list[str] = Field(min_length=1)
-    public_checks: list[PublicCheck] = Field(min_length=1)
+    acceptance_intent: list[str] = Field(min_length=1)
     public_assets: list[PublicAsset] = Field(default_factory=list)
     protected_paths: list[str] = Field(default_factory=list)
-    geometry: GeometryInput | None = None
-    mesh: MeshIntent | None = None
+    repair_policy: RepairPolicyInput = Field(default_factory=RepairPolicyInput)
+    explicit_facts: list[ResolvedValue[JsonValue]] = Field(default_factory=list)
 
     @field_validator(
         "title",
-        "prompt",
+        "request_text",
     )
     @classmethod
     def validate_nonblank_text(cls, value: str) -> str:
@@ -152,7 +160,7 @@ class TaskSpec(StrictModel):
 
     @field_validator(
         "required_outputs",
-        "acceptance_requirements",
+        "acceptance_intent",
     )
     @classmethod
     def validate_unique_text_list(cls, value: list[str]) -> list[str]:
@@ -185,11 +193,16 @@ class TaskSpec(StrictModel):
         asset_paths = [asset.path for asset in self.public_assets]
         if len(asset_paths) != len(set(asset_paths)):
             raise ValueError("duplicate public asset paths are not allowed")
-        if self.geometry is not None:
+        fact_paths = [fact.field_path for fact in self.explicit_facts]
+        if len(fact_paths) != len(set(fact_paths)):
+            raise ValueError("duplicate explicit fact paths are not allowed")
+        geometry = self.geometry
+        mesh = self.mesh
+        if geometry is not None:
             undeclared = sorted(
                 {
                     asset.path
-                    for asset in self.geometry.assets
+                    for asset in geometry.assets
                     if asset.path not in set(asset_paths)
                 }
             )
@@ -198,9 +211,9 @@ class TaskSpec(StrictModel):
                     "geometry asset must reference a declared public asset: "
                     + ", ".join(undeclared)
                 )
-            if self.geometry.mode == "openfoam_mesh":
+            if geometry.mode == "openfoam_mesh":
                 referenced = {
-                    item.path for item in self.geometry.assets
+                    item.path for item in geometry.assets
                     if item.format == "openfoam_mesh"
                 }
                 bundles = [
@@ -216,7 +229,7 @@ class TaskSpec(StrictModel):
                         "openfoam_mesh geometry requires each referenced "
                         "asset to be an atomic polyMesh directory asset"
                     )
-        if self.mesh is not None and self.mesh.strategy == "provided":
+        if mesh is not None and mesh.strategy == "provided":
             if not any(
                 item.kind == "directory"
                 and item.install_path is not None
@@ -227,9 +240,6 @@ class TaskSpec(StrictModel):
                     "provided mesh strategy requires an atomic polyMesh "
                     "directory asset"
                 )
-        check_names = [check.name for check in self.public_checks]
-        if len(check_names) != len(set(check_names)):
-            raise ValueError("duplicate public check names are not allowed")
         visible = json.dumps(
             self.agent_payload(),
             ensure_ascii=False,
@@ -243,7 +253,64 @@ class TaskSpec(StrictModel):
         return self
 
     def agent_payload(self) -> dict[str, object]:
-        return self.model_dump(
-            exclude={"protected_paths", "public_checks"},
+        payload = self.model_dump(
+            exclude={"protected_paths"},
             mode="json",
         )
+        payload["explicit_facts"] = [
+            item
+            for item in payload["explicit_facts"]
+            if not item["field_path"].startswith(
+                "acceptance.legacy_checks."
+            )
+        ]
+        return payload
+
+    def explicit_value(self, field_path: str, default=None):
+        for fact in self.explicit_facts:
+            if fact.field_path == field_path:
+                return fact.value
+        return default
+
+    @property
+    def prompt(self) -> str:
+        """Phase 2 compatibility view; not part of serialized TaskSpec v3."""
+
+        return self.request_text
+
+    @property
+    def acceptance_requirements(self) -> list[str]:
+        """Phase 2 compatibility view; Phase 5 replaces its consumers."""
+
+        return self.acceptance_intent
+
+    @property
+    def geometry(self) -> GeometryInput | None:
+        value = self.explicit_value("geometry.input")
+        return None if value is None else GeometryInput.model_validate(value)
+
+    @property
+    def mesh(self) -> MeshIntent | None:
+        value = self.explicit_value("mesh.intent")
+        return None if value is None else MeshIntent.model_validate(value)
+
+    @property
+    def public_checks(self) -> list[PublicCheck]:
+        """Project explicit acceptance facts for the temporary v2 validator.
+
+        TaskSpec v3 never accepts or serializes this legacy shape. Phase 5
+        replaces this projection with AcceptancePlan.
+        """
+
+        checks: list[PublicCheck] = []
+        for fact in self.explicit_facts:
+            prefix = "acceptance.legacy_checks."
+            if not fact.field_path.startswith(prefix):
+                continue
+            value = fact.value
+            if not isinstance(value, dict):
+                raise ValueError(
+                    f"{fact.field_path} must contain a legacy check mapping"
+                )
+            checks.append(PublicCheck.model_validate(value))
+        return checks

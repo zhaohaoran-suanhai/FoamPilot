@@ -1,72 +1,136 @@
-schema_version: 2
+schema_version: 3
 task_id: multiphase-capillary-rise
 title: Two-phase capillary rise between vertical walls
-prompt: >-
-  Starting from an empty case directory, build and solve a two-dimensional
-  capillary-rise problem with interFoam. Use a 1 mm wide, 20 mm high, and
-  1 mm deep rectangular domain with 20 by 400 by 1 uniform cells and empty
-  front/back faces. Preserve inlet at the bottom, atmosphere at the top,
-  two wall faces, and frontAndBack patches. Model water with rho=1000 kg/m3
-  and nu=1e-6 m2/s and air with rho=1 kg/m3 and nu=1.48e-5 m2/s. Use surface
-  tension sigma=0.0707106 N/m and gravity (0 -10 0) m/s2. Initialize U to
-  zero, p_rgh to zero, and water volume fraction to one below y=0.008 m and
-  zero above using setFields. Allow water at the bottom inlet, use an open
-  atmosphere condition at the top, impose no slip on the side walls, and
-  impose a static water contact angle of 45 degrees on both side walls.
-  Use coherent pressure and phase-fraction conditions for the remaining
-  patches. Integrate from 0 to 0.5 s with initial deltaT=1e-5 s, adjustable
-  time stepping, maxCo=0.2, maxAlphaCo=0.2, maxDeltaT=1 s, and write every
-  0.05 s. Run serially. Generate all Foundation OpenFOAM v10 files yourself,
-  run blockMesh, checkMesh, and setFields before interFoam, preserve U,
-  p_rgh, and alpha.water, and do not read or copy a pre-existing case.
 openfoam_target:
   distribution: foundation
-  version: "10"
+  version: '10'
 resource_budget:
   max_attempts: 2
   max_wall_seconds: 1800
   max_mpi_ranks: 1
   memory_mib: 3072
 required_outputs:
-  - mesh quality and setFields logs
-  - completed interFoam log through 0.5 s
-  - velocity, hydrostatic-pressure, and water-fraction fields
-  - fields suitable for liquid-volume and interface-height evaluation
-acceptance_requirements:
-  - checkMesh reports Mesh OK
-  - setFields initializes the water column
-  - interFoam reaches 0.5 s and ends normally
-  - required fields remain finite and bounded
-  - liquid inventory and capillary-rise height pass evaluator checks
-public_checks:
-  - name: mesh-quality
+- mesh quality and setFields logs
+- completed interFoam log through 0.5 s
+- velocity, hydrostatic-pressure, and water-fraction fields
+- fields suitable for liquid-volume and interface-height evaluation
+public_assets: []
+protected_paths: []
+request_text: Starting from an empty case directory, build and solve a two-dimensional
+  capillary-rise problem with interFoam. Use a 1 mm wide, 20 mm high, and 1 mm deep
+  rectangular domain with 20 by 400 by 1 uniform cells and empty front/back faces.
+  Preserve inlet at the bottom, atmosphere at the top, two wall faces, and frontAndBack
+  patches. Model water with rho=1000 kg/m3 and nu=1e-6 m2/s and air with rho=1 kg/m3
+  and nu=1.48e-5 m2/s. Use surface tension sigma=0.0707106 N/m and gravity (0 -10
+  0) m/s2. Initialize U to zero, p_rgh to zero, and water volume fraction to one below
+  y=0.008 m and zero above using setFields. Allow water at the bottom inlet, use an
+  open atmosphere condition at the top, impose no slip on the side walls, and impose
+  a static water contact angle of 45 degrees on both side walls. Use coherent pressure
+  and phase-fraction conditions for the remaining patches. Integrate from 0 to 0.5
+  s with initial deltaT=1e-5 s, adjustable time stepping, maxCo=0.2, maxAlphaCo=0.2,
+  maxDeltaT=1 s, and write every 0.05 s. Run serially. Generate all Foundation OpenFOAM
+  v10 files yourself, run blockMesh, checkMesh, and setFields before interFoam, preserve
+  U, p_rgh, and alpha.water, and do not read or copy a pre-existing case.
+acceptance_intent:
+- checkMesh reports Mesh OK
+- setFields initializes the water column
+- interFoam reaches 0.5 s and ends normally
+- required fields remain finite and bounded
+- liquid inventory and capillary-rise height pass evaluator checks
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
     kind: mesh_ok
     parameters: {}
-  - name: phase-initialization
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.phase-initialization
+  value:
+    name: phase-initialization
     kind: command_executed
     parameters:
       executable: setFields
-  - name: multiphase-solver
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.multiphase-solver
+  value:
+    name: multiphase-solver
     kind: command_executed
     parameters:
       executable: interFoam
-  - name: normal-completion
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
     kind: completion
     parameters: {}
-  - name: final-time
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-time
+  value:
+    name: final-time
     kind: final_time
     parameters:
       minimum: 0.5
-  - name: finite-fields
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
     kind: finite_fields
     parameters: {}
-  - name: final-water-fraction
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-water-fraction
+  value:
+    name: final-water-fraction
     kind: requested_output
     parameters:
       path: 0.5/alpha.water
-  - name: final-velocity
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-velocity
+  value:
+    name: final-velocity
     kind: requested_output
     parameters:
       path: 0.5/U
-public_assets: []
-protected_paths: []
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

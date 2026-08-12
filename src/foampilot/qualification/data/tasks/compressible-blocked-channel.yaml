@@ -1,88 +1,166 @@
-schema_version: 2
+schema_version: 3
 task_id: compressible-blocked-channel
 title: Transient compressible flow through partially blocked channels
-prompt: >-
-  Starting from an empty case directory, build and solve a two-dimensional
-  laminar compressible benchmark with four disconnected channels, each
-  0.256 m long and 0.032 m high, extruded over 0.002 m with one empty
-  spanwise cell. Place the channel bands at y=[-0.016,0.016],
-  [-0.052,-0.020], [-0.088,-0.056], and [-0.124,-0.092] m. Use
-  256 by 32 cells for the straight first, third, and fourth channels. In the
-  second channel use five streamwise blocks spanning x=0, 0.032, 0.064,
-  0.128, 0.224, and 0.256 m, with lower/upper boundaries changing from
-  -0.052/-0.020 to -0.044/-0.028 and back, and counts 32, 32, 32, 96, and
-  64 by 32. Preserve combined inlet, outlet, walls, and empty frontAndBack
-  patches. Use rhoPimpleFoam with a laminar perfect gas of molecular weight
-  28.9 kg/kmol, Cv=712 J/(kg K), Cp=1005 J/(kg K),
-  mu=1.8e-5 Pa s, Pr=0.7, and sensible internal energy. Initialize
-  U=(10 0 0) m/s, p=100000 Pa, and T=300 K; impose T=400 K and the initial
-  U at each inlet, p=100000 Pa at each outlet, no slip and adiabatic walls.
-  Also initialize dimensionless alpha.volume in the third channel and
-  alpha.solid in the fourth to half of a streamwise obstruction profile:
-  zero before x=0.032, linear to 0.5 at x=0.064, constant to x=0.128,
-  linear back to zero at x=0.224, and zero afterward. Couple the volume
-  fraction to the fluid equations and the solid fraction to an equilibrium
-  solid-energy model with rho=900 kg/m3, Cv=1900 J/(kg K), and
-  kappa=0.5 W/(m K), initialized at 300 K. Use a native field
-  initialization command, integrate to 0.03 s from deltaT=0.0001 s with
-  adaptive maxCo=5, and write every 0.001 s. Run serially. Generate all
-  Foundation OpenFOAM v10 files yourself, run blockMesh and checkMesh, and
-  do not read or copy a pre-existing case.
 openfoam_target:
   distribution: foundation
-  version: "10"
+  version: '10'
 resource_budget:
   max_attempts: 2
   max_wall_seconds: 1800
   max_mpi_ranks: 1
   memory_mib: 4096
 required_outputs:
-  - mesh quality and volume-fraction initialization logs
-  - completed rhoPimpleFoam log through 0.03 s
-  - pressure, temperature, density, velocity, and phase-temperature fields
-  - fields suitable for total-mass and primitive-profile evaluation
-acceptance_requirements:
-  - checkMesh reports Mesh OK and volume-fraction initialization succeeds
-  - rhoPimpleFoam reaches 0.03 s and ends normally
-  - pressure, temperature, density, velocity, and volume fractions remain finite
-  - total mass and primitive profiles pass evaluator checks
-public_checks:
-  - name: mesh-quality
+- mesh quality and volume-fraction initialization logs
+- completed rhoPimpleFoam log through 0.03 s
+- pressure, temperature, density, velocity, and phase-temperature fields
+- fields suitable for total-mass and primitive-profile evaluation
+public_assets: []
+protected_paths: []
+request_text: 'Starting from an empty case directory, build and solve a two-dimensional
+  laminar compressible benchmark with four disconnected channels, each 0.256 m long
+  and 0.032 m high, extruded over 0.002 m with one empty spanwise cell. Place the
+  channel bands at y=[-0.016,0.016], [-0.052,-0.020], [-0.088,-0.056], and [-0.124,-0.092]
+  m. Use 256 by 32 cells for the straight first, third, and fourth channels. In the
+  second channel use five streamwise blocks spanning x=0, 0.032, 0.064, 0.128, 0.224,
+  and 0.256 m, with lower/upper boundaries changing from -0.052/-0.020 to -0.044/-0.028
+  and back, and counts 32, 32, 32, 96, and 64 by 32. Preserve combined inlet, outlet,
+  walls, and empty frontAndBack patches. Use rhoPimpleFoam with a laminar perfect
+  gas of molecular weight 28.9 kg/kmol, Cv=712 J/(kg K), Cp=1005 J/(kg K), mu=1.8e-5
+  Pa s, Pr=0.7, and sensible internal energy. Initialize U=(10 0 0) m/s, p=100000
+  Pa, and T=300 K; impose T=400 K and the initial U at each inlet, p=100000 Pa at
+  each outlet, no slip and adiabatic walls. Also initialize dimensionless alpha.volume
+  in the third channel and alpha.solid in the fourth to half of a streamwise obstruction
+  profile: zero before x=0.032, linear to 0.5 at x=0.064, constant to x=0.128, linear
+  back to zero at x=0.224, and zero afterward. Couple the volume fraction to the fluid
+  equations and the solid fraction to an equilibrium solid-energy model with rho=900
+  kg/m3, Cv=1900 J/(kg K), and kappa=0.5 W/(m K), initialized at 300 K. Use a native
+  field initialization command, integrate to 0.03 s from deltaT=0.0001 s with adaptive
+  maxCo=5, and write every 0.001 s. Run serially. Generate all Foundation OpenFOAM
+  v10 files yourself, run blockMesh and checkMesh, and do not read or copy a pre-existing
+  case.'
+acceptance_intent:
+- checkMesh reports Mesh OK and volume-fraction initialization succeeds
+- rhoPimpleFoam reaches 0.03 s and ends normally
+- pressure, temperature, density, velocity, and volume fractions remain finite
+- total mass and primitive profiles pass evaluator checks
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
     kind: mesh_ok
     parameters: {}
-  - name: regional-initialization
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.regional-initialization
+  value:
+    name: regional-initialization
     kind: command_executed
     parameters:
       executable: postProcess
-  - name: compressible-solver
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.compressible-solver
+  value:
+    name: compressible-solver
     kind: command_executed
     parameters:
       executable: rhoPimpleFoam
-  - name: normal-completion
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
     kind: completion
     parameters: {}
-  - name: final-time
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-time
+  value:
+    name: final-time
     kind: final_time
     parameters:
       minimum: 0.03
-  - name: finite-fields
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
     kind: finite_fields
     parameters: {}
-  - name: final-pressure
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-pressure
+  value:
+    name: final-pressure
     kind: requested_output
     parameters:
       path: 0.03/p
-  - name: final-temperature
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-temperature
+  value:
+    name: final-temperature
     kind: requested_output
     parameters:
       path: 0.03/T
-  - name: final-density
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-density
+  value:
+    name: final-density
     kind: requested_output
     parameters:
       path: 0.03/rho
-  - name: final-velocity
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-velocity
+  value:
+    name: final-velocity
     kind: requested_output
     parameters:
       path: 0.03/U
-public_assets: []
-protected_paths: []
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

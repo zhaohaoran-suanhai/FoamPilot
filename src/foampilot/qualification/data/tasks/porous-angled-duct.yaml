@@ -1,72 +1,128 @@
-schema_version: 2
+schema_version: 3
 task_id: porous-angled-duct
 title: Steady turbulent flow through an angled porous duct
-prompt: >-
-  Starting from an empty case directory, build and solve a three-dimensional
-  incompressible duct containing an anisotropic porous section. The square
-  local cross-section is 0.05 m by 0.05 m. Construct the porous and outlet
-  blocks by rotating their x-y vertices 45 degrees about z around the origin:
-  the porous inlet edge before rotation runs from (0,0) to (0,0.05) m and
-  therefore becomes (0,0) to (-0.035355339,0.035355339) m. Attach the straight
-  inlet block by projecting those two interface vertices to the common plane
-  x=-0.15 m while retaining their y coordinates; do not translate both
-  interface vertices upstream by an equal vector. Use 15 by 20 by 20 cells
-  in that inlet block, followed by a 0.10 m porous block and a 0.10 m outlet
-  block, each with 20 by 20 by 20 cells, and keep all three blocks conformal.
-  Preserve inlet, outlet, solid outer walls, porous-section walls, and a cell
-  zone named porosity. Use porousSimpleFoam with
-  nu=1.5e-5 m2/s and steady k-epsilon RANS. Initialize U and kinematic p to
-  zero. Impose inlet volumetric flow rate 0.1 m3/s, no slip on outer walls,
-  slip on porous-section side walls, and p=0 m2/s2 at the outlet. In the
-  porosity cell zone apply a Darcy-Forchheimer resistance with local
-  d=(5e7 -1000 -1000) 1/m2 and f=(0 0 0) 1/m, whose first local axis is
-  (0.70710678 0.70710678 0) and second is (0 0 1). Solve through iteration
-  200, writing every 10 iterations. Run serially. Generate all Foundation
-  OpenFOAM v10 files yourself, run blockMesh and checkMesh, and preserve U,
-  p, k, epsilon, and nut. Do not read or copy a pre-existing case.
 openfoam_target:
   distribution: foundation
-  version: "10"
+  version: '10'
 resource_budget:
   max_attempts: 2
   max_wall_seconds: 1200
   max_mpi_ranks: 1
   memory_mib: 3072
 required_outputs:
-  - mesh quality log with porosity cell zone
-  - completed porousSimpleFoam log through iteration 200
-  - velocity, pressure, and turbulence fields
-  - fields suitable for flow-balance and pressure-drop evaluation
-acceptance_requirements:
-  - checkMesh reports Mesh OK and the porosity cell zone is present
-  - porousSimpleFoam reaches iteration 200 and ends normally
-  - required fields remain finite
-  - inlet-outlet flow balance and porous pressure drop pass evaluator checks
-public_checks:
-  - name: mesh-quality
+- mesh quality log with porosity cell zone
+- completed porousSimpleFoam log through iteration 200
+- velocity, pressure, and turbulence fields
+- fields suitable for flow-balance and pressure-drop evaluation
+public_assets: []
+protected_paths: []
+request_text: 'Starting from an empty case directory, build and solve a three-dimensional
+  incompressible duct containing an anisotropic porous section. The square local cross-section
+  is 0.05 m by 0.05 m. Construct the porous and outlet blocks by rotating their x-y
+  vertices 45 degrees about z around the origin: the porous inlet edge before rotation
+  runs from (0,0) to (0,0.05) m and therefore becomes (0,0) to (-0.035355339,0.035355339)
+  m. Attach the straight inlet block by projecting those two interface vertices to
+  the common plane x=-0.15 m while retaining their y coordinates; do not translate
+  both interface vertices upstream by an equal vector. Use 15 by 20 by 20 cells in
+  that inlet block, followed by a 0.10 m porous block and a 0.10 m outlet block, each
+  with 20 by 20 by 20 cells, and keep all three blocks conformal. Preserve inlet,
+  outlet, solid outer walls, porous-section walls, and a cell zone named porosity.
+  Use porousSimpleFoam with nu=1.5e-5 m2/s and steady k-epsilon RANS. Initialize U
+  and kinematic p to zero. Impose inlet volumetric flow rate 0.1 m3/s, no slip on
+  outer walls, slip on porous-section side walls, and p=0 m2/s2 at the outlet. In
+  the porosity cell zone apply a Darcy-Forchheimer resistance with local d=(5e7 -1000
+  -1000) 1/m2 and f=(0 0 0) 1/m, whose first local axis is (0.70710678 0.70710678
+  0) and second is (0 0 1). Solve through iteration 200, writing every 10 iterations.
+  Run serially. Generate all Foundation OpenFOAM v10 files yourself, run blockMesh
+  and checkMesh, and preserve U, p, k, epsilon, and nut. Do not read or copy a pre-existing
+  case.'
+acceptance_intent:
+- checkMesh reports Mesh OK and the porosity cell zone is present
+- porousSimpleFoam reaches iteration 200 and ends normally
+- required fields remain finite
+- inlet-outlet flow balance and porous pressure drop pass evaluator checks
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
     kind: mesh_ok
     parameters: {}
-  - name: porous-solver
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.porous-solver
+  value:
+    name: porous-solver
     kind: command_executed
     parameters:
       executable: porousSimpleFoam
-  - name: normal-completion
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
     kind: completion
     parameters: {}
-  - name: final-iteration
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-iteration
+  value:
+    name: final-iteration
     kind: final_time
     parameters:
       minimum: 200
-  - name: finite-fields
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
     kind: finite_fields
     parameters: {}
-  - name: final-velocity
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-velocity
+  value:
+    name: final-velocity
     kind: requested_output
     parameters:
       path: 200/U
-  - name: final-pressure
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-pressure
+  value:
+    name: final-pressure
     kind: requested_output
     parameters:
       path: 200/p
-public_assets: []
-protected_paths: []
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

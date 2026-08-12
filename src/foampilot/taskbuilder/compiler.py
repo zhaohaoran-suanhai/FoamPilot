@@ -6,6 +6,7 @@ from hashlib import sha256
 import json
 
 from foampilot.tasks import TaskSpec
+from foampilot.simulation import FactEvidence, ResolvedValue
 
 from .checks import build_public_checks
 from .models import (
@@ -77,6 +78,28 @@ def _required_outputs(facts: dict[str, TaskFact]) -> list[str]:
     return list(dict.fromkeys(["mesh quality report", "solver log", *outputs]))
 
 
+def _resolved_fact(
+    fact: TaskFact,
+    *,
+    field_path: str | None = None,
+) -> ResolvedValue:
+    source = (
+        "public_asset_fact"
+        if fact.source.value == "public_asset"
+        else fact.source.value
+    )
+    return ResolvedValue(
+        field_path=field_path or fact.path,
+        value=fact.value,
+        source=source,
+        impact=fact.impact,
+        evidence=(
+            FactEvidence(kind="task_draft", detail=fact.evidence),
+        ),
+        confirmed=fact.confirmed,
+    )
+
+
 def compile_task_draft(review: DraftReview) -> TaskCompilation:
     """Compile without solver routing, case authoring or native execution."""
 
@@ -124,19 +147,6 @@ def compile_task_draft(review: DraftReview) -> TaskCompilation:
             )
         )
 
-    confirmed_facts = {
-        path: {
-            "value": fact.value,
-            "source": fact.source.value,
-            "evidence": fact.evidence,
-        }
-        for path, fact in sorted(facts.items())
-    }
-    prompt = (
-        draft.request_text
-        + "\n\n已确认任务事实（不得被模型改写）：\n"
-        + json.dumps(confirmed_facts, ensure_ascii=False, sort_keys=True)
-    )
     title = _fact_value(facts, "task.title")
     if not isinstance(title, str) or not title.strip():
         title = draft.request_text.splitlines()[0][:120].strip()
@@ -160,11 +170,56 @@ def compile_task_draft(review: DraftReview) -> TaskCompilation:
             str(item).strip() for item in explicit_acceptance if str(item).strip()
         )
 
+    explicit_facts = []
+    for path, fact in sorted(facts.items()):
+        mapped_path = {
+            "geometry": "geometry.input",
+            "mesh": "mesh.intent",
+        }.get(path, path)
+        explicit_facts.append(
+            _resolved_fact(fact, field_path=mapped_path).model_dump(mode="json")
+        )
+    if "mesh" not in facts:
+        explicit_facts.append(
+            ResolvedValue(
+                field_path="mesh.intent",
+                value=mesh,
+                source="system_default",
+                impact="low",
+                evidence=(
+                    FactEvidence(
+                        kind="task_compiler_default",
+                        detail="Use automatic mesh strategy selection.",
+                    ),
+                ),
+                confirmed=False,
+            ).model_dump(mode="json")
+        )
+    for check in checks:
+        explicit_facts.append(
+            ResolvedValue(
+                field_path=f"acceptance.legacy_checks.{check.name}",
+                value=check.model_dump(mode="json"),
+                source="deterministic_rule",
+                impact="high",
+                evidence=(
+                    FactEvidence(
+                        kind="legacy_acceptance_compiler",
+                        detail=(
+                            "Temporary Phase 2 projection; Phase 5 compiles "
+                            "AcceptancePlan."
+                        ),
+                    ),
+                ),
+                confirmed=True,
+            ).model_dump(mode="json")
+        )
+
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "task_id": draft.draft_id,
         "title": title,
-        "prompt": prompt,
+        "request_text": draft.request_text,
         "openfoam_target": {
             "distribution": distribution,
             "version": str(version),
@@ -178,12 +233,10 @@ def compile_task_draft(review: DraftReview) -> TaskCompilation:
             "memory_mib": _resource_value(facts, "resources.memory_mib"),
         },
         "required_outputs": _required_outputs(facts),
-        "acceptance_requirements": list(dict.fromkeys(acceptance)),
-        "public_checks": [item.model_dump(mode="json") for item in checks],
+        "acceptance_intent": list(dict.fromkeys(acceptance)),
         "public_assets": [item.model_dump(mode="json") for item in draft.assets],
         "protected_paths": draft.protected_paths,
-        "geometry": geometry,
-        "mesh": mesh,
+        "explicit_facts": explicit_facts,
     }
     task = TaskSpec.model_validate(payload)
     return TaskCompilation(

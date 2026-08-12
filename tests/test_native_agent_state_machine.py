@@ -42,6 +42,7 @@ from foampilot.assets import BundleMember, compute_bundle_manifest_sha256
 from foampilot.manifests import CasePatch
 from foampilot.preprocessing import ExecutedMeshFacts, MeshCheckFact, MeshQualityReport
 from foampilot.tasks import PublicAsset
+from tests.support.tasks import replace_explicit_fact
 
 
 POLY_MESH_FIXTURE = Path(__file__).parent / "fixtures/poly_mesh/minimal"
@@ -297,7 +298,7 @@ def _provided_asset(root: Path) -> PublicAsset:
 def _provided_task(root: Path):
     payload = _task().model_dump(mode="json")
     payload["public_assets"] = [_provided_asset(root).model_dump(mode="json")]
-    payload["geometry"] = {
+    replace_explicit_fact(payload, "geometry.input", {
         "mode": "openfoam_mesh",
         "dimensionality": "three_d",
         "description": "synthetic native mesh",
@@ -311,8 +312,8 @@ def _provided_task(root: Path):
         ],
         "patch_roles": [],
         "region_roles": [],
-    }
-    payload["mesh"] = {"strategy": "provided"}
+    })
+    replace_explicit_fact(payload, "mesh.intent", {"strategy": "provided"})
     return _task().model_validate(payload)
 
 
@@ -686,7 +687,7 @@ def test_native_agent_probes_geometry_before_routing_and_generation(
     tmp_path: Path,
 ) -> None:
     payload = _task().model_dump(mode="json")
-    payload["geometry"] = {
+    replace_explicit_fact(payload, "geometry.input", {
         "mode": "parametric",
         "dimensionality": "two_d",
         "description": "Unit cavity",
@@ -698,11 +699,11 @@ def test_native_agent_probes_geometry_before_routing_and_generation(
         "patch_roles": [
             {"name": "movingWall", "role": "wall"},
         ],
-    }
-    payload["mesh"] = {
+    })
+    replace_explicit_fact(payload, "mesh.intent", {
         "strategy": "blockMesh",
         "quality": {"require_check_mesh_pass": False},
-    }
+    })
     task = type(_task()).model_validate(payload)
     model = RecordingModel([_plan()])
 
@@ -734,13 +735,13 @@ def test_native_agent_persists_mesh_quality_report(
     tmp_path: Path,
 ) -> None:
     payload = _task().model_dump(mode="json")
-    payload["mesh"] = {
+    replace_explicit_fact(payload, "mesh.intent", {
         "strategy": "blockMesh",
         "quality": {
             "require_check_mesh_pass": True,
             "max_non_orthogonality": 70,
         },
-    }
+    })
     task = type(_task()).model_validate(payload)
     plan = _plan()
     plan.commands.insert(
@@ -780,13 +781,13 @@ def test_mesh_quality_threshold_has_distinct_native_status(
 ) -> None:
     payload = _task().model_dump(mode="json")
     payload["resource_budget"]["max_attempts"] = 1
-    payload["mesh"] = {
+    replace_explicit_fact(payload, "mesh.intent", {
         "strategy": "blockMesh",
         "quality": {
             "require_check_mesh_pass": True,
             "max_non_orthogonality": 70,
         },
-    }
+    })
     task = type(_task()).model_validate(payload)
     plan = _plan()
     plan.commands.insert(
@@ -903,7 +904,7 @@ def test_native_agent_rejects_incomplete_public_route_before_generation(
 ) -> None:
     task = _task().model_copy(
         update={
-            "prompt": "Calculate a requested field with OpenFOAM.",
+            "request_text": "Calculate a requested field with OpenFOAM.",
         }
     )
     model = RecordingModel([])
@@ -1471,7 +1472,7 @@ def test_runtime_tutorial_path_is_protected_before_model_authoring(
     base_task = _task()
     task = base_task.model_copy(
         update={
-            "prompt": (
+            "request_text": (
                 f"{base_task.prompt} Copy the case from "
                 f"{tutorial_root}/cavity."
             )

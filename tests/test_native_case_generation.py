@@ -40,6 +40,7 @@ from foampilot.preprocessing import (
 )
 from foampilot.routing import CapabilityProfile
 from foampilot.tasks import TaskSpec
+from tests.support.tasks import canonical_task_payload
 
 
 class RecordingModel:
@@ -91,7 +92,7 @@ def _model_window(stage: ModelStage):
 
 def _task() -> TaskSpec:
     return TaskSpec.model_validate(
-        {
+        canonical_task_payload({
             "schema_version": 2,
             "task_id": "native-generation",
             "title": "Native generation",
@@ -120,7 +121,7 @@ def _task() -> TaskSpec:
             ],
             "public_assets": [],
             "protected_paths": ["/private/tutorial/native-generation"],
-        }
+        })
     )
 
 

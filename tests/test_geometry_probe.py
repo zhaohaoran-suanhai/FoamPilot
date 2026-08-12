@@ -7,6 +7,7 @@ import pytest
 
 from foampilot.preprocessing import GeometryProbeError, probe_geometry
 from foampilot.tasks import TaskSpec
+from tests.support.tasks import canonical_task_payload
 
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures/preprocessing"
@@ -21,7 +22,7 @@ def _task(
 ) -> TaskSpec:
     source = FIXTURES / asset_name
     return TaskSpec.model_validate(
-        {
+        canonical_task_payload({
             "schema_version": 2,
             "task_id": "geometry-probe",
             "title": "Geometry probe",
@@ -66,7 +67,7 @@ def _task(
                 "region_roles": [{"name": "fluid", "role": "fluid"}],
             },
             "mesh": {"strategy": "snappyHexMesh"},
-        }
+        })
     )
 
 

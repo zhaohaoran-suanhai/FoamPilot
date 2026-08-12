@@ -8,11 +8,12 @@ import pytest
 from foampilot.agent.context import load_agent_context
 from foampilot.routing import CapabilityProfile
 from foampilot.tasks import TaskSpec
+from tests.support.tasks import canonical_task_payload
 
 
 def _task() -> TaskSpec:
     return TaskSpec.model_validate(
-        {
+        canonical_task_payload({
             "schema_version": 2,
             "task_id": "two-fluid-column",
             "title": "Two-fluid column",
@@ -47,7 +48,7 @@ def _task() -> TaskSpec:
             ],
             "public_assets": [],
             "protected_paths": ["/private/tutorial/damBreak"],
-        }
+        })
     )
 
 

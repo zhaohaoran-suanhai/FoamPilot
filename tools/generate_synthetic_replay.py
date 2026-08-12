@@ -360,10 +360,10 @@ def _plan(spec: SyntheticFixtureSpec) -> ExecutionPlan:
 def _task(spec: SyntheticFixtureSpec, plan: ExecutionPlan) -> TaskSpec:
     return TaskSpec.model_validate(
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "task_id": spec.fixture_id,
             "title": f"Synthetic replay {spec.fixture_id}",
-            "prompt": (
+            "request_text": (
                 "Inspect a deterministic, repository-owned native case and "
                 + ("reconstruct parallel results." if spec.mpi_ranks > 1 else "preserve its typed execution plan.")
             ),
@@ -375,8 +375,30 @@ def _task(spec: SyntheticFixtureSpec, plan: ExecutionPlan) -> TaskSpec:
                 "memory_mib": 1024,
             },
             "required_outputs": ["synthetic replay evidence"],
-            "acceptance_requirements": ["deterministic static inspection"],
-            "public_checks": [{"name": "synthetic-check", "kind": "completion", "parameters": {}}],
+            "acceptance_intent": ["deterministic static inspection"],
+            "explicit_facts": [
+                {
+                    "field_path": "acceptance.legacy_checks.synthetic-check",
+                    "value": {
+                        "name": "synthetic-check",
+                        "kind": "completion",
+                        "parameters": {},
+                    },
+                    "source": "deterministic_rule",
+                    "impact": "high",
+                    "evidence": [
+                        {
+                            "kind": "synthetic_fixture_generator",
+                            "detail": "Repository-owned deterministic replay gate.",
+                        }
+                    ],
+                    "confirmed": True,
+                }
+            ],
+            "repair_policy": {
+                "automatic_numerical_repair": True,
+                "model_diagnostic": True,
+            },
             "protected_paths": [],
         }
     )

@@ -19,11 +19,12 @@ from foampilot.routing import (
     route_capability,
 )
 from foampilot.tasks import TaskSpec
+from tests.support.tasks import canonical_task_payload, replace_explicit_fact
 
 
 def _task(prompt: str) -> TaskSpec:
     return TaskSpec.model_validate(
-        {
+        canonical_task_payload({
             "schema_version": 2,
             "task_id": "route-test",
             "title": "Public routing task",
@@ -48,13 +49,13 @@ def _task(prompt: str) -> TaskSpec:
                 }
             ],
             "protected_paths": ["/private/route-target"],
-        }
+        })
     )
 
 
 def _geometry_task(prompt: str, *, mode: str, strategy: str) -> TaskSpec:
     payload = _task(prompt).model_dump(mode="json")
-    payload["geometry"] = {
+    geometry = {
         "mode": mode,
         "dimensionality": "three_d",
         "description": "Public geometry for routing",
@@ -76,7 +77,8 @@ def _geometry_task(prompt: str, *, mode: str, strategy: str) -> TaskSpec:
             else {}
         ),
     }
-    payload["mesh"] = {"strategy": strategy}
+    replace_explicit_fact(payload, "geometry.input", geometry)
+    replace_explicit_fact(payload, "mesh.intent", {"strategy": strategy})
     if mode != "parametric":
         payload["public_assets"] = [
             {

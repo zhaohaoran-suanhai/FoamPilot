@@ -20,10 +20,10 @@ from foampilot.workflow import (
 def _write_task(path: Path) -> None:
     path.write_text(
         """
-schema_version: 2
+schema_version: 3
 task_id: cli-native
 title: CLI native task
-prompt: Solve a small laminar flow case.
+request_text: Solve a small laminar flow case.
 openfoam_target:
   distribution: foundation
   version: "10"
@@ -33,11 +33,15 @@ resource_budget:
   max_mpi_ranks: 1
   memory_mib: 512
 required_outputs: [velocity]
-acceptance_requirements: [normal completion]
-public_checks:
-  - name: completion
-    kind: completion
-    parameters: {}
+acceptance_intent: [normal completion]
+explicit_facts:
+  - field_path: acceptance.legacy_checks.completion
+    value: {name: completion, kind: completion, parameters: {}}
+    source: deterministic_rule
+    impact: high
+    evidence:
+      - {kind: test_fixture, detail: CLI validation fixture.}
+    confirmed: true
 public_assets: []
 protected_paths: []
 """.lstrip(),

@@ -239,7 +239,7 @@ def test_compile_writes_canonical_task_and_visible_assumptions(
     ) == 0
 
     task_payload = yaml.safe_load(output.read_text(encoding="utf-8"))
-    assert task_payload["schema_version"] == 2
+    assert task_payload["schema_version"] == 3
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "PASS"
     assert payload["assumptions"]

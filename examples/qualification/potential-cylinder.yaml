@@ -1,68 +1,124 @@
-schema_version: 2
+schema_version: 3
 task_id: potential-cylinder
 title: Two-dimensional potential flow past a circular obstacle
-prompt: >-
-  Starting from an empty case directory, build and solve incompressible
-  potential flow around a circular slip obstacle. Use the upper half of an
-  exterior domain with -2 m <= x <= 2 m and 0 m <= y <= 2 m. Place a circular
-  obstacle of radius 0.5 m at the origin; y=0 is the horizontal symmetry
-  plane. Extrude one empty spanwise cell between z=-0.5 m and z=0.5 m. Create
-  a body-fitted structured multi-block mesh with circular arcs, using 10 cells
-  through each near-obstacle block direction and 20 through each outer
-  extension. Preserve inlet, outlet, upper and lower symmetry/slip boundaries,
-  the obstacle, and empty spanwise patches. Use an inviscid incompressible
-  potential-flow solution with reference inlet velocity (1 0 0) m/s.
-  Initialize U and kinematic p to zero. Fix inlet U and zero-gradient p; fix
-  outlet p to zero and use zero-gradient U; use slip or symmetry conditions at
-  y=0, y=2 m, and the circular obstacle; make spanwise faces empty. Write one
-  completed result state, including U, p, and flux data suitable for analytical
-  potential-flow sampling. Generate every Foundation OpenFOAM v10 dictionary
-  yourself, check the mesh before solving, and do not read or copy a
-  pre-existing case.
 openfoam_target:
   distribution: foundation
-  version: "10"
+  version: '10'
 resource_budget:
   max_attempts: 2
   max_wall_seconds: 600
   max_mpi_ranks: 1
   memory_mib: 2048
 required_outputs:
-  - mesh quality log
-  - normally completed potential-flow log
-  - velocity, kinematic-pressure, and flux fields
-  - fields suitable for analytical circular-obstacle comparison
-acceptance_requirements:
-  - checkMesh reports Mesh OK
-  - potentialFoam executes successfully and ends normally
-  - required fields remain finite
-  - inlet and outlet fluxes balance
-  - evaluator velocity samples agree with the analytical potential-flow solution
-public_checks:
-  - name: mesh-quality
+- mesh quality log
+- normally completed potential-flow log
+- velocity, kinematic-pressure, and flux fields
+- fields suitable for analytical circular-obstacle comparison
+public_assets: []
+protected_paths: []
+request_text: Starting from an empty case directory, build and solve incompressible
+  potential flow around a circular slip obstacle. Use the upper half of an exterior
+  domain with -2 m <= x <= 2 m and 0 m <= y <= 2 m. Place a circular obstacle of radius
+  0.5 m at the origin; y=0 is the horizontal symmetry plane. Extrude one empty spanwise
+  cell between z=-0.5 m and z=0.5 m. Create a body-fitted structured multi-block mesh
+  with circular arcs, using 10 cells through each near-obstacle block direction and
+  20 through each outer extension. Preserve inlet, outlet, upper and lower symmetry/slip
+  boundaries, the obstacle, and empty spanwise patches. Use an inviscid incompressible
+  potential-flow solution with reference inlet velocity (1 0 0) m/s. Initialize U
+  and kinematic p to zero. Fix inlet U and zero-gradient p; fix outlet p to zero and
+  use zero-gradient U; use slip or symmetry conditions at y=0, y=2 m, and the circular
+  obstacle; make spanwise faces empty. Write one completed result state, including
+  U, p, and flux data suitable for analytical potential-flow sampling. Generate every
+  Foundation OpenFOAM v10 dictionary yourself, check the mesh before solving, and
+  do not read or copy a pre-existing case.
+acceptance_intent:
+- checkMesh reports Mesh OK
+- potentialFoam executes successfully and ends normally
+- required fields remain finite
+- inlet and outlet fluxes balance
+- evaluator velocity samples agree with the analytical potential-flow solution
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
     kind: mesh_ok
     parameters: {}
-  - name: potential-solver
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.potential-solver
+  value:
+    name: potential-solver
     kind: command_executed
     parameters:
       executable: potentialFoam
-  - name: normal-completion
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
     kind: completion
     parameters: {}
-  - name: result-state
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.result-state
+  value:
+    name: result-state
     kind: final_time
     parameters:
       minimum: 0.0
-  - name: finite-fields
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
     kind: finite_fields
     parameters: {}
-  - name: velocity-output
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.velocity-output
+  value:
+    name: velocity-output
     kind: requested_output
     parameters:
       path: 0/U
-  - name: pressure-output
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.pressure-output
+  value:
+    name: pressure-output
     kind: requested_output
     parameters:
       path: 0/p
-public_assets: []
-protected_paths: []
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

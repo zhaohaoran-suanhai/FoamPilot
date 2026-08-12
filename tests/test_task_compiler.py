@@ -21,7 +21,7 @@ def test_compiler_adds_only_supported_universal_public_checks() -> None:
         validate_task_draft(_complete_draft())
     )
 
-    assert compilation.task.schema_version == 2
+    assert compilation.task.schema_version == 3
     assert {item.kind for item in compilation.task.public_checks} >= {
         "mesh_ok",
         "completion",

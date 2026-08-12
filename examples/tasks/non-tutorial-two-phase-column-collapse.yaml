@@ -1,92 +1,172 @@
-schema_version: 2
+schema_version: 3
 task_id: non-tutorial-two-phase-column-collapse
 title: Non-tutorial two-phase column collapse
-prompt: >-
-  Starting from an empty case directory, solve a two-dimensional transient
-  free-surface collapse of two incompressible, isothermal, immiscible fluids
-  in a closed rectangular tank 0.30 m wide and 0.20 m high, extruded 0.005 m
-  through the suppressed direction. Use a uniform 60 by 40 by 1 hexahedral
-  mesh. At time zero, the heavier fluid occupies x from 0 to 0.08 m and y
-  from 0 to 0.14 m; the lighter fluid fills the rest. Create this nonuniform
-  phase fraction through a native regional volume-field initialization step
-  after mesh checking and before solving. Use gravity (0 -9.81 0) m/s2.
-  The heavier fluid has density 1000 kg/m3 and kinematic viscosity 1.0e-6
-  m2/s; the lighter fluid has density 1 kg/m3 and kinematic viscosity
-  1.5e-5 m2/s; surface tension is 0.07 N/m. All tank walls are stationary
-  no-slip walls and the two thin front/back planes are empty. Initially
-  velocity and reduced pressure are zero. Advance to 0.10 s using adaptive
-  time stepping with initial time step 1.0e-4 s, maximum flow Courant number
-  0.5, and maximum phase Courant number 0.5; write every 0.02 s. Run serially.
-  Generate all native Foundation OpenFOAM v10 dictionaries yourself. Configure
-  native volume-field-value function objects so the solver log records the
-  phase-fraction minimum, maximum, and volume integral throughout the run.
-  Public evidence must show Mesh OK, successful regional initialization,
-  normal completion, final time at least 0.10 s, finite fields, phase fraction
-  within [-1.0e-6, 1.000001], and relative drift of phase volume no greater
-  than 0.02 between the first and last recorded integrals.
 openfoam_target:
   distribution: foundation
-  version: "10"
+  version: '10'
 resource_budget:
   max_attempts: 2
   max_wall_seconds: 420
   max_mpi_ranks: 1
   memory_mib: 3072
 required_outputs:
-  - mesh quality report
-  - initialized phase-fraction field
-  - final velocity field
-  - final reduced-pressure field
-  - bounded phase-fraction evidence
-  - phase-volume conservation evidence
-acceptance_requirements:
-  - checkMesh reports Mesh OK
-  - regional phase initialization exits successfully
-  - solver reports normal End
-  - latest solver time is at least 0.10 s
-  - required fields remain finite
-  - phase fraction remains within [-1.0e-6, 1.000001]
-  - relative phase-volume drift is no greater than 0.02
-public_checks:
-  - name: mesh-quality
+- mesh quality report
+- initialized phase-fraction field
+- final velocity field
+- final reduced-pressure field
+- bounded phase-fraction evidence
+- phase-volume conservation evidence
+public_assets: []
+protected_paths: []
+request_text: Starting from an empty case directory, solve a two-dimensional transient
+  free-surface collapse of two incompressible, isothermal, immiscible fluids in a
+  closed rectangular tank 0.30 m wide and 0.20 m high, extruded 0.005 m through the
+  suppressed direction. Use a uniform 60 by 40 by 1 hexahedral mesh. At time zero,
+  the heavier fluid occupies x from 0 to 0.08 m and y from 0 to 0.14 m; the lighter
+  fluid fills the rest. Create this nonuniform phase fraction through a native regional
+  volume-field initialization step after mesh checking and before solving. Use gravity
+  (0 -9.81 0) m/s2. The heavier fluid has density 1000 kg/m3 and kinematic viscosity
+  1.0e-6 m2/s; the lighter fluid has density 1 kg/m3 and kinematic viscosity 1.5e-5
+  m2/s; surface tension is 0.07 N/m. All tank walls are stationary no-slip walls and
+  the two thin front/back planes are empty. Initially velocity and reduced pressure
+  are zero. Advance to 0.10 s using adaptive time stepping with initial time step
+  1.0e-4 s, maximum flow Courant number 0.5, and maximum phase Courant number 0.5;
+  write every 0.02 s. Run serially. Generate all native Foundation OpenFOAM v10 dictionaries
+  yourself. Configure native volume-field-value function objects so the solver log
+  records the phase-fraction minimum, maximum, and volume integral throughout the
+  run. Public evidence must show Mesh OK, successful regional initialization, normal
+  completion, final time at least 0.10 s, finite fields, phase fraction within [-1.0e-6,
+  1.000001], and relative drift of phase volume no greater than 0.02 between the first
+  and last recorded integrals.
+acceptance_intent:
+- checkMesh reports Mesh OK
+- regional phase initialization exits successfully
+- solver reports normal End
+- latest solver time is at least 0.10 s
+- required fields remain finite
+- phase fraction remains within [-1.0e-6, 1.000001]
+- relative phase-volume drift is no greater than 0.02
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
     kind: mesh_ok
     parameters: {}
-  - name: regional-initialization
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.regional-initialization
+  value:
+    name: regional-initialization
     kind: command_executed
     parameters:
       executable: setFields
-  - name: initialized-phase-field
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.initialized-phase-field
+  value:
+    name: initialized-phase-field
     kind: requested_output
     parameters:
       path: 0/alpha.water
-  - name: normal-completion
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
     kind: completion
     parameters: {}
-  - name: final-time
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-time
+  value:
+    name: final-time
     kind: final_time
     parameters:
       minimum: 0.1
-  - name: finite-fields
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
     kind: finite_fields
     parameters: {}
-  - name: bounded-water-fraction
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.bounded-water-fraction
+  value:
+    name: bounded-water-fraction
     kind: bounded_field
     parameters:
       field: alpha.water
-      minimum: -1.0e-6
+      minimum: -1.0e-06
       maximum: 1.000001
-  - name: water-volume-conservation
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.water-volume-conservation
+  value:
+    name: water-volume-conservation
     kind: conservation
     parameters:
       field: alpha.water
       maximum_normalized_error: 0.02
-  - name: final-velocity
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-velocity
+  value:
+    name: final-velocity
     kind: requested_output
     parameters:
       path: 0.1/U
-  - name: final-reduced-pressure
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-reduced-pressure
+  value:
+    name: final-reduced-pressure
     kind: requested_output
     parameters:
       path: 0.1/p_rgh
-public_assets: []
-protected_paths: []
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

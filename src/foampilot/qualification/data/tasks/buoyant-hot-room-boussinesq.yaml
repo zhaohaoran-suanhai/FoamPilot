@@ -1,29 +1,116 @@
-schema_version: 2
+schema_version: 3
 task_id: buoyant-hot-room-boussinesq
 title: Steady Boussinesq natural convection in a heated room
-prompt: >-
-  Starting from an empty case directory, build the Foundation v10 steady
-  Boussinesq hot-room benchmark. Use a closed 10 m by 5 m by 10 m room with
-  a 20 by 10 by 20 structured mesh. Preserve floor, ceiling, and fixedWalls.
-  Use buoyantFoam with the Boussinesq density model, gravity downward,
-  k-epsilon RANS, coherent wall functions, and consistent p/p_rgh/reference
-  semantics. Initialize the room near 300 K, impose a heated region on the
-  floor using a native setFields initialization and cooler remaining walls,
-  then run the steady configuration to iteration/time 2000 with deltaT=1
-  and writes every 100. Generate all fields and dictionaries, run blockMesh,
-  checkMesh, setFields and buoyantFoam serially, and do not read or copy an
-  existing tutorial.
-openfoam_target: {distribution: foundation, version: "10"}
-resource_budget: {max_attempts: 2, max_wall_seconds: 1800, max_mpi_ranks: 1, memory_mib: 4096}
-required_outputs: [mesh quality log, completed buoyantFoam log, U T p and p_rgh fields at 2000]
-acceptance_requirements: [checkMesh reports Mesh OK, buoyantFoam reaches 2000 and ends normally, required fields remain finite]
-public_checks:
-  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
-  - {name: target-solver, kind: command_executed, parameters: {executable: buoyantFoam}}
-  - {name: normal-completion, kind: completion, parameters: {}}
-  - {name: final-time, kind: final_time, parameters: {minimum: 2000}}
-  - {name: finite-fields, kind: finite_fields, parameters: {}}
-  - {name: final-temperature, kind: requested_output, parameters: {path: 2000/T}}
-  - {name: final-velocity, kind: requested_output, parameters: {path: 2000/U}}
+openfoam_target:
+  distribution: foundation
+  version: '10'
+resource_budget:
+  max_attempts: 2
+  max_wall_seconds: 1800
+  max_mpi_ranks: 1
+  memory_mib: 4096
+required_outputs:
+- mesh quality log
+- completed buoyantFoam log
+- U T p and p_rgh fields at 2000
 public_assets: []
 protected_paths: []
+request_text: Starting from an empty case directory, build the Foundation v10 steady
+  Boussinesq hot-room benchmark. Use a closed 10 m by 5 m by 10 m room with a 20 by
+  10 by 20 structured mesh. Preserve floor, ceiling, and fixedWalls. Use buoyantFoam
+  with the Boussinesq density model, gravity downward, k-epsilon RANS, coherent wall
+  functions, and consistent p/p_rgh/reference semantics. Initialize the room near
+  300 K, impose a heated region on the floor using a native setFields initialization
+  and cooler remaining walls, then run the steady configuration to iteration/time
+  2000 with deltaT=1 and writes every 100. Generate all fields and dictionaries, run
+  blockMesh, checkMesh, setFields and buoyantFoam serially, and do not read or copy
+  an existing tutorial.
+acceptance_intent:
+- checkMesh reports Mesh OK
+- buoyantFoam reaches 2000 and ends normally
+- required fields remain finite
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
+    kind: mesh_ok
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.target-solver
+  value:
+    name: target-solver
+    kind: command_executed
+    parameters:
+      executable: buoyantFoam
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
+    kind: completion
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-time
+  value:
+    name: final-time
+    kind: final_time
+    parameters:
+      minimum: 2000
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
+    kind: finite_fields
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-temperature
+  value:
+    name: final-temperature
+    kind: requested_output
+    parameters:
+      path: 2000/T
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-velocity
+  value:
+    name: final-velocity
+    kind: requested_output
+    parameters:
+      path: 2000/U
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

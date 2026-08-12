@@ -1,72 +1,127 @@
-schema_version: 2
+schema_version: 3
 task_id: srf-rotor
 title: Turbulent flow around a rotor in a single rotating frame
-prompt: >-
-  Starting from an empty case directory, build and solve a two-dimensional
-  single-rotating-frame rotor flow. Use concentric radii 0.005 m for the hub,
-  0.02 m for the rotor-tip envelope, and 0.1 m for the circular outer
-  boundary, extruded from z=-0.005 to 0.005 m with empty front/back faces.
-  Form four quarter-annulus rotor blocks with 24 circumferential by 6 radial
-  by 1 cells and four outer blocks with 24 by 24 by 1 cells. Model four
-  radial zero-thickness blades, one on each quadrant axis, extending from the
-  hub to the 0.02 m tip radius; keep both sides of each blade as rotor-wall
-  faces instead of merging adjacent rotor sectors there. Preserve the
-  circular hub plus blade faces as the rotor wall, the outer freestream, and
-  empty front/back patches. Use
-  SRFPimpleFoam with a frame centered at the origin, axis (0 0 1), and
-  rotation rate 60 rpm. Use nu=1e-5 m2/s and k-epsilon RANS. Initialize
-  relative velocity Urel=(0 0 0) m/s, k=3.75e-3 m2/s2,
-  epsilon=3.75e-4 m2/s3, nut=0, and kinematic p=0. Apply no slip and
-  coherent k-epsilon wall functions on the rotor. At the circular outer
-  boundary impose the Foundation v10 SRF freestream velocity condition with
-  inertial UInf=(1 0 0) m/s and coherent pressure/turbulence conditions.
-  Integrate from 0 to 2 s with deltaT=0.0002 s, maxCo=0.5, and write every
-  0.02 s. Run serially. Generate all Foundation OpenFOAM v10 files yourself,
-  run blockMesh and checkMesh, preserve Urel, p, k, epsilon, and nut, and do
-  not read or copy a pre-existing case.
 openfoam_target:
   distribution: foundation
-  version: "10"
+  version: '10'
 resource_budget:
   max_attempts: 2
   max_wall_seconds: 1800
   max_mpi_ranks: 1
   memory_mib: 3072
 required_outputs:
-  - mesh quality log
-  - completed SRFPimpleFoam log through 2 s
-  - relative velocity, pressure, and turbulence fields
-  - fields suitable for flow-balance and rotating-velocity-profile evaluation
-acceptance_requirements:
-  - checkMesh reports Mesh OK
-  - SRFPimpleFoam reaches 2 s and ends normally
-  - required fields remain finite
-  - flow balance and rotating velocity profile pass evaluator checks
-public_checks:
-  - name: mesh-quality
+- mesh quality log
+- completed SRFPimpleFoam log through 2 s
+- relative velocity, pressure, and turbulence fields
+- fields suitable for flow-balance and rotating-velocity-profile evaluation
+public_assets: []
+protected_paths: []
+request_text: Starting from an empty case directory, build and solve a two-dimensional
+  single-rotating-frame rotor flow. Use concentric radii 0.005 m for the hub, 0.02
+  m for the rotor-tip envelope, and 0.1 m for the circular outer boundary, extruded
+  from z=-0.005 to 0.005 m with empty front/back faces. Form four quarter-annulus
+  rotor blocks with 24 circumferential by 6 radial by 1 cells and four outer blocks
+  with 24 by 24 by 1 cells. Model four radial zero-thickness blades, one on each quadrant
+  axis, extending from the hub to the 0.02 m tip radius; keep both sides of each blade
+  as rotor-wall faces instead of merging adjacent rotor sectors there. Preserve the
+  circular hub plus blade faces as the rotor wall, the outer freestream, and empty
+  front/back patches. Use SRFPimpleFoam with a frame centered at the origin, axis
+  (0 0 1), and rotation rate 60 rpm. Use nu=1e-5 m2/s and k-epsilon RANS. Initialize
+  relative velocity Urel=(0 0 0) m/s, k=3.75e-3 m2/s2, epsilon=3.75e-4 m2/s3, nut=0,
+  and kinematic p=0. Apply no slip and coherent k-epsilon wall functions on the rotor.
+  At the circular outer boundary impose the Foundation v10 SRF freestream velocity
+  condition with inertial UInf=(1 0 0) m/s and coherent pressure/turbulence conditions.
+  Integrate from 0 to 2 s with deltaT=0.0002 s, maxCo=0.5, and write every 0.02 s.
+  Run serially. Generate all Foundation OpenFOAM v10 files yourself, run blockMesh
+  and checkMesh, preserve Urel, p, k, epsilon, and nut, and do not read or copy a
+  pre-existing case.
+acceptance_intent:
+- checkMesh reports Mesh OK
+- SRFPimpleFoam reaches 2 s and ends normally
+- required fields remain finite
+- flow balance and rotating velocity profile pass evaluator checks
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
     kind: mesh_ok
     parameters: {}
-  - name: rotating-frame-solver
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.rotating-frame-solver
+  value:
+    name: rotating-frame-solver
     kind: command_executed
     parameters:
       executable: SRFPimpleFoam
-  - name: normal-completion
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
     kind: completion
     parameters: {}
-  - name: final-time
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-time
+  value:
+    name: final-time
     kind: final_time
     parameters:
       minimum: 2
-  - name: finite-fields
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
     kind: finite_fields
     parameters: {}
-  - name: final-relative-velocity
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-relative-velocity
+  value:
+    name: final-relative-velocity
     kind: requested_output
     parameters:
       path: 2/Urel
-  - name: final-pressure
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-pressure
+  value:
+    name: final-pressure
     kind: requested_output
     parameters:
       path: 2/p
-public_assets: []
-protected_paths: []
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

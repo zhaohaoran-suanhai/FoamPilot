@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 from hashlib import sha256
+import json
 from pathlib import Path
 import shutil
 
 import pytest
 from pydantic import ValidationError
+import yaml
 
 from foampilot.tasks import (
     TaskSpec,
     load_task_spec,
     stage_public_assets,
 )
+from foampilot.tasks.legacy import load_legacy_task_spec_from_run
 from foampilot.cli.main import _declared_task_assets
 
 
@@ -20,10 +23,10 @@ POLY_MESH_FIXTURE = Path(__file__).parent / "fixtures/poly_mesh/minimal"
 
 def _payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
-        "schema_version": 2,
+        "schema_version": 3,
         "task_id": "side-driven-box",
         "title": "Side-driven enclosure",
-        "prompt": "Solve a laminar incompressible side-driven box.",
+        "request_text": "Solve a laminar incompressible side-driven box.",
         "openfoam_target": {
             "distribution": "foundation",
             "version": "10",
@@ -35,23 +38,30 @@ def _payload(**overrides: object) -> dict[str, object]:
             "memory_mib": 2048,
         },
         "required_outputs": ["velocity field", "pressure field"],
-        "acceptance_requirements": ["mesh passes checkMesh"],
-        "public_checks": [
-            {
-                "name": "mesh-quality",
-                "kind": "mesh_ok",
-                "parameters": {},
-            }
-        ],
+        "acceptance_intent": ["mesh passes checkMesh"],
         "public_assets": [],
         "protected_paths": ["/private/tutorial/cavity"],
+        "explicit_facts": [],
     }
     payload.update(overrides)
     return payload
 
 
 def test_agent_payload_excludes_protected_paths() -> None:
-    task = TaskSpec.model_validate(_payload())
+    task = TaskSpec.model_validate(
+        _payload(
+            explicit_facts=[
+                _explicit_fact(
+                    "acceptance.legacy_checks.mesh-quality",
+                    {
+                        "name": "mesh-quality",
+                        "kind": "mesh_ok",
+                        "parameters": {},
+                    },
+                )
+            ]
+        )
+    )
 
     payload = task.agent_payload()
 
@@ -61,14 +71,19 @@ def test_agent_payload_excludes_protected_paths() -> None:
     assert "mesh-quality" not in str(payload)
 
 
-def test_task_rejects_duplicate_public_check_names() -> None:
-    with pytest.raises(ValidationError, match="duplicate public check"):
+def test_task_rejects_duplicate_explicit_fact_paths() -> None:
+    fact = {
+        "field_path": "physics.regime",
+        "value": "laminar",
+        "source": "user_text",
+        "impact": "high",
+        "evidence": [{"kind": "user_quote", "detail": "laminar"}],
+        "confirmed": True,
+    }
+    with pytest.raises(ValidationError, match="duplicate explicit fact"):
         TaskSpec.model_validate(
             _payload(
-                public_checks=[
-                    {"name": "completion", "kind": "completion"},
-                    {"name": "completion", "kind": "final_time"},
-                ]
+                explicit_facts=[fact, fact]
             )
         )
 
@@ -81,17 +96,15 @@ def test_task_rejects_removed_allowed_knowledge_field() -> None:
 def test_task_loader_rejects_unknown_fields(tmp_path: Path) -> None:
     path = tmp_path / "task.yaml"
     path.write_text(
-        "schema_version: 2\n"
+        "schema_version: 3\n"
         "task_id: x\n"
         "title: X\n"
-        "prompt: Run a case.\n"
+        "request_text: Run a case.\n"
         "openfoam_target: {distribution: foundation, version: '10'}\n"
         "resource_budget: {max_attempts: 1, max_wall_seconds: 30, "
         "max_mpi_ranks: 1, memory_mib: 512}\n"
         "required_outputs: [fields]\n"
-        "acceptance_requirements: [completion]\n"
-        "public_checks:\n"
-        "  - {name: completion, kind: completion, parameters: {}}\n"
+        "acceptance_intent: [completion]\n"
         "public_assets: []\n"
         "protected_paths: []\n"
         "unexpected: true\n",
@@ -127,7 +140,7 @@ def test_task_rejects_duplicate_requirements_and_unsafe_paths() -> None:
     with pytest.raises(ValidationError, match="agent-visible"):
         TaskSpec.model_validate(
             _payload(
-                prompt="Read /private/tutorial/cavity and solve it.",
+                request_text="Read /private/tutorial/cavity and solve it.",
             )
         )
 
@@ -291,20 +304,22 @@ def test_openfoam_mesh_input_requires_an_atomic_directory_asset() -> None:
         TaskSpec.model_validate(
             _payload(
                 public_assets=[file_asset],
-                geometry={
-                    "mode": "openfoam_mesh",
-                    "dimensionality": "three_d",
-                    "description": "native mesh",
-                    "length_unit": "m",
-                    "assets": [
-                        {
-                            "path": file_asset["path"],
-                            "format": "openfoam_mesh",
-                            "role": "poly_mesh_bundle",
-                        }
-                    ],
-                },
-                mesh={"strategy": "provided"},
+                explicit_facts=_geometry_mesh_facts(
+                    {
+                        "mode": "openfoam_mesh",
+                        "dimensionality": "three_d",
+                        "description": "native mesh",
+                        "length_unit": "m",
+                        "assets": [
+                            {
+                                "path": file_asset["path"],
+                                "format": "openfoam_mesh",
+                                "role": "poly_mesh_bundle",
+                            }
+                        ],
+                    },
+                    {"strategy": "provided"},
+                ),
             )
         )
 
@@ -326,7 +341,30 @@ def test_file_asset_rejects_directory_only_fields() -> None:
         )
 
 
-def test_v2_accepts_parametric_surface_gmsh_and_provided_mesh_inputs() -> None:
+def _explicit_fact(field_path: str, value: object) -> dict[str, object]:
+    return {
+        "field_path": field_path,
+        "value": value,
+        "source": "user_text",
+        "impact": "high",
+        "evidence": [
+            {"kind": "user_quote", "detail": f"explicit {field_path}"}
+        ],
+        "confirmed": True,
+    }
+
+
+def _geometry_mesh_facts(
+    geometry: dict[str, object],
+    mesh: dict[str, object],
+) -> list[dict[str, object]]:
+    return [
+        _explicit_fact("geometry.input", geometry),
+        _explicit_fact("mesh.intent", mesh),
+    ]
+
+
+def test_v3_accepts_parametric_surface_gmsh_and_provided_mesh_inputs() -> None:
     asset = {
         "path": "geometry/body.stl",
         "sha256": "a" * 64,
@@ -343,62 +381,64 @@ def test_v2_accepts_parametric_surface_gmsh_and_provided_mesh_inputs() -> None:
     }
     parametric = TaskSpec.model_validate(
         _payload(
-            schema_version=2,
-            geometry={
-                **common_geometry,
-                "mode": "parametric",
-                "length_unit": "m",
-                "assets": [],
-                "parameters": {
-                    "channel_length": {"value": 1.0, "unit": "m"}
+            explicit_facts=_geometry_mesh_facts(
+                {
+                    **common_geometry,
+                    "mode": "parametric",
+                    "length_unit": "m",
+                    "assets": [],
+                    "parameters": {
+                        "channel_length": {"value": 1.0, "unit": "m"}
+                    },
                 },
-            },
-            mesh={"strategy": "blockMesh"},
+                {"strategy": "blockMesh"},
+            ),
         )
     )
     surface = TaskSpec.model_validate(
         _payload(
-            schema_version=2,
             public_assets=[asset],
-            geometry={
-                **common_geometry,
-                "mode": "surface",
-                "length_unit": "mm",
-                "assets": [
-                    {
-                        "path": "geometry/body.stl",
-                        "format": "stl",
-                        "role": "closed_body_surface",
-                    }
-                ],
-                "parameters": {},
-            },
-            mesh={"strategy": "snappyHexMesh"},
+            explicit_facts=_geometry_mesh_facts(
+                {
+                    **common_geometry,
+                    "mode": "surface",
+                    "length_unit": "mm",
+                    "assets": [
+                        {
+                            "path": "geometry/body.stl",
+                            "format": "stl",
+                            "role": "closed_body_surface",
+                        }
+                    ],
+                    "parameters": {},
+                },
+                {"strategy": "snappyHexMesh"},
+            ),
         )
     )
     gmsh = TaskSpec.model_validate(
         _payload(
-            schema_version=2,
             public_assets=[{**asset, "path": "geometry/body.geo"}],
-            geometry={
-                **common_geometry,
-                "mode": "gmsh",
-                "length_unit": "cm",
-                "assets": [
-                    {
-                        "path": "geometry/body.geo",
-                        "format": "geo",
-                        "role": "gmsh_geometry",
-                    }
-                ],
-                "parameters": {},
-            },
-            mesh={"strategy": "gmsh"},
+            explicit_facts=_geometry_mesh_facts(
+                {
+                    **common_geometry,
+                    "mode": "gmsh",
+                    "length_unit": "cm",
+                    "assets": [
+                        {
+                            "path": "geometry/body.geo",
+                            "format": "geo",
+                            "role": "gmsh_geometry",
+                        }
+                    ],
+                    "parameters": {},
+                },
+                {"strategy": "gmsh"},
+            ),
         )
     )
     provided = TaskSpec.model_validate(
         _payload(
-            schema_version=2,
             public_assets=[
                 {
                     "path": "mesh/native",
@@ -409,20 +449,22 @@ def test_v2_accepts_parametric_surface_gmsh_and_provided_mesh_inputs() -> None:
                     "bundle_manifest_sha256": "a" * 64,
                 }
             ],
-            geometry={
-                **common_geometry,
-                "mode": "openfoam_mesh",
-                "length_unit": "m",
-                "assets": [
-                    {
-                        "path": "mesh/native",
-                        "format": "openfoam_mesh",
-                        "role": "poly_mesh_bundle",
-                    }
-                ],
-                "parameters": {},
-            },
-            mesh={"strategy": "provided"},
+            explicit_facts=_geometry_mesh_facts(
+                {
+                    **common_geometry,
+                    "mode": "openfoam_mesh",
+                    "length_unit": "m",
+                    "assets": [
+                        {
+                            "path": "mesh/native",
+                            "format": "openfoam_mesh",
+                            "role": "poly_mesh_bundle",
+                        }
+                    ],
+                    "parameters": {},
+                },
+                {"strategy": "provided"},
+            ),
         )
     )
 
@@ -432,7 +474,7 @@ def test_v2_accepts_parametric_surface_gmsh_and_provided_mesh_inputs() -> None:
     assert provided.geometry.mode == "openfoam_mesh"
 
 
-def test_v2_rejects_ambiguous_units_duplicate_roles_and_undeclared_assets() -> None:
+def test_v3_rejects_ambiguous_units_duplicate_roles_and_undeclared_assets() -> None:
     surface = {
         "mode": "surface",
         "dimensionality": "three_d",
@@ -450,27 +492,36 @@ def test_v2_rejects_ambiguous_units_duplicate_roles_and_undeclared_assets() -> N
     }
     with pytest.raises(ValidationError, match="length_unit"):
         TaskSpec.model_validate(
-            _payload(schema_version=2, geometry=surface)
+            _payload(
+                explicit_facts=_geometry_mesh_facts(
+                    surface,
+                    {"strategy": "snappyHexMesh"},
+                )
+            )
         )
     with pytest.raises(ValidationError, match="duplicate patch role"):
         TaskSpec.model_validate(
             _payload(
-                schema_version=2,
-                geometry={
-                    **surface,
-                    "length_unit": "m",
-                    "patch_roles": [
-                        {"name": "inlet", "role": "inlet"},
-                        {"name": "inlet", "role": "outlet"},
-                    ],
-                },
+                explicit_facts=_geometry_mesh_facts(
+                    {
+                        **surface,
+                        "length_unit": "m",
+                        "patch_roles": [
+                            {"name": "inlet", "role": "inlet"},
+                            {"name": "inlet", "role": "outlet"},
+                        ],
+                    },
+                    {"strategy": "snappyHexMesh"},
+                ),
             )
         )
     with pytest.raises(ValidationError, match="declared public asset"):
         TaskSpec.model_validate(
             _payload(
-                schema_version=2,
-                geometry={**surface, "length_unit": "m"},
+                explicit_facts=_geometry_mesh_facts(
+                    {**surface, "length_unit": "m"},
+                    {"strategy": "snappyHexMesh"},
+                ),
             )
         )
 
@@ -478,3 +529,76 @@ def test_v2_rejects_ambiguous_units_duplicate_roles_and_undeclared_assets() -> N
 def test_v1_is_not_accepted_by_the_canonical_task_model() -> None:
     with pytest.raises(ValidationError, match="schema_version"):
         TaskSpec.model_validate(_payload(schema_version=1))
+
+
+def test_authoring_loader_rejects_task_v2(tmp_path: Path) -> None:
+    path = tmp_path / "legacy-task.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 2,
+                "task_id": "side-driven-box",
+                "title": "Side-driven enclosure",
+                "prompt": "Solve a case.",
+                "openfoam_target": _payload()["openfoam_target"],
+                "resource_budget": _payload()["resource_budget"],
+                "required_outputs": ["velocity"],
+                "acceptance_requirements": ["completion"],
+                "public_checks": [
+                    {"name": "completion", "kind": "completion"}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="schema_version"):
+        load_task_spec(path)
+
+
+def test_legacy_v2_is_only_readable_through_run_adapter(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "task.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "task_id": "side-driven-box",
+                "title": "Side-driven enclosure",
+                "prompt": "Solve a case.",
+                "openfoam_target": _payload()["openfoam_target"],
+                "resource_budget": _payload()["resource_budget"],
+                "required_outputs": ["velocity"],
+                "acceptance_requirements": ["completion"],
+                "public_checks": [
+                    {"name": "completion", "kind": "completion"}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    legacy = load_legacy_task_spec_from_run(path)
+
+    assert legacy.schema_version == 2
+    assert legacy.task_id == "side-driven-box"
+
+
+def test_every_repository_authoring_task_uses_v3_loader() -> None:
+    project = Path(__file__).resolve().parents[1]
+    paths = [
+        *sorted((project / "examples/tasks").glob("*.yaml")),
+        *sorted((project / "examples/qualification").glob("*.yaml")),
+        *sorted(
+            (project / "src/foampilot/qualification/data/tasks").glob(
+                "*.yaml"
+            )
+        ),
+    ]
+
+    assert paths
+    tasks = [load_task_spec(path) for path in paths]
+
+    assert all(task.schema_version == 3 for task in tasks)
+    assert len(tasks) == len(paths)

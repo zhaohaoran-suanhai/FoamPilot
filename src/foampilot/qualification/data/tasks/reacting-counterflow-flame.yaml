@@ -1,33 +1,92 @@
-schema_version: 2
+schema_version: 3
 task_id: reacting-counterflow-flame
 title: Two-dimensional methane-air counterflow flame
-prompt: >-
-  Starting from an empty case directory, build a reduced two-dimensional
-  counterflowFlame2D problem for Foundation OpenFOAM v10 reactingFoam. Use a
-  0.02 m by 0.04 m rectangular domain with opposing fuel and oxidizer inlets,
-  40 by 80 by 1 cells and empty spanwise faces. Inject a 300 K methane/nitrogen
-  mixture from the left and a 300 K air mixture from the right at equal and
-  opposite 0.2 m/s velocities, use open transverse boundaries, perfect-gas
-  thermodynamics, laminar transport, finite-rate chemistry and a compact
-  Foundation v10-supported methane oxidation mechanism authored in the case.
-  Initialize pressure to 1e5 Pa and temperature to 1200 K in a narrow central
-  ignition band. Run blockMesh/checkMesh and reactingFoam to 0.01 s with
-  adjustable time stepping and maxCo=0.4. Preserve p, U, T and species fields;
-  do not copy any tutorial or chemistry file.
-openfoam_target: {distribution: foundation, version: "10"}
-resource_budget: {max_attempts: 2, max_wall_seconds: 1800, max_mpi_ranks: 4, memory_mib: 4096}
+openfoam_target:
+  distribution: foundation
+  version: '10'
+resource_budget:
+  max_attempts: 2
+  max_wall_seconds: 1800
+  max_mpi_ranks: 4
+  memory_mib: 4096
 required_outputs:
-  - valid mesh and completed reactingFoam log
-  - final temperature, velocity, pressure and species fields
-acceptance_requirements:
-  - checkMesh reports Mesh OK
-  - reactingFoam reaches 0.01 s and ends normally
-  - thermodynamic and species fields remain finite
-public_checks:
-  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
-  - {name: target-solver, kind: command_executed, parameters: {executable: reactingFoam}}
-  - {name: normal-completion, kind: completion, parameters: {}}
-  - {name: final-time, kind: final_time, parameters: {minimum: 0.01}}
-  - {name: finite-fields, kind: finite_fields, parameters: {}}
+- valid mesh and completed reactingFoam log
+- final temperature, velocity, pressure and species fields
 public_assets: []
 protected_paths: []
+request_text: Starting from an empty case directory, build a reduced two-dimensional
+  counterflowFlame2D problem for Foundation OpenFOAM v10 reactingFoam. Use a 0.02
+  m by 0.04 m rectangular domain with opposing fuel and oxidizer inlets, 40 by 80
+  by 1 cells and empty spanwise faces. Inject a 300 K methane/nitrogen mixture from
+  the left and a 300 K air mixture from the right at equal and opposite 0.2 m/s velocities,
+  use open transverse boundaries, perfect-gas thermodynamics, laminar transport, finite-rate
+  chemistry and a compact Foundation v10-supported methane oxidation mechanism authored
+  in the case. Initialize pressure to 1e5 Pa and temperature to 1200 K in a narrow
+  central ignition band. Run blockMesh/checkMesh and reactingFoam to 0.01 s with adjustable
+  time stepping and maxCo=0.4. Preserve p, U, T and species fields; do not copy any
+  tutorial or chemistry file.
+acceptance_intent:
+- checkMesh reports Mesh OK
+- reactingFoam reaches 0.01 s and ends normally
+- thermodynamic and species fields remain finite
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
+    kind: mesh_ok
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.target-solver
+  value:
+    name: target-solver
+    kind: command_executed
+    parameters:
+      executable: reactingFoam
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
+    kind: completion
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-time
+  value:
+    name: final-time
+    kind: final_time
+    parameters:
+      minimum: 0.01
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
+    kind: finite_fields
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

@@ -1,66 +1,122 @@
-schema_version: 2
+schema_version: 3
 task_id: mhd-hartmann
 title: Transient magnetohydrodynamic Hartmann channel flow
-prompt: >-
-  Starting from an empty case directory, build and solve a two-dimensional
-  magnetohydrodynamic channel-flow problem. Use a rectangular domain from
-  x=0 to 20 m, y=-1 to 1 m, and z=0 to 0.1 m, with 100 by 40 by 1 uniform
-  cells and empty front/back faces. Preserve inlet, outlet, lowerWall,
-  upperWall, and frontAndBack patches. Use mhdFoam with rho=1 kg/m3,
-  kinematic viscosity nu=1 m2/s, magnetic permeability mu=1 in the required
-  Foundation units, and electrical conductivity sigma=1 in the required
-  Foundation units. Initialize U=(0 0 0) m/s, B=(0 20 0), kinematic p=0,
-  and magnetic pressure pB=0. Impose inlet U=(1 0 0) m/s, outlet
-  zero-gradient U, no-slip channel walls, fixed B=(0 20 0) at both walls,
-  zero-gradient B at inlet and outlet, fixed p=0 at the outlet, and fixed
-  pB=0 at inlet and outlet. Use coherent remaining pressure conditions.
-  Integrate from 0 to 2 s with deltaT=0.005 s and write at least every
-  0.5 s. Run serially. Generate all Foundation OpenFOAM v10 files yourself,
-  run blockMesh and checkMesh before mhdFoam, preserve U, B, p, and pB, and
-  do not read or copy a pre-existing case.
 openfoam_target:
   distribution: foundation
-  version: "10"
+  version: '10'
 resource_budget:
   max_attempts: 2
   max_wall_seconds: 900
   max_mpi_ranks: 1
   memory_mib: 2048
 required_outputs:
-  - mesh quality log
-  - completed mhdFoam log through 2 s
-  - velocity, magnetic, pressure, and magnetic-pressure fields
-  - fields suitable for mass-conservation and velocity-profile evaluation
-acceptance_requirements:
-  - checkMesh reports Mesh OK
-  - mhdFoam reaches 2 s and ends normally
-  - required fields remain finite
-  - boundary-flow conservation and Hartmann velocity profile pass evaluator checks
-public_checks:
-  - name: mesh-quality
+- mesh quality log
+- completed mhdFoam log through 2 s
+- velocity, magnetic, pressure, and magnetic-pressure fields
+- fields suitable for mass-conservation and velocity-profile evaluation
+public_assets: []
+protected_paths: []
+request_text: Starting from an empty case directory, build and solve a two-dimensional
+  magnetohydrodynamic channel-flow problem. Use a rectangular domain from x=0 to 20
+  m, y=-1 to 1 m, and z=0 to 0.1 m, with 100 by 40 by 1 uniform cells and empty front/back
+  faces. Preserve inlet, outlet, lowerWall, upperWall, and frontAndBack patches. Use
+  mhdFoam with rho=1 kg/m3, kinematic viscosity nu=1 m2/s, magnetic permeability mu=1
+  in the required Foundation units, and electrical conductivity sigma=1 in the required
+  Foundation units. Initialize U=(0 0 0) m/s, B=(0 20 0), kinematic p=0, and magnetic
+  pressure pB=0. Impose inlet U=(1 0 0) m/s, outlet zero-gradient U, no-slip channel
+  walls, fixed B=(0 20 0) at both walls, zero-gradient B at inlet and outlet, fixed
+  p=0 at the outlet, and fixed pB=0 at inlet and outlet. Use coherent remaining pressure
+  conditions. Integrate from 0 to 2 s with deltaT=0.005 s and write at least every
+  0.5 s. Run serially. Generate all Foundation OpenFOAM v10 files yourself, run blockMesh
+  and checkMesh before mhdFoam, preserve U, B, p, and pB, and do not read or copy
+  a pre-existing case.
+acceptance_intent:
+- checkMesh reports Mesh OK
+- mhdFoam reaches 2 s and ends normally
+- required fields remain finite
+- boundary-flow conservation and Hartmann velocity profile pass evaluator checks
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
     kind: mesh_ok
     parameters: {}
-  - name: mhd-solver
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.mhd-solver
+  value:
+    name: mhd-solver
     kind: command_executed
     parameters:
       executable: mhdFoam
-  - name: normal-completion
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
     kind: completion
     parameters: {}
-  - name: final-time
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-time
+  value:
+    name: final-time
     kind: final_time
     parameters:
       minimum: 2
-  - name: finite-fields
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
     kind: finite_fields
     parameters: {}
-  - name: final-velocity
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-velocity
+  value:
+    name: final-velocity
     kind: requested_output
     parameters:
       path: 2/U
-  - name: final-magnetic-field
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-magnetic-field
+  value:
+    name: final-magnetic-field
     kind: requested_output
     parameters:
       path: 2/B
-public_assets: []
-protected_paths: []
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

@@ -11,6 +11,7 @@ import pytest
 import foampilot.validation.native as native_validation
 from foampilot.runtime import PlanRunResult, PlanStepResult, ReusedStepResult
 from foampilot.tasks import TaskSpec
+from tests.support.tasks import canonical_task_payload
 from foampilot.validation.native import validate_native_run
 
 
@@ -19,7 +20,7 @@ def _task(
     checks: list[dict[str, object]] | None = None,
 ) -> TaskSpec:
     return TaskSpec.model_validate(
-        {
+        canonical_task_payload({
             "schema_version": 2,
             "task_id": "native-validation",
             "title": "Native validation",
@@ -89,7 +90,7 @@ def _task(
             ],
             "public_assets": [],
             "protected_paths": [],
-        }
+        })
     )
 
 

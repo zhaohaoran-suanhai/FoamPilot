@@ -1,84 +1,155 @@
-schema_version: 2
+schema_version: 3
 task_id: multiphase-dam-break
 title: Two-dimensional collapse of a water column around a floor obstacle
-prompt: >-
-  Starting from an empty case directory, build and solve a two-dimensional
-  laminar air-water free-surface collapse in an open-top tank. Use a tank
-  0.584 m wide and 0.584 m high. Place a rectangular floor obstacle from
-  x=0.292 m to x=0.31599948 m and y=0 to y=0.04799896 m. Extrude one empty
-  spanwise cell over 0.0146 m. Use five structured blocks with counts 23 by 8,
-  19 by 8, 23 by 42, 4 by 42, and 19 by 42, each with one spanwise cell.
-  Preserve left, right, lower, open-atmosphere, obstacle, and empty patches.
-  Model immiscible laminar water and air with surface tension 0.07 N/m. Water
-  has rho=1000 kg/m3 and nu=1e-6 m2/s; air has rho=1 kg/m3 and
-  nu=1.48e-5 m2/s. Use gravity (0 -9.81 0) m/s2. Initialize U and p_rgh to
-  zero. Set alpha.water=1 inside 0 <= x <= 0.1461 m and
-  0 <= y <= 0.292 m, and zero elsewhere, using a native regional
-  initialization command. Apply no slip at solid walls, zero normal phase
-  gradient there, and an atmospheric top opening that admits air only on
-  inflow; make spanwise faces empty. Integrate to 1 s from initial
-  deltaT=0.001 s using adaptive stepping with maxCo<=1 and maxAlphaCo<=1,
-  writing every 0.05 s. Configure native log evidence for all-time water
-  fraction minimum, maximum, and volume integral. Use up to four local MPI
-  ranks when useful. Generate all Foundation OpenFOAM v10 files yourself,
-  check the mesh before initialization, and do not read or copy a
-  pre-existing case.
 openfoam_target:
   distribution: foundation
-  version: "10"
+  version: '10'
 resource_budget:
   max_attempts: 2
   max_wall_seconds: 1800
   max_mpi_ranks: 4
   memory_mib: 4096
 required_outputs:
-  - mesh quality and regional initialization logs
-  - completed transient solver log through 1 s
-  - velocity, reduced-pressure, and water-fraction fields
-  - all-time water-fraction bounds and water-volume history
-  - fields suitable for free-surface and leading-front evaluator sampling
-acceptance_requirements:
-  - checkMesh reports Mesh OK and setFields succeeds
-  - the solver reaches 1 s and ends normally
-  - fields remain finite and alpha.water remains within [-1e-6, 1.000001]
-  - relative water-volume drift is no greater than 0.02
-  - evaluator free-surface and leading-front histories pass
-public_checks:
-  - name: mesh-quality
+- mesh quality and regional initialization logs
+- completed transient solver log through 1 s
+- velocity, reduced-pressure, and water-fraction fields
+- all-time water-fraction bounds and water-volume history
+- fields suitable for free-surface and leading-front evaluator sampling
+public_assets: []
+protected_paths: []
+request_text: Starting from an empty case directory, build and solve a two-dimensional
+  laminar air-water free-surface collapse in an open-top tank. Use a tank 0.584 m
+  wide and 0.584 m high. Place a rectangular floor obstacle from x=0.292 m to x=0.31599948
+  m and y=0 to y=0.04799896 m. Extrude one empty spanwise cell over 0.0146 m. Use
+  five structured blocks with counts 23 by 8, 19 by 8, 23 by 42, 4 by 42, and 19 by
+  42, each with one spanwise cell. Preserve left, right, lower, open-atmosphere, obstacle,
+  and empty patches. Model immiscible laminar water and air with surface tension 0.07
+  N/m. Water has rho=1000 kg/m3 and nu=1e-6 m2/s; air has rho=1 kg/m3 and nu=1.48e-5
+  m2/s. Use gravity (0 -9.81 0) m/s2. Initialize U and p_rgh to zero. Set alpha.water=1
+  inside 0 <= x <= 0.1461 m and 0 <= y <= 0.292 m, and zero elsewhere, using a native
+  regional initialization command. Apply no slip at solid walls, zero normal phase
+  gradient there, and an atmospheric top opening that admits air only on inflow; make
+  spanwise faces empty. Integrate to 1 s from initial deltaT=0.001 s using adaptive
+  stepping with maxCo<=1 and maxAlphaCo<=1, writing every 0.05 s. Configure native
+  log evidence for all-time water fraction minimum, maximum, and volume integral.
+  Use up to four local MPI ranks when useful. Generate all Foundation OpenFOAM v10
+  files yourself, check the mesh before initialization, and do not read or copy a
+  pre-existing case.
+acceptance_intent:
+- checkMesh reports Mesh OK and setFields succeeds
+- the solver reaches 1 s and ends normally
+- fields remain finite and alpha.water remains within [-1e-6, 1.000001]
+- relative water-volume drift is no greater than 0.02
+- evaluator free-surface and leading-front histories pass
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
     kind: mesh_ok
     parameters: {}
-  - name: regional-initialization
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.regional-initialization
+  value:
+    name: regional-initialization
     kind: command_executed
     parameters:
       executable: setFields
-  - name: normal-completion
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
     kind: completion
     parameters: {}
-  - name: final-time
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-time
+  value:
+    name: final-time
     kind: final_time
     parameters:
       minimum: 1.0
-  - name: finite-fields
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
     kind: finite_fields
     parameters: {}
-  - name: bounded-water-fraction
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.bounded-water-fraction
+  value:
+    name: bounded-water-fraction
     kind: bounded_field
     parameters:
       field: alpha.water
-      minimum: -1.0e-6
+      minimum: -1.0e-06
       maximum: 1.000001
-  - name: water-volume-conservation
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.water-volume-conservation
+  value:
+    name: water-volume-conservation
     kind: conservation
     parameters:
       field: alpha.water
       maximum_normalized_error: 0.02
-  - name: final-velocity
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-velocity
+  value:
+    name: final-velocity
     kind: requested_output
     parameters:
       path: 1/U
-  - name: final-reduced-pressure
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-reduced-pressure
+  value:
+    name: final-reduced-pressure
     kind: requested_output
     parameters:
       path: 1/p_rgh
-public_assets: []
-protected_paths: []
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

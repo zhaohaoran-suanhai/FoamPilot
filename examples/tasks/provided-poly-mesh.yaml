@@ -1,65 +1,49 @@
-schema_version: 2
+schema_version: 3
 task_id: provided-poly-mesh-smoke
 title: Provided native polyMesh smoke solve
-prompt: >-
-  Use the declared native OpenFOAM polyMesh without regenerating or replacing
-  it. Solve a two-dimensional transient laminar incompressible Newtonian flow
-  with Foundation OpenFOAM 10 icoFoam. Read the exact patch and zone identities
-  from authoritative mesh facts. Set a low uniform inlet velocity, a pressure
-  outlet, symmetry on top and bottom, and empty on frontAndBack. Run serially
-  from 0 to 0.04 s with deltaT 0.01 s. The model must author only the fields,
-  physical properties, numerical dictionaries and solver command; mesh assets
-  and the pre-authoring checkMesh command are system-owned.
 openfoam_target:
   distribution: foundation
-  version: "10"
+  version: '10'
 resource_budget:
   max_attempts: 1
   max_wall_seconds: 60
   max_mpi_ranks: 1
   memory_mib: 1024
 required_outputs:
-  - final velocity field
-  - final pressure field
-acceptance_requirements:
-  - provided mesh passes the system-owned checkMesh probe
-  - solver reports normal End
-  - final solver time is at least 0.04 s
-public_checks:
-  - name: normal-completion
-    kind: completion
-    parameters: {}
-  - name: final-time
-    kind: final_time
-    parameters:
-      minimum: 0.04
-  - name: final-velocity
-    kind: requested_output
-    parameters:
-      path: 0.04/U
-  - name: final-pressure
-    kind: requested_output
-    parameters:
-      path: 0.04/p
+- final velocity field
+- final pressure field
 public_assets:
-  - path: tests/fixtures/poly_mesh/minimal
-    sha256: 896e1b1798ba151033c8b4e5809b0fc843015a39f958dbea241e41dc436146ac
-    purpose: independently authored native OpenFOAM polyMesh fixture
-    kind: directory
-    install_path: constant/polyMesh
-    bundle_manifest_sha256: 896e1b1798ba151033c8b4e5809b0fc843015a39f958dbea241e41dc436146ac
+- path: tests/fixtures/poly_mesh/minimal
+  sha256: 896e1b1798ba151033c8b4e5809b0fc843015a39f958dbea241e41dc436146ac
+  purpose: independently authored native OpenFOAM polyMesh fixture
+  kind: directory
+  install_path: constant/polyMesh
+  bundle_manifest_sha256: 896e1b1798ba151033c8b4e5809b0fc843015a39f958dbea241e41dc436146ac
 protected_paths: []
-geometry:
-  mode: openfoam_mesh
-  dimensionality: two_d
-  description: Two adjacent hexahedral cells with an empty front/back pair.
-  length_unit: m
-  assets:
+request_text: Use the declared native OpenFOAM polyMesh without regenerating or replacing
+  it. Solve a two-dimensional transient laminar incompressible Newtonian flow with
+  Foundation OpenFOAM 10 icoFoam. Read the exact patch and zone identities from authoritative
+  mesh facts. Set a low uniform inlet velocity, a pressure outlet, symmetry on top
+  and bottom, and empty on frontAndBack. Run serially from 0 to 0.04 s with deltaT
+  0.01 s. The model must author only the fields, physical properties, numerical dictionaries
+  and solver command; mesh assets and the pre-authoring checkMesh command are system-owned.
+acceptance_intent:
+- provided mesh passes the system-owned checkMesh probe
+- solver reports normal End
+- final solver time is at least 0.04 s
+explicit_facts:
+- field_path: geometry.input
+  value:
+    mode: openfoam_mesh
+    dimensionality: two_d
+    description: Two adjacent hexahedral cells with an empty front/back pair.
+    length_unit: m
+    assets:
     - path: tests/fixtures/poly_mesh/minimal
       format: openfoam_mesh
       role: native_poly_mesh_bundle
-  parameters: {}
-  patch_roles:
+    parameters: {}
+    patch_roles:
     - name: inlet
       role: inlet
     - name: outlet
@@ -70,8 +54,71 @@ geometry:
       role: symmetry
     - name: frontAndBack
       role: empty
-  region_roles: []
-mesh:
-  strategy: provided
-  quality:
-    require_check_mesh_pass: true
+    region_roles: []
+  source: user_text
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Migrated explicit TaskSpec v2 geometry declaration.
+  confirmed: true
+- field_path: mesh.intent
+  value:
+    strategy: provided
+    quality:
+      require_check_mesh_pass: true
+  source: user_text
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Migrated explicit TaskSpec v2 mesh declaration.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
+    kind: completion
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-time
+  value:
+    name: final-time
+    kind: final_time
+    parameters:
+      minimum: 0.04
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-velocity
+  value:
+    name: final-velocity
+    kind: requested_output
+    parameters:
+      path: 0.04/U
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-pressure
+  value:
+    name: final-pressure
+    kind: requested_output
+    parameters:
+      path: 0.04/p
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

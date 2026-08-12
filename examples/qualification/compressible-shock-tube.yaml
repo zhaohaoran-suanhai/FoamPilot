@@ -1,87 +1,176 @@
-schema_version: 2
+schema_version: 3
 task_id: compressible-shock-tube
 title: One-dimensional inviscid perfect-gas diaphragm problem
-prompt: >-
-  Starting from an empty case directory, build and solve a transient
-  one-dimensional perfect-gas Riemann problem. Use x from -5 m to 5 m with a
-  nominal 2 m by 2 m transverse cross-section, 1000 uniform cells along x,
-  and one empty cell in each transverse direction. Keep separate end patches
-  and align the initial discontinuity with x=0. Use a pure perfect gas with
-  molecular weight 28.96 kg/kmol, Cp=1004.5 J/(kg K), sensible internal
-  energy, zero dynamic viscosity, Prandtl number 1, and laminar inviscid flow.
-  Initialize U=(0 0 0) m/s. For x<0 set p=100000 Pa and T=348.432 K; for
-  x>=0 set p=10000 Pa and T=278.746 K using native regional initialization.
-  Apply zero normal gradients for U, p, and T at both x ends and make all
-  transverse faces empty. Integrate to 0.007 s from initial deltaT=1e-6 s
-  with adaptive time stepping and maxCo<=0.2. Treat deltaT as the initial
-  value and choose maxDeltaT strictly greater than deltaT so adaptive growth
-  is not disabled. Write every 0.001 s with enough time precision. Configure
-  native log evidence for density volume integral and retain p, T, rho, and U
-  for evaluator sampling of rarefaction, contact, and shock positions. Run
-  serially. Generate all Foundation OpenFOAM v10 files yourself, check the
-  mesh before initialization, and do not read or copy a pre-existing case.
 openfoam_target:
   distribution: foundation
-  version: "10"
+  version: '10'
 resource_budget:
   max_attempts: 2
   max_wall_seconds: 1200
   max_mpi_ranks: 1
   memory_mib: 3072
 required_outputs:
-  - mesh quality and regional initialization logs
-  - completed compressible solver log through 0.007 s
-  - pressure, temperature, density, and velocity fields
-  - density-volume and Courant histories
-  - fields suitable for exact Riemann wave-position checking
-acceptance_requirements:
-  - checkMesh reports Mesh OK and regional initialization succeeds
-  - the solver reaches 0.007 s and ends normally
-  - required fields remain finite and total-mass drift is no greater than 0.01
-  - maxDeltaT is greater than initial deltaT and observed Courant behavior is compatible with maxCo 0.2
-  - detected waves agree with the exact public ideal-gas Riemann solution
-public_checks:
-  - name: mesh-quality
+- mesh quality and regional initialization logs
+- completed compressible solver log through 0.007 s
+- pressure, temperature, density, and velocity fields
+- density-volume and Courant histories
+- fields suitable for exact Riemann wave-position checking
+public_assets: []
+protected_paths: []
+request_text: Starting from an empty case directory, build and solve a transient one-dimensional
+  perfect-gas Riemann problem. Use x from -5 m to 5 m with a nominal 2 m by 2 m transverse
+  cross-section, 1000 uniform cells along x, and one empty cell in each transverse
+  direction. Keep separate end patches and align the initial discontinuity with x=0.
+  Use a pure perfect gas with molecular weight 28.96 kg/kmol, Cp=1004.5 J/(kg K),
+  sensible internal energy, zero dynamic viscosity, Prandtl number 1, and laminar
+  inviscid flow. Initialize U=(0 0 0) m/s. For x<0 set p=100000 Pa and T=348.432 K;
+  for x>=0 set p=10000 Pa and T=278.746 K using native regional initialization. Apply
+  zero normal gradients for U, p, and T at both x ends and make all transverse faces
+  empty. Integrate to 0.007 s from initial deltaT=1e-6 s with adaptive time stepping
+  and maxCo<=0.2. Treat deltaT as the initial value and choose maxDeltaT strictly
+  greater than deltaT so adaptive growth is not disabled. Write every 0.001 s with
+  enough time precision. Configure native log evidence for density volume integral
+  and retain p, T, rho, and U for evaluator sampling of rarefaction, contact, and
+  shock positions. Run serially. Generate all Foundation OpenFOAM v10 files yourself,
+  check the mesh before initialization, and do not read or copy a pre-existing case.
+acceptance_intent:
+- checkMesh reports Mesh OK and regional initialization succeeds
+- the solver reaches 0.007 s and ends normally
+- required fields remain finite and total-mass drift is no greater than 0.01
+- maxDeltaT is greater than initial deltaT and observed Courant behavior is compatible
+  with maxCo 0.2
+- detected waves agree with the exact public ideal-gas Riemann solution
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
     kind: mesh_ok
     parameters: {}
-  - name: regional-initialization
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.regional-initialization
+  value:
+    name: regional-initialization
     kind: command_executed
     parameters:
       executable: setFields
-  - name: compressible-solver
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.compressible-solver
+  value:
+    name: compressible-solver
     kind: command_executed
     parameters:
       executable: rhoCentralFoam
-  - name: normal-completion
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
     kind: completion
     parameters: {}
-  - name: final-time
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-time
+  value:
+    name: final-time
     kind: final_time
     parameters:
       minimum: 0.007
-  - name: finite-fields
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
     kind: finite_fields
     parameters: {}
-  - name: mass-conservation
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.mass-conservation
+  value:
+    name: mass-conservation
     kind: conservation
     parameters:
       field: rho
       maximum_normalized_error: 0.01
-  - name: pressure-output
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.pressure-output
+  value:
+    name: pressure-output
     kind: requested_output
     parameters:
       path: 0.007/p
-  - name: temperature-output
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.temperature-output
+  value:
+    name: temperature-output
     kind: requested_output
     parameters:
       path: 0.007/T
-  - name: density-output
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.density-output
+  value:
+    name: density-output
     kind: requested_output
     parameters:
       path: 0.007/rho
-  - name: velocity-output
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.velocity-output
+  value:
+    name: velocity-output
     kind: requested_output
     parameters:
       path: 0.007/U
-public_assets: []
-protected_paths: []
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

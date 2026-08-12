@@ -1,29 +1,115 @@
-schema_version: 2
+schema_version: 3
 task_id: shallow-water-square-bump
 title: Rotating shallow-water flow over a square bump
-prompt: >-
-  Starting from an empty case directory, build the Foundation v10
-  shallowWaterFoam shallow water square-bump benchmark in a 1 m by 1 m horizontal domain
-  extruded 0.1 m with a 20 by 20 by 1 mesh and empty front/back faces.
-  Preserve inlet, outlet, and side patches. Define a smooth compact square
-  bed bump centred at (0.5,0.5) through the h0 field, initialize the water
-  depth h and discharge hU consistently with a uniform inflow, and use
-  setFields where needed. Use gravity 9.81 m/s2, rotating frame rate
-  7.292e-5 1/s about z, integrate to 100 s with deltaT=0.1 s, and write
-  every 1 s. Generate all native fields and dictionaries, run blockMesh,
-  checkMesh, setFields and shallowWaterFoam serially, and do not read or copy
-  an existing tutorial.
-openfoam_target: {distribution: foundation, version: "10"}
-resource_budget: {max_attempts: 2, max_wall_seconds: 1200, max_mpi_ranks: 1, memory_mib: 2048}
-required_outputs: [mesh quality log, completed shallowWaterFoam log, h hU and hTotal fields at 100 s]
-acceptance_requirements: [checkMesh reports Mesh OK, shallowWaterFoam reaches 100 s and ends normally, required fields remain finite]
-public_checks:
-  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
-  - {name: target-solver, kind: command_executed, parameters: {executable: shallowWaterFoam}}
-  - {name: normal-completion, kind: completion, parameters: {}}
-  - {name: final-time, kind: final_time, parameters: {minimum: 100}}
-  - {name: finite-fields, kind: finite_fields, parameters: {}}
-  - {name: final-depth, kind: requested_output, parameters: {path: 100/h}}
-  - {name: final-discharge, kind: requested_output, parameters: {path: 100/hU}}
+openfoam_target:
+  distribution: foundation
+  version: '10'
+resource_budget:
+  max_attempts: 2
+  max_wall_seconds: 1200
+  max_mpi_ranks: 1
+  memory_mib: 2048
+required_outputs:
+- mesh quality log
+- completed shallowWaterFoam log
+- h hU and hTotal fields at 100 s
 public_assets: []
 protected_paths: []
+request_text: Starting from an empty case directory, build the Foundation v10 shallowWaterFoam
+  shallow water square-bump benchmark in a 1 m by 1 m horizontal domain extruded 0.1
+  m with a 20 by 20 by 1 mesh and empty front/back faces. Preserve inlet, outlet,
+  and side patches. Define a smooth compact square bed bump centred at (0.5,0.5) through
+  the h0 field, initialize the water depth h and discharge hU consistently with a
+  uniform inflow, and use setFields where needed. Use gravity 9.81 m/s2, rotating
+  frame rate 7.292e-5 1/s about z, integrate to 100 s with deltaT=0.1 s, and write
+  every 1 s. Generate all native fields and dictionaries, run blockMesh, checkMesh,
+  setFields and shallowWaterFoam serially, and do not read or copy an existing tutorial.
+acceptance_intent:
+- checkMesh reports Mesh OK
+- shallowWaterFoam reaches 100 s and ends normally
+- required fields remain finite
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
+    kind: mesh_ok
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.target-solver
+  value:
+    name: target-solver
+    kind: command_executed
+    parameters:
+      executable: shallowWaterFoam
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
+    kind: completion
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-time
+  value:
+    name: final-time
+    kind: final_time
+    parameters:
+      minimum: 100
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
+    kind: finite_fields
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-depth
+  value:
+    name: final-depth
+    kind: requested_output
+    parameters:
+      path: 100/h
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-discharge
+  value:
+    name: final-discharge
+    kind: requested_output
+    parameters:
+      path: 100/hU
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

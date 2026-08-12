@@ -14,11 +14,12 @@ from foampilot.plans import (
     NativeCommand,
 )
 from foampilot.tasks import TaskSpec
+from tests.support.tasks import canonical_task_payload
 
 
 def _task() -> TaskSpec:
     return TaskSpec.model_validate(
-        {
+        canonical_task_payload({
             "schema_version": 2,
             "task_id": "inspect-native",
             "title": "Inspect native case",
@@ -44,7 +45,7 @@ def _task() -> TaskSpec:
             ],
             "public_assets": [],
             "protected_paths": ["/private/golden/cavity"],
-        }
+        })
     )
 
 

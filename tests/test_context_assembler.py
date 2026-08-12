@@ -86,12 +86,12 @@ def test_solver_agnostic_knowledge_requires_explicit_task_activation():
     task = _task().model_copy(
         update={
             "title": "Potential flow around a cylinder",
-            "prompt": (
+            "request_text": (
                 "Use potentialFoam for incompressible irrotational flow "
                 "around a stationary cylinder with a uniform Cartesian inlet."
             ),
             "required_outputs": ["velocity and pressure fields"],
-            "acceptance_requirements": ["potentialFoam completes"],
+            "acceptance_intent": ["potentialFoam completes"],
         }
     )
 
@@ -116,12 +116,12 @@ def test_activation_terms_admit_relevant_solver_agnostic_knowledge():
     task = _task().model_copy(
         update={
             "title": "Passive scalar in potential flow",
-            "prompt": (
+            "request_text": (
                 "Use potentialFoam and its flux to transport a passive scalar "
                 "tracer with constant diffusion."
             ),
             "required_outputs": ["finite passive scalar field"],
-            "acceptance_requirements": ["scalar transport completes"],
+            "acceptance_intent": ["scalar transport completes"],
         }
     )
 

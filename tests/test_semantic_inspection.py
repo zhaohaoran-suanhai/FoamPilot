@@ -12,6 +12,7 @@ from foampilot.manifests import (
 )
 from foampilot.plans import ExecutionPlan, GeneratedFile, NativeCommand
 from foampilot.tasks import TaskSpec
+from tests.support.tasks import canonical_task_payload
 
 
 def _header(name: str, klass: str = "dictionary") -> str:
@@ -29,7 +30,7 @@ def _task(*, reconstruct: bool = False) -> TaskSpec:
     if reconstruct:
         requirements.append("reconstruct parallel results")
     return TaskSpec.model_validate(
-        {
+        canonical_task_payload({
             "schema_version": 2,
             "task_id": "semantic-test",
             "title": "Semantic inspection",
@@ -57,7 +58,7 @@ def _task(*, reconstruct: bool = False) -> TaskSpec:
                 }
             ],
             "protected_paths": ["/private/semantic-target"],
-        }
+        })
     )
 
 

@@ -3,7 +3,7 @@ fixtures:
 - fixture_id: fp-single-box
   kind: single_region_success
   source_kind: synthetic_foampilot
-  generator_sha256: 3b8ea315f2dca6215135869d4bc211f9fd4844153c9eb8eb0c238810345344fa
+  generator_sha256: d63028033efb2d12876767b3e3f3e4792cf9f98f19108bfaa2ec43009a8c08bb
   expected:
     native_status: PUBLIC_VALIDATION_PASS
   files:
@@ -53,8 +53,8 @@ fixtures:
     bytes: 260
     sha256: 361317cee2ab5bbe33abae7e9aac0cd94bdf84eed22fbf04e3a3018f5a43d705
   - path: run-result.json
-    bytes: 1369
-    sha256: 0d23c897c90d8bdd391a6278dd2913c1dc6e63d630e33cba037325d8f5871a42
+    bytes: 1669
+    sha256: 2b24448cfc0c75378564787c0a055120473d844b67a8f8dcb42a92fe9e42cf19
   - path: static-inspection.json
     bytes: 119
     sha256: 9191d8b8197985e4c10ef9508cd22d1d5a632c610781537770ee1aefd65c9b90
@@ -62,12 +62,12 @@ fixtures:
     bytes: 244
     sha256: 1084d2dcbae7596babb30922ff57e5ba39674f01e122136497886cc7019df409
   - path: task.json
-    bytes: 758
-    sha256: 0145710581ed908660213d3ed8afce1996282bc4705404361d220b6a702093bc
+    bytes: 1193
+    sha256: a2505268539385a8cbc1e88a7f468d444b5a2e9e9215644232e84842d4a2bab2
 - fixture_id: fp-mpi-duct
   kind: mpi_success
   source_kind: synthetic_foampilot
-  generator_sha256: 3b8ea315f2dca6215135869d4bc211f9fd4844153c9eb8eb0c238810345344fa
+  generator_sha256: d63028033efb2d12876767b3e3f3e4792cf9f98f19108bfaa2ec43009a8c08bb
   expected:
     native_status: PUBLIC_VALIDATION_PASS
   files:
@@ -132,8 +132,8 @@ fixtures:
     bytes: 260
     sha256: 361317cee2ab5bbe33abae7e9aac0cd94bdf84eed22fbf04e3a3018f5a43d705
   - path: run-result.json
-    bytes: 2253
-    sha256: c95409d8702378c3f77433ff9351b4cce175e0c7a4f8f7cf92feb35683a442dd
+    bytes: 2667
+    sha256: d233fbbc3fb5e2a6d174a83fbdc4ae8b1eccae41f181ed107035bfd277119c10
   - path: static-inspection.json
     bytes: 120
     sha256: 959c72eea318a65ac8b530ea934a1fb36042b6c130a75d993c3795a1fd5fa401
@@ -141,12 +141,12 @@ fixtures:
     bytes: 242
     sha256: f9395153f508a0381f704c8a43f06037a4bdb03e3ff02a5ccbb401ac1144488d
   - path: task.json
-    bytes: 749
-    sha256: 902b5f4c10c3c4a39124d4d9dc5a6df1cdd1ed2f2657cbab3d16b6fd6771296e
+    bytes: 1184
+    sha256: c8c54efe2215df92fdd78c8a9e79c5f43f521e09bf14b4a224475334e6f9b27d
 - fixture_id: fp-included-field
   kind: include_success
   source_kind: synthetic_foampilot
-  generator_sha256: 3b8ea315f2dca6215135869d4bc211f9fd4844153c9eb8eb0c238810345344fa
+  generator_sha256: d63028033efb2d12876767b3e3f3e4792cf9f98f19108bfaa2ec43009a8c08bb
   expected:
     native_status: PUBLIC_VALIDATION_PASS
   files:
@@ -199,8 +199,8 @@ fixtures:
     bytes: 260
     sha256: 361317cee2ab5bbe33abae7e9aac0cd94bdf84eed22fbf04e3a3018f5a43d705
   - path: run-result.json
-    bytes: 1369
-    sha256: 0d23c897c90d8bdd391a6278dd2913c1dc6e63d630e33cba037325d8f5871a42
+    bytes: 1669
+    sha256: 2b24448cfc0c75378564787c0a055120473d844b67a8f8dcb42a92fe9e42cf19
   - path: static-inspection.json
     bytes: 118
     sha256: 39342499f3b5f56bf7a4f4ce4291f1aff0834c30d32d75afcb06799cf96dc9de
@@ -208,12 +208,12 @@ fixtures:
     bytes: 248
     sha256: d408b2dc8cb783183b0dc1ef1069b57e8ab743c46fb4f7c7c6163f20d3b85ccd
   - path: task.json
-    bytes: 766
-    sha256: 5115314d66e9e095267f24992e4712a8753a553573ce8432a7f7418398dfeec7
+    bytes: 1201
+    sha256: 6d27a23b1955d0c2448e33fcdb0dadce90ff886ba2a8750c9c47af1f4f16c485
 - fixture_id: fp-heated-slot
   kind: buoyant_success
   source_kind: synthetic_foampilot
-  generator_sha256: 3b8ea315f2dca6215135869d4bc211f9fd4844153c9eb8eb0c238810345344fa
+  generator_sha256: d63028033efb2d12876767b3e3f3e4792cf9f98f19108bfaa2ec43009a8c08bb
   expected:
     native_status: PUBLIC_VALIDATION_PASS
   files:
@@ -266,8 +266,8 @@ fixtures:
     bytes: 260
     sha256: 361317cee2ab5bbe33abae7e9aac0cd94bdf84eed22fbf04e3a3018f5a43d705
   - path: run-result.json
-    bytes: 1369
-    sha256: 0d23c897c90d8bdd391a6278dd2913c1dc6e63d630e33cba037325d8f5871a42
+    bytes: 1669
+    sha256: 2b24448cfc0c75378564787c0a055120473d844b67a8f8dcb42a92fe9e42cf19
   - path: static-inspection.json
     bytes: 117
     sha256: a4bce982f8533be837c6e7024b61e4c186362eb262ebfdf7adca6e0b01907fcc
@@ -275,12 +275,12 @@ fixtures:
     bytes: 245
     sha256: 675f239a5a4c1041e05d51d873fd87b3c7d8377265e9a2f1c12517b82687d9ee
   - path: task.json
-    bytes: 760
-    sha256: 2ac474c1b41498add5f71fc2b9e957c44abb7faa91c8a9054e7603aa706de1df
+    bytes: 1195
+    sha256: ab802513e5f385223be8fde6839b3166eebde344c023f25081b7ae68acb1b647
 - fixture_id: fp-coupled-blocks
   kind: multi_region_success
   source_kind: synthetic_foampilot
-  generator_sha256: 3b8ea315f2dca6215135869d4bc211f9fd4844153c9eb8eb0c238810345344fa
+  generator_sha256: d63028033efb2d12876767b3e3f3e4792cf9f98f19108bfaa2ec43009a8c08bb
   expected:
     native_status: PUBLIC_VALIDATION_PASS
   files:
@@ -333,8 +333,8 @@ fixtures:
     bytes: 260
     sha256: 361317cee2ab5bbe33abae7e9aac0cd94bdf84eed22fbf04e3a3018f5a43d705
   - path: run-result.json
-    bytes: 1369
-    sha256: 0d23c897c90d8bdd391a6278dd2913c1dc6e63d630e33cba037325d8f5871a42
+    bytes: 1669
+    sha256: 2b24448cfc0c75378564787c0a055120473d844b67a8f8dcb42a92fe9e42cf19
   - path: static-inspection.json
     bytes: 760
     sha256: 34243b37f82cd2a52ef3d4b84ad3db874380727db537e4b4689195a5bdc4f98d
@@ -342,12 +342,12 @@ fixtures:
     bytes: 248
     sha256: 8df204f827f2386c08c8042f8fe2917120cb85a826d3b543494f07e6ddb60bda
   - path: task.json
-    bytes: 766
-    sha256: 7deede962956f19eee24bd2665e0e50c146c3c5118662bdb93a11f7cfeb9c568
+    bytes: 1201
+    sha256: 261ecffa08abe33429b9b93aa96c1ec5e404e7142ed42d282bcc03a2e79dde52
 - fixture_id: fp-bad-dimension
   kind: known_failure
   source_kind: synthetic_foampilot
-  generator_sha256: 3b8ea315f2dca6215135869d4bc211f9fd4844153c9eb8eb0c238810345344fa
+  generator_sha256: d63028033efb2d12876767b3e3f3e4792cf9f98f19108bfaa2ec43009a8c08bb
   expected:
     native_status: STATIC_INSPECTION_FAILED
   files:
@@ -397,8 +397,8 @@ fixtures:
     bytes: 276
     sha256: 199adfb4c1310bed720c5d31a42fb97aee4e002ec5405f34c33ef7f0055318db
   - path: run-result.json
-    bytes: 1369
-    sha256: 0d23c897c90d8bdd391a6278dd2913c1dc6e63d630e33cba037325d8f5871a42
+    bytes: 1669
+    sha256: 2b24448cfc0c75378564787c0a055120473d844b67a8f8dcb42a92fe9e42cf19
   - path: static-inspection.json
     bytes: 754
     sha256: 22e86a708b9ca189e1a92c43068622056a438882c81ab4b4f9ea4e4e2c9062d4
@@ -406,5 +406,5 @@ fixtures:
     bytes: 251
     sha256: c7aef0065673291381927f827c0d3a0f70df286baef286d8b1421355aa43683d
   - path: task.json
-    bytes: 764
-    sha256: 7b052211dff1dfe4ca0a3c82937fffff2012c4511f43160279f7932b488e2c41
+    bytes: 1199
+    sha256: 6b99b9dc4026ffb750c7c66fc36aada4d2db8b818110dd83b78c83fd8a5dd818

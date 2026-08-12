@@ -1,23 +1,38 @@
 {
-  "acceptance_requirements": [
+  "acceptance_intent": [
     "deterministic static inspection"
   ],
-  "geometry": null,
-  "mesh": null,
+  "explicit_facts": [
+    {
+      "confirmed": true,
+      "evidence": [
+        {
+          "detail": "Repository-owned deterministic replay gate.",
+          "kind": "synthetic_fixture_generator",
+          "reference": null
+        }
+      ],
+      "field_path": "acceptance.legacy_checks.synthetic-check",
+      "impact": "high",
+      "source": "deterministic_rule",
+      "value": {
+        "kind": "completion",
+        "name": "synthetic-check",
+        "parameters": {}
+      }
+    }
+  ],
   "openfoam_target": {
     "distribution": "foundation",
     "version": "10"
   },
-  "prompt": "Inspect a deterministic, repository-owned native case and reconstruct parallel results.",
   "protected_paths": [],
   "public_assets": [],
-  "public_checks": [
-    {
-      "kind": "completion",
-      "name": "synthetic-check",
-      "parameters": {}
-    }
-  ],
+  "repair_policy": {
+    "automatic_numerical_repair": true,
+    "model_diagnostic": true
+  },
+  "request_text": "Inspect a deterministic, repository-owned native case and reconstruct parallel results.",
   "required_outputs": [
     "synthetic replay evidence"
   ],
@@ -27,7 +42,7 @@
     "max_wall_seconds": 60,
     "memory_mib": 1024
   },
-  "schema_version": 2,
+  "schema_version": 3,
   "task_id": "fp-mpi-duct",
   "title": "Synthetic replay fp-mpi-duct"
 }

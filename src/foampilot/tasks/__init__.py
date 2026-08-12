@@ -22,6 +22,7 @@ from .models import (
     OpenFOAMTarget,
     PublicAsset,
     PublicCheck,
+    RepairPolicyInput,
     ResourceBudget,
     TaskSpec,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "OpenFOAMTarget",
     "PublicAsset",
     "PublicCheck",
+    "RepairPolicyInput",
     "ResourceBudget",
     "PatchRole",
     "RefinementRegionIntent",

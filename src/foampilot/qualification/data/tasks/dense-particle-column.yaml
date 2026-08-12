@@ -1,33 +1,92 @@
-schema_version: 2
+schema_version: 3
 task_id: dense-particle-column
 title: Gas-particle settling column
-prompt: >-
-  Starting from an empty case directory, build a reduced Foundation OpenFOAM
-  v10 denseParticleFoam column case. Use a 0.1 m by 0.1 m by 0.5 m vertical
-  rectangular column with a 10 by 10 by 50 mesh. Fill the lower 0.2 m with a
-  regular cloud of 2 mm, 2500 kg/m3 spherical particles, represented by no
-  more than 500 regularly spaced computational parcels with nParticle carrying
-  the physical-particle weight. Initialize air at rest, apply gravity
-  (0 0 -9.81), no-slip side and bottom walls and a pressure
-  outlet at the top. Configure the required kinematic cloud, drag, collision
-  and packing models using conservative Foundation v10 choices. Run blockMesh,
-  checkMesh and denseParticleFoam to 0.2 s with deltaT no greater than 2e-4 s,
-  writing every 0.02 s. Preserve U.air, p and cloud results. Author every file
-  and particle-position asset yourself without copying a tutorial.
-openfoam_target: {distribution: foundation, version: "10"}
-resource_budget: {max_attempts: 2, max_wall_seconds: 1800, max_mpi_ranks: 4, memory_mib: 4096}
+openfoam_target:
+  distribution: foundation
+  version: '10'
+resource_budget:
+  max_attempts: 2
+  max_wall_seconds: 1800
+  max_mpi_ranks: 4
+  memory_mib: 4096
 required_outputs:
-  - mesh and completed denseParticleFoam logs
-  - carrier-flow fields and final particle cloud
-acceptance_requirements:
-  - checkMesh reports Mesh OK
-  - denseParticleFoam reaches 0.2 s and ends normally
-  - carrier and particle data remain finite
-public_checks:
-  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
-  - {name: target-solver, kind: command_executed, parameters: {executable: denseParticleFoam}}
-  - {name: normal-completion, kind: completion, parameters: {}}
-  - {name: final-time, kind: final_time, parameters: {minimum: 0.2}}
-  - {name: finite-fields, kind: finite_fields, parameters: {}}
+- mesh and completed denseParticleFoam logs
+- carrier-flow fields and final particle cloud
 public_assets: []
 protected_paths: []
+request_text: Starting from an empty case directory, build a reduced Foundation OpenFOAM
+  v10 denseParticleFoam column case. Use a 0.1 m by 0.1 m by 0.5 m vertical rectangular
+  column with a 10 by 10 by 50 mesh. Fill the lower 0.2 m with a regular cloud of
+  2 mm, 2500 kg/m3 spherical particles, represented by no more than 500 regularly
+  spaced computational parcels with nParticle carrying the physical-particle weight.
+  Initialize air at rest, apply gravity (0 0 -9.81), no-slip side and bottom walls
+  and a pressure outlet at the top. Configure the required kinematic cloud, drag,
+  collision and packing models using conservative Foundation v10 choices. Run blockMesh,
+  checkMesh and denseParticleFoam to 0.2 s with deltaT no greater than 2e-4 s, writing
+  every 0.02 s. Preserve U.air, p and cloud results. Author every file and particle-position
+  asset yourself without copying a tutorial.
+acceptance_intent:
+- checkMesh reports Mesh OK
+- denseParticleFoam reaches 0.2 s and ends normally
+- carrier and particle data remain finite
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
+    kind: mesh_ok
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.target-solver
+  value:
+    name: target-solver
+    kind: command_executed
+    parameters:
+      executable: denseParticleFoam
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
+    kind: completion
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-time
+  value:
+    name: final-time
+    kind: final_time
+    parameters:
+      minimum: 0.2
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
+    kind: finite_fields
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

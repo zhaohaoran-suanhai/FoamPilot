@@ -1,31 +1,90 @@
-schema_version: 2
+schema_version: 3
 task_id: dsmc-free-space-periodic
 title: Periodic rarefied-gas DSMC relaxation
-prompt: >-
-  Starting from an empty case directory, build the Foundation OpenFOAM v10
-  freeSpacePeriodic dsmcFoam problem. Use a 1 mm cubic domain divided into
-  10 by 10 by 10 cells with all three opposing patch pairs periodic. Populate
-  it with argon at 300 K and number density 1e20 1/m3 using dsmcInitialise,
-  zero mean velocity, the variable-hard-sphere collision model, and periodic
-  boundaries. Use deltaT=1e-7 s, integrate dsmcFoam to 1e-4 s and write every
-  2e-5 s. Generate blockMeshDict, dsmcProperties, initialization dictionaries
-  and all required diagnostic fields. Run blockMesh, checkMesh,
-  dsmcInitialise and dsmcFoam serially. Preserve macroscopic density, momentum
-  and energy fields and do not read or copy a tutorial.
-openfoam_target: {distribution: foundation, version: "10"}
-resource_budget: {max_attempts: 2, max_wall_seconds: 1500, max_mpi_ranks: 1, memory_mib: 3072}
+openfoam_target:
+  distribution: foundation
+  version: '10'
+resource_budget:
+  max_attempts: 2
+  max_wall_seconds: 1500
+  max_mpi_ranks: 1
+  memory_mib: 3072
 required_outputs:
-  - mesh, DSMC initialization and solver logs
-  - macroscopic DSMC fields at the final time
-acceptance_requirements:
-  - checkMesh and dsmcInitialise succeed
-  - dsmcFoam reaches 1e-4 s and ends normally
-  - sampled macroscopic fields remain finite
-public_checks:
-  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
-  - {name: target-solver, kind: command_executed, parameters: {executable: dsmcFoam}}
-  - {name: normal-completion, kind: completion, parameters: {}}
-  - {name: final-time, kind: final_time, parameters: {minimum: 0.0001}}
-  - {name: finite-fields, kind: finite_fields, parameters: {}}
+- mesh, DSMC initialization and solver logs
+- macroscopic DSMC fields at the final time
 public_assets: []
 protected_paths: []
+request_text: Starting from an empty case directory, build the Foundation OpenFOAM
+  v10 freeSpacePeriodic dsmcFoam problem. Use a 1 mm cubic domain divided into 10
+  by 10 by 10 cells with all three opposing patch pairs periodic. Populate it with
+  argon at 300 K and number density 1e20 1/m3 using dsmcInitialise, zero mean velocity,
+  the variable-hard-sphere collision model, and periodic boundaries. Use deltaT=1e-7
+  s, integrate dsmcFoam to 1e-4 s and write every 2e-5 s. Generate blockMeshDict,
+  dsmcProperties, initialization dictionaries and all required diagnostic fields.
+  Run blockMesh, checkMesh, dsmcInitialise and dsmcFoam serially. Preserve macroscopic
+  density, momentum and energy fields and do not read or copy a tutorial.
+acceptance_intent:
+- checkMesh and dsmcInitialise succeed
+- dsmcFoam reaches 1e-4 s and ends normally
+- sampled macroscopic fields remain finite
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
+    kind: mesh_ok
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.target-solver
+  value:
+    name: target-solver
+    kind: command_executed
+    parameters:
+      executable: dsmcFoam
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
+    kind: completion
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-time
+  value:
+    name: final-time
+    kind: final_time
+    parameters:
+      minimum: 0.0001
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
+    kind: finite_fields
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

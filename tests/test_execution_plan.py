@@ -16,12 +16,13 @@ from foampilot.manifests import (
     CaseRegion,
 )
 from foampilot.tasks import TaskSpec
+from tests.support.tasks import canonical_task_payload, replace_explicit_fact
 
 
 @pytest.fixture
 def task() -> TaskSpec:
     return TaskSpec.model_validate(
-        {
+        canonical_task_payload({
             "schema_version": 2,
             "task_id": "side-driven-box",
             "title": "Side-driven enclosure",
@@ -47,7 +48,7 @@ def task() -> TaskSpec:
             ],
             "public_assets": [],
             "protected_paths": ["/private/tutorial/cavity"],
-        }
+        })
     )
 
 
@@ -240,7 +241,7 @@ def test_provided_mesh_bundle_members_are_immutable_to_the_model(
             "bundle_manifest_sha256": "a" * 64,
         }
     ]
-    payload["mesh"] = {"strategy": "provided"}
+    replace_explicit_fact(payload, "mesh.intent", {"strategy": "provided"})
     task = TaskSpec.model_validate(payload)
     plan = valid_plan().model_copy(deep=True)
     plan.files.append(

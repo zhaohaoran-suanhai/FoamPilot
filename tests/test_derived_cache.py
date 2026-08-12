@@ -24,6 +24,7 @@ from tests.test_native_case_generation import (
     _task,
 )
 from tests.support.runtime import synthetic_execution_evidence
+from tests.support.tasks import replace_explicit_fact
 
 
 class PolyMeshRunner:
@@ -91,10 +92,14 @@ class PolyMeshRunner:
 
 def _mesh_task():
     payload = _task().model_dump(mode="json")
-    payload["mesh"] = {
-        "strategy": "blockMesh",
-        "quality": {"require_check_mesh_pass": True},
-    }
+    replace_explicit_fact(
+        payload,
+        "mesh.intent",
+        {
+            "strategy": "blockMesh",
+            "quality": {"require_check_mesh_pass": True},
+        },
+    )
     return _task().model_validate(payload)
 
 
@@ -143,13 +148,16 @@ def test_geometry_facts_cache_is_content_addressed_and_detects_corruption(
     assert hit.status == "hit"
     assert hit.value == facts
 
-    changed = task.model_copy(
-        update={
-            "geometry": task.geometry.model_copy(
-                update={"length_unit": "cm"}
-            )
-        }
+    changed_payload = task.model_dump(mode="json")
+    changed_geometry = task.geometry.model_copy(
+        update={"length_unit": "cm"}
     )
+    replace_explicit_fact(
+        changed_payload,
+        "geometry.input",
+        changed_geometry.model_dump(mode="json"),
+    )
+    changed = task.model_validate(changed_payload)
     assert geometry_cache_key(changed, assets) != key
 
     facts_path = tmp_path / "cache/geometry" / key / "geometry-facts.json"
@@ -289,7 +297,7 @@ def test_provided_mesh_cache_key_does_not_require_a_mesh_command(
     from foampilot.preprocessing import BoundingBox, InputMeshFacts
 
     payload = _task().model_dump(mode="json")
-    payload["mesh"] = {"strategy": "provided"}
+    replace_explicit_fact(payload, "mesh.intent", {"strategy": "provided"})
     payload["public_assets"] = [
         {
             "path": "mesh/native",

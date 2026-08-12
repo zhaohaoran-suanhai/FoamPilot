@@ -1,30 +1,116 @@
-schema_version: 2
+schema_version: 3
 task_id: buoyant-benard-cells
 title: Rayleigh-Benard convection cells
-prompt: >-
-  Starting from an empty case directory, build the Foundation v10
-  buoyantFoam Rayleigh-Benard cell benchmark. Use a two-dimensional box 9 m
-  long and 1 m high, extruded from z=-1 to 1 m with empty front/back faces,
-  and a 90 by 10 by 1 mesh. Preserve floor, ceiling, sideWalls, and
-  frontAndBack. Use a perfect-gas buoyant formulation with gravity downward,
-  standard air transport, and k-epsilon RANS fields compatible with the
-  solver. Heat the floor, cool the ceiling, use adiabatic side walls, and
-  initialize a small temperature perturbation that can seed convection.
-  Maintain coherent p, p_rgh and pressure reference semantics. Run to
-  1000 s with deltaT=1 s and write every 50 s. Generate all native files,
-  run blockMesh, checkMesh and buoyantFoam serially, and do not read or copy
-  a pre-existing case.
-openfoam_target: {distribution: foundation, version: "10"}
-resource_budget: {max_attempts: 2, max_wall_seconds: 1800, max_mpi_ranks: 1, memory_mib: 3072}
-required_outputs: [mesh quality log, completed buoyantFoam log, U T p and p_rgh fields at 1000 s]
-acceptance_requirements: [checkMesh reports Mesh OK, buoyantFoam reaches 1000 s and ends normally, required fields remain finite]
-public_checks:
-  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
-  - {name: target-solver, kind: command_executed, parameters: {executable: buoyantFoam}}
-  - {name: normal-completion, kind: completion, parameters: {}}
-  - {name: final-time, kind: final_time, parameters: {minimum: 1000}}
-  - {name: finite-fields, kind: finite_fields, parameters: {}}
-  - {name: final-temperature, kind: requested_output, parameters: {path: 1000/T}}
-  - {name: final-velocity, kind: requested_output, parameters: {path: 1000/U}}
+openfoam_target:
+  distribution: foundation
+  version: '10'
+resource_budget:
+  max_attempts: 2
+  max_wall_seconds: 1800
+  max_mpi_ranks: 1
+  memory_mib: 3072
+required_outputs:
+- mesh quality log
+- completed buoyantFoam log
+- U T p and p_rgh fields at 1000 s
 public_assets: []
 protected_paths: []
+request_text: Starting from an empty case directory, build the Foundation v10 buoyantFoam
+  Rayleigh-Benard cell benchmark. Use a two-dimensional box 9 m long and 1 m high,
+  extruded from z=-1 to 1 m with empty front/back faces, and a 90 by 10 by 1 mesh.
+  Preserve floor, ceiling, sideWalls, and frontAndBack. Use a perfect-gas buoyant
+  formulation with gravity downward, standard air transport, and k-epsilon RANS fields
+  compatible with the solver. Heat the floor, cool the ceiling, use adiabatic side
+  walls, and initialize a small temperature perturbation that can seed convection.
+  Maintain coherent p, p_rgh and pressure reference semantics. Run to 1000 s with
+  deltaT=1 s and write every 50 s. Generate all native files, run blockMesh, checkMesh
+  and buoyantFoam serially, and do not read or copy a pre-existing case.
+acceptance_intent:
+- checkMesh reports Mesh OK
+- buoyantFoam reaches 1000 s and ends normally
+- required fields remain finite
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
+    kind: mesh_ok
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.target-solver
+  value:
+    name: target-solver
+    kind: command_executed
+    parameters:
+      executable: buoyantFoam
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
+    kind: completion
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-time
+  value:
+    name: final-time
+    kind: final_time
+    parameters:
+      minimum: 1000
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
+    kind: finite_fields
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-temperature
+  value:
+    name: final-temperature
+    kind: requested_output
+    parameters:
+      path: 1000/T
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-velocity
+  value:
+    name: final-velocity
+    kind: requested_output
+    parameters:
+      path: 1000/U
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true

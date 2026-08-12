@@ -1,30 +1,89 @@
-schema_version: 2
+schema_version: 3
 task_id: piso-rans-cavity
 title: Transient turbulent lid-driven cavity
-prompt: >-
-  Starting from an empty case directory, construct a two-dimensional square
-  lid-driven cavity for Foundation OpenFOAM v10 pisoFoam. Use a 0.1 m by
-  0.1 m enclosure, one empty spanwise cell, a uniform 50 by 50 mesh, a 1 m/s
-  moving top wall and stationary remaining walls. Use air with nu=1.5e-5 m2/s
-  and k-epsilon RANS with coherent inlet-free wall functions for k, epsilon and
-  nut. Initialize U and p consistently, integrate to 2 s with deltaT=0.005 s,
-  and write every 0.2 s. Generate all native dictionaries, run blockMesh and
-  checkMesh, then pisoFoam, preserving U, p and turbulence fields. Run
-  serially and do not inspect or copy a pre-existing tutorial.
-openfoam_target: {distribution: foundation, version: "10"}
-resource_budget: {max_attempts: 2, max_wall_seconds: 900, max_mpi_ranks: 1, memory_mib: 2048}
+openfoam_target:
+  distribution: foundation
+  version: '10'
+resource_budget:
+  max_attempts: 2
+  max_wall_seconds: 900
+  max_mpi_ranks: 1
+  memory_mib: 2048
 required_outputs:
-  - mesh quality and completed pisoFoam logs
-  - final flow and turbulence fields
-acceptance_requirements:
-  - checkMesh reports Mesh OK
-  - pisoFoam reaches 2 s and ends normally
-  - fields remain finite
-public_checks:
-  - {name: mesh-quality, kind: mesh_ok, parameters: {}}
-  - {name: target-solver, kind: command_executed, parameters: {executable: pisoFoam}}
-  - {name: normal-completion, kind: completion, parameters: {}}
-  - {name: final-time, kind: final_time, parameters: {minimum: 2.0}}
-  - {name: finite-fields, kind: finite_fields, parameters: {}}
+- mesh quality and completed pisoFoam logs
+- final flow and turbulence fields
 public_assets: []
 protected_paths: []
+request_text: Starting from an empty case directory, construct a two-dimensional square
+  lid-driven cavity for Foundation OpenFOAM v10 pisoFoam. Use a 0.1 m by 0.1 m enclosure,
+  one empty spanwise cell, a uniform 50 by 50 mesh, a 1 m/s moving top wall and stationary
+  remaining walls. Use air with nu=1.5e-5 m2/s and k-epsilon RANS with coherent inlet-free
+  wall functions for k, epsilon and nut. Initialize U and p consistently, integrate
+  to 2 s with deltaT=0.005 s, and write every 0.2 s. Generate all native dictionaries,
+  run blockMesh and checkMesh, then pisoFoam, preserving U, p and turbulence fields.
+  Run serially and do not inspect or copy a pre-existing tutorial.
+acceptance_intent:
+- checkMesh reports Mesh OK
+- pisoFoam reaches 2 s and ends normally
+- fields remain finite
+explicit_facts:
+- field_path: acceptance.legacy_checks.mesh-quality
+  value:
+    name: mesh-quality
+    kind: mesh_ok
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.target-solver
+  value:
+    name: target-solver
+    kind: command_executed
+    parameters:
+      executable: pisoFoam
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.normal-completion
+  value:
+    name: normal-completion
+    kind: completion
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.final-time
+  value:
+    name: final-time
+    kind: final_time
+    parameters:
+      minimum: 2.0
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+- field_path: acceptance.legacy_checks.finite-fields
+  value:
+    name: finite-fields
+    kind: finite_fields
+    parameters: {}
+  source: deterministic_rule
+  impact: high
+  evidence:
+  - kind: task_v2_migration
+    detail: Temporary Phase 2 migration bridge; Phase 5 compiles the acceptance plan.
+  confirmed: true
+repair_policy:
+  automatic_numerical_repair: true
+  model_diagnostic: true
