@@ -1,7 +1,13 @@
 # AGENTS.md
 
-本文是 Agent 在 FoamPilot 仓库工作的权威入口。操作步骤以本文件为准，数据契约以源码和
-测试为准。
+本文是 Agent 在 FoamPilot 仓库工作的权威入口。开始开发前依次阅读：
+
+1. [`docs/current-state.md`](docs/current-state.md)：当前代码、证据边界和接手动作；
+2. 本文件：仓库操作规则和禁止路线；
+3. [`docs/architecture.md`](docs/architecture.md)：已冻结的程序职责、输入输出和唯一权威；
+4. 与任务直接相关的现行规格或实施计划。
+
+操作步骤以本文件为准，数据契约以源码和测试为准。历史计划和阶段报告不能覆盖上述入口。
 
 ## 项目边界
 
