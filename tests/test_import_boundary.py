@@ -137,6 +137,49 @@ def test_taskbuilder_does_not_import_execution_or_runner_layers() -> None:
     assert violations == []
 
 
+def test_taskbuilder_consolidation_modules_preserve_responsibility_boundaries() -> None:
+    module_names = (
+        "authority.py",
+        "extraction.py",
+        "extraction_protocol.py",
+        "provided_mesh.py",
+        "public_geometry.py",
+        "questions.py",
+        "projection.py",
+    )
+    module_paths = [SOURCE_ROOT / "taskbuilder" / name for name in module_names]
+    model_importers = [
+        path.name
+        for path in module_paths
+        if any(
+            module == "foampilot.models"
+            or module.startswith("foampilot.models.")
+            for module in _imported_modules(path)
+        )
+    ]
+    assert model_importers == ["extraction.py"]
+
+    forbidden_layers = (
+        "foampilot.agent",
+        "foampilot.cli",
+        "foampilot.desktop",
+        "foampilot.plans",
+        "foampilot.qualification",
+        "foampilot.runtime",
+        "foampilot.workflow",
+    )
+    violations = [
+        f"{path.name} imports {module}"
+        for path in module_paths
+        for module in sorted(_imported_modules(path))
+        if any(
+            module == forbidden or module.startswith(f"{forbidden}.")
+            for forbidden in forbidden_layers
+        )
+    ]
+    assert violations == []
+
+
 def test_risk_gate_does_not_import_model_backends() -> None:
     path = SOURCE_ROOT / "simulation/risk_gate.py"
     modules = _imported_modules(path)

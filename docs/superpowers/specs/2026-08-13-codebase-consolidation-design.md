@@ -1,6 +1,6 @@
 # FoamPilot 代码库减重与新会话交接设计
 
-状态：**已批准，待实施**
+状态：**已批准、实施并通过最终交付门禁**
 日期：2026-08-13
 
 ## 1. 目标
@@ -9,10 +9,11 @@
 
 1. 当前 TaskBuilder/polyMesh 行为和公开 CLI 契约保持不变；
 2. 大型实现文件按单一职责拆分，后续修改不必一次加载整条输入链；
-3. 重复测试数据、重复模型响应和重复断言得到合并，同时保留不同风险语义的回归门禁；
+3. 重复测试数据、模型响应和拓扑构造收敛到显式 factory，同时保留不同风险语义和对应断言；
 4. 当前文档与历史材料分层，旧计划和旧结论不再与现行能力竞争权威；
 5. 提供一份新对话可以直接使用的短交接文档，准确记录已验证能力、未验证边界和下一步候选；
-6. 完成全量测试、发行物一致性和 wheel 独立安装验证后，在当前 `main` 分支提交。
+6. 全程直接在当前 `main` 分支工作，不创建分支或 worktree；完成全量测试、发行物一致性和
+   wheel 独立安装验证后才提交。
 
 “减重”以降低认知负担和重复维护为准，不以删除最多代码或减少最多测试数量为准。
 
@@ -72,19 +73,40 @@
 
 ## 4. 目标代码结构
 
-TaskBuilder 输入链按以下职责拆分，模块只使用包内接口：
+TaskBuilder 输入链按以下职责拆分，模块只使用包内接口。文件数量和行数服从职责边界；如果某项
+移动会让目标文件同时承担两个变化原因不同的职责，应停止该项移动并报告，而不是为了满足行数
+目标继续拆分或合并。
 
 | 模块 | 唯一职责 |
 |---|---|
-| `taskbuilder/extraction_protocol.py` | 模型响应 schema、允许的 fact path 和系统提示词 |
+| `taskbuilder/extraction_protocol.py` | 模型响应 schema、允许的 fact path 和系统提示词；不含输入问题策略 |
 | `taskbuilder/authority.py` | 重复事实归一化、用户文本证据绑定、来源降级规则 |
 | `taskbuilder/provided_mesh.py` | 原生 polyMesh 确定性 geometry/mesh 事实和拓扑角色协调 |
 | `taskbuilder/public_geometry.py` | STL/OBJ/GEO 等公开几何文件的确定性资产路线 |
-| `taskbuilder/questions.py` | 输入问题过滤、规范 ID 和缺失输入问题生成 |
+| `taskbuilder/questions.py` | 输入问题路径策略、过滤、规范 ID 和缺失输入问题生成 |
 | `taskbuilder/extraction.py` | 调用模型、依次调用上述模块并组装 `TaskDraft` |
+| `taskbuilder/projection.py` | validation、compiler、questions 共用的权威事实投影；不重建问题 |
 
 `extraction.py` 不再实现领域核验细节。各模块通过显式函数传递 `TaskFact`、`TaskQuestion`、
 `PublicAsset` 和 `TaskIngressContext`，不得通过全局可变状态通信，也不得新增第二套 fact 解释器。
+
+每个文件的职责边界固定如下：
+
+- 只有 `extraction.py` 可以持有 `ModelGateway`、`ModelRequest`、预算、trace 和整条串行调用顺序；
+- `extraction_protocol.py` 只定义 transport schema 与 prompt，不读取资产、不判定来源权威；
+- `authority.py` 只把模型候选转换为带 provenance 的 `TaskFact`，不协调网格路线、不生成问题；
+- `provided_mesh.py` 只消费已经验证的 `PublicAsset` 与 `TaskIngressContext` 拓扑事实，不读取、
+  staging 或修改原始 polyMesh；
+- `public_geometry.py` 只消费 deterministic ingress 已验证的文件资产 metadata，不自行检查文件；
+- `questions.py` 只根据已协调 facts/questions/assets 生成最终输入问题，不调用模型、不读文件、
+  不替代 `validate_task_draft()`；
+- `projection.py` 只做纯权威投影，不生成问题、不产生 I/O；
+- 所有新模块都不得 import runtime、plans、agent、workflow、Desktop、CLI 或 qualification。
+
+`_INPUT_QUESTION_PATHS` 当前在 extraction 与 validation 重复。减重后由 `questions.py` 中唯一的
+`INPUT_QUESTION_PATHS` 持有，extraction 和 validation 共同引用；不得把确定性问题策略放进模型
+transport protocol。`projection.py` 应提供 facts iterable 到 compilable map 的纯 helper，避免
+questions 再实现一套来源筛选。
 
 上述拆分只改变 `taskbuilder` 内部组织，对应架构规范中 `taskbuilder/extraction.py` 的薄编排目标。
 TaskDraft、DraftReview、TaskSpec、错误码、来源权威和 CLI/Desktop 投影保持不变。实施计划必须为
@@ -97,13 +119,20 @@ TaskDraft、DraftReview、TaskSpec、错误码、来源权威和 CLI/Desktop 投
 
 ### 5.1 结构
 
-将巨型 extractor 测试按行为边界拆为：
+遵循仓库现有“根目录测试文件 + `tests/support/` 显式帮助代码”结构，不新增嵌套
+`tests/taskbuilder/conftest.py`：
 
-- `tests/taskbuilder/conftest.py`：公共 fake gateway、响应构造器、资产和拓扑 fixture；
-- `tests/taskbuilder/test_authority.py`：来源、证据、否定、数值和重复事实；
-- `tests/taskbuilder/test_provided_mesh.py`：polyMesh、单位、维度、patch/zone；
-- `tests/taskbuilder/test_public_geometry.py`：STL/OBJ/GEO、辅助附件和 mesh 冲突；
-- `tests/taskbuilder/test_extraction.py`：模型调用边界、protected path 和最终草稿状态。
+- `tests/support/taskbuilder.py`：公共 fake gateway、响应构造器、文件/目录资产和可覆写拓扑 factory；
+- `tests/test_taskbuilder_extraction_protocol.py`：transport schema 与 prompt；
+- `tests/test_taskbuilder_authority.py`：来源、证据、否定、数值和重复事实；
+- `tests/test_taskbuilder_provided_mesh.py`：polyMesh、单位、维度、patch/zone；
+- `tests/test_taskbuilder_public_geometry.py`：STL/OBJ/GEO、辅助附件和 mesh 冲突；
+- `tests/test_taskbuilder_questions.py`：输入问题路径、过滤和规范 ID；
+- `tests/test_taskbuilder_extraction.py`：模型调用边界、protected path、串行顺序和最终草稿状态。
+
+生产代码拆分期间保留 `tests/test_task_extractor.py` 作为不移动的黑盒回归集。只有全部生产模块
+完成拆分、45 个既有场景仍通过且职责审计通过后，才在独立步骤中移动测试。拆分前后比较去掉
+文件名前缀后的测试函数名和参数 ID，不能只比较总数。
 
 CLI、compiler、validator 和 `TaskSpec` 测试保留在原文件，除非存在完全相同的输入和断言。
 
@@ -162,8 +191,26 @@ CLI、compiler、validator 和 `TaskSpec` 测试保留在原文件，除非存�
   中文恢复说明保持不变；
 - 代码移动后只能有一个权威实现，禁止在 `extraction.py` 保留兼容副本；
 - 不使用宽泛 `except` 或 silent fallback 掩盖拆分造成的 import/验证错误。
+- 任何拆分若需要目标文件承担架构表未声明的职责，必须停止并报告架构冲突；不能借等价重构
+  修改 `docs/architecture.md` 来追认越界实现。
 
-## 8. 验收门禁
+## 8. 实施顺序
+
+本轮采用 characterization-first 的等价重构顺序：
+
+1. 在当前 `main` 建立新鲜 focused/full baseline，并保存45个 extractor 场景的规范化 ID；
+2. 只抽取 `tests/support/taskbuilder.py`，保持生产代码和测试文件位置不变；
+3. 保持原黑盒测试不移动，依次拆 protocol、authority、provided mesh、public geometry、
+   question policy/projection 和薄 orchestrator；
+4. 每移动一个生产职责，立即运行原 `tests/test_task_extractor.py` 与该职责的邻接测试，并执行
+   import/职责审计；
+5. 生产拆分完全稳定后才移动测试文件，再比较规范化场景 ID；
+6. 最后运行 deterministic real-asset extractor gate、全量、发行物和 wheel 临时安装门禁。
+
+这是既有行为的 characterization refactor，不人为制造“先失败再通过”的新功能测试。任何红灯都
+表示迁移回归或已有基线变化，必须当步解决，不能积累到最终全量测试。
+
+## 9. 验收门禁
 
 实施完成必须提供以下新鲜证据：
 
@@ -171,7 +218,8 @@ CLI、compiler、validator 和 `TaskSpec` 测试保留在原文件，除非存�
 2. `python -m compileall -q src tests`；
 3. TaskBuilder 聚焦测试通过；
 4. 全量 deterministic/Qt-offscreen 测试通过；
-5. 真实 porousBlockage 草稿仍只报告 `geometry.length_unit` 阻断；
+5. 使用真实 porousBlockage polyMesh、冻结模型响应和重构后的 `extract_task_draft()` 重新生成
+   draft，仍只报告 `geometry.length_unit` 阻断；旧 YAML 的 `validate-draft` 只能作为补充证据；
 6. 从干净 sdist 构建 wheel，发行物源码集合与工作树完全一致；
 7. wheel 安装到临时目录后，从该目录成功导入新拆分模块并验证真实草稿；
 8. `git status --short` 只包含本轮预期变更，提交后为空。
@@ -182,10 +230,13 @@ CLI、compiler、validator 和 `TaskSpec` 测试保留在原文件，除非存�
 - package import-boundary 测试仍通过；
 - side effect owner 没有增加；
 - 删除/合并清单中的每一项都有架构职责与保留实现映射。
+- 45 个既有 extractor 场景的规范化测试函数名和参数 ID 全部保留；
+- 只有 `extraction.py` import 模型 gateway/预算/trace，其他新模块保持纯计算或只消费已验证事实；
+- `INPUT_QUESTION_PATHS`、来源投影和每个移动符号都只有一个权威定义。
 
 本轮不声称新的 OpenFOAM solver completion、物理验收或跨机 qualification。
 
-## 9. 交接结果
+## 10. 交接结果
 
 最终提交应让下一次对话无需读取本轮长上下文即可回答：
 

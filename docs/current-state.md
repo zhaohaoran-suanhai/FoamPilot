@@ -1,19 +1,19 @@
 # FoamPilot 当前状态与新会话交接
 
-状态：**2026-08-13 文档冻结快照**
+状态：**2026-08-13 TaskBuilder 等价减重完成快照**
 
 用途：让新的开发对话不依赖此前十几个小时的上下文，也能准确区分现行架构、已验证能力、
-未验证边界和代码/测试减重任务。本文描述当前事实，不替代架构规范、源码或测试。
+未验证边界和已完成的代码/测试减重。本文描述当前事实，不替代架构规范、源码或测试。
 
 ## 1. 新对话的固定阅读顺序
 
 1. 本文：当前状态、证据和接手动作；
 2. [`../AGENTS.md`](../AGENTS.md)：仓库规则、禁止路线和验证要求；
 3. [`architecture.md`](architecture.md)：已冻结的程序职责、数据流、输入输出和唯一权威；
-4. [代码库减重设计](superpowers/specs/2026-08-13-codebase-consolidation-design.md)：已批准的
-   等价重构目标；
+4. [代码库减重设计](superpowers/specs/2026-08-13-codebase-consolidation-design.md)：本轮已实施的
+   等价重构目标和职责边界；
 5. [代码与测试减重实施计划](superpowers/plans/2026-08-13-code-and-test-consolidation.md)：
-   新对话的逐步执行清单；
+   本轮步骤、门禁和交付记录；
 6. 只有需要追溯某项决策或旧证据时，才进入 [`archive/README.md`](archive/README.md)。
 
 发生冲突时，权威顺序为：当前用户决定 > `AGENTS.md` > `architecture.md` > 当前 schema/源码与
@@ -29,12 +29,12 @@
 | 当前分支 | `main` |
 | 最近生产代码基线 | `55ab25f feat: reconcile native mesh task ingress` |
 | 架构基线 | `60d55da docs: define current architecture contracts`，随后由本文冻结 |
+| 本轮减重起点 | `9afb78b docs: prepare consolidation handoff` |
 | 发布状态 | `main` 含有 `v0.2.0` 之后的大量未发布变更；不是新的正式版本 |
-| 下一任务 | 只做代码和测试的等价减重，不升级版本、不打 tag、不 push |
+| 本轮状态 | 代码与测试拆分、全量、发行物和 clean-wheel 最终门禁均已完成 |
 
-文档提交位于生产代码基线之后，不改变运行行为。新对话开始时必须重新执行 `git status --short`
-和 `git log -8 --oneline --decorate`；如果生产代码基线之后又出现本交接未记录的代码提交，应先
-审计差异，不得直接套用旧行号。
+本轮直接在 `main` 上实施，没有创建分支或 worktree，也没有升级版本、打 tag 或 push。新对话
+开始时仍应重新执行 `git status --short` 和 `git log -8 --oneline --decorate`，不得套用旧行号。
 
 ## 3. 当前产品边界
 
@@ -121,6 +121,13 @@ evaluator 数据，因此只适合作为本机内部软件，不应因已有 whe
 `/tmp` 路径是可丢弃实验产物，不是仓库契约。减重后的行为门禁是“同等输入仍只能因长度单位
 缺失而阻断”，而不是依赖该临时文件永久存在。
 
+减重后新增了 `tests/test_real_taskbuilder_ingress_gate.py`。它从
+`FOAMPILOT_REAL_POLYMESH_CASE_ROOT` 指向的上述真实目录重新计算成员和 manifest，依次调用
+`build_task_ingress_context()`、重构后的 `extract_task_draft()` 和 `validate_task_draft()`。本机运行
+结果为 `1 passed`：geometry 仍为 `openfoam_mesh`，mesh strategy 仍为 `provided`，模型请求只含
+紧凑 topology、没有 raw `FoamFile` 内容，唯一 blocking tuple 仍为
+`("TASK_UNIT_AMBIGUOUS", "geometry.length_unit")`。这是一次新的提取器执行，不是 CFD solve。
+
 ### 5.4 与已有本机工程闭环的关系
 
 另一个当前-schema 本机门禁已经验证 provided polyMesh 不被生成文件覆盖、真实 `checkMesh`/
@@ -128,21 +135,27 @@ evaluator 数据，因此只适合作为本机内部软件，不应因已有 whe
 `DerivedMetrics`。该证据记录于 [`qualification.md`](qualification.md)。它证明本机工程路径可
 闭环，但不是上述缺单位草稿的新求解，也不是第二台机器的 qualification。
 
-## 6. 当前技术债与本次允许范围
+## 6. TaskBuilder 等价减重结果与剩余技术债
 
-当前最明确的认知负担集中在 TaskBuilder 输入链：
+`extraction.py` 已从 1205 行收薄为 153 行。新增文件按职责承接原实现：
 
-| 文件 | 当前规模 | 问题 | 本轮动作 |
-|---|---:|---|---|
-| `src/foampilot/taskbuilder/extraction.py` | 1205 行 | protocol、authority、两种资产协调、问题和 orchestration 集中 | 按批准设计拆成六个单责模块 |
-| `tests/test_task_extractor.py` | 1681 行 | 重要风险测试和重复 fixture 混合 | 按职责拆文件并抽公共 fixture |
-| `src/foampilot/agent/native_orchestrator.py` | 4691 行 | 仍然很大 | 本轮不动；先证明 TaskBuilder 减重方法 |
-| `src/foampilot/cli/main.py` | 1948 行 | CLI 命令集中 | 本轮不动 |
-| `src/foampilot/desktop/main_window.py` | 1738 行 | Desktop 投影集中 | 本轮不动 |
+| 文件 | 行数 | 唯一职责 |
+|---|---:|---|
+| `taskbuilder/extraction_protocol.py` | 176 | transport schema、事实路径词表和 system prompt |
+| `taskbuilder/authority.py` | 294 | 重复事实归一、证据绑定和来源降权 |
+| `taskbuilder/provided_mesh.py` | 279 | 已验证 polyMesh topology 的确定性协调，不做 I/O |
+| `taskbuilder/public_geometry.py` | 205 | 已验证 STL/OBJ/GEO metadata 的确定性协调，不检查文件 |
+| `taskbuilder/questions.py` | 152 | 输入问题白名单和最终重建 |
+| `taskbuilder/extraction.py` | 153 | 唯一模型调用、串行阶段编排和 TaskDraft 组装 |
+| `taskbuilder/projection.py` | 63 | validation/compiler/questions 共用的 authority 投影 |
 
-大文件本身不是删除理由。新对话只实施已批准的 TaskBuilder 代码/测试等价减重；不得顺手修复
-新功能、改变 schema、放宽 authority、增加模型调用、重写 workflow 或扩大到 NativeAgent/CLI/
-Desktop。若执行中发现真实功能缺陷，记录为独立后续事项，先保持本轮行为等价。
+原 `tests/test_task_extractor.py` 的 45 个规范化场景 ID 在删除前后逐项相等。测试现分为六个根级
+职责文件，共 1401 行；重复 gateway、payload、public-file 和 polyMesh 构造集中到 180 行的
+`tests/support/taskbuilder.py`。场景数没有减少，也没有合并不同攻击面。
+
+`src/foampilot/agent/native_orchestrator.py`、`src/foampilot/cli/main.py` 和
+`src/foampilot/desktop/main_window.py` 仍然较大，但本轮没有改动。大文件本身不是删除理由；如需
+继续减重，必须另做职责映射、规格和基线，不能从本轮授权外推。
 
 ## 7. 等价减重不可破坏的结果
 
@@ -157,24 +170,21 @@ Desktop。若执行中发现真实功能缺陷，记录为独立后续事项，�
 9. 不能为了减少测试数删除不同攻击面或不同权威来源的用例；
 10. 新模块不得成为第二套事实解释器，也不得产生新的文件或进程副作用。
 
-## 8. 接手执行顺序
+## 8. 本轮实施结果
 
-新对话应直接采用以下开场目标，不重新讨论产品方向：
+本轮按批准计划直接在当前 `main` 上完成：
 
-> 在当前 `main` 分支，完整阅读 `docs/current-state.md`、`AGENTS.md`、
-> `docs/architecture.md`、已批准减重设计和实施计划。只执行 TaskBuilder 代码与测试的等价
-> 减重；不新增能力、不改变职责边界、不升级版本、不打 tag、不 push。先建立新鲜基线，逐步
-> 拆分并在每一步运行聚焦测试，最后完成全量、发行物和真实 polyMesh 输入门禁并提交。
+1. 冻结并保持原 45 个 extractor 场景；
+2. 抽取显式测试支撑层，不使用隐式 conftest fixture；
+3. 依次迁移 protocol、authority、provided mesh、public geometry、questions/projection；
+4. 保持唯一的 `extract_task_draft()` 公共入口和一次模型调用；
+5. 新增 AST 边界测试，确认只有 `extraction.py` 依赖 `foampilot.models`，新模块均不依赖
+   runtime、plans、agent、workflow、desktop、CLI 或 qualification；
+6. 在场景集合等价后删除原单体测试文件；
+7. 新增真实 polyMesh ingress/extractor/validation 门禁。
 
-具体步骤：
-
-1. 核验工作树和提交基线；
-2. 运行第 9 节 baseline，任何失败都先判断是否为已有失败；
-3. 按实施计划逐模块迁移，禁止一次性重写 1200 行文件；
-4. 每移动一个职责，同时移动对应测试并运行该模块聚焦门禁；
-5. 删除旧实现前用 `rg` 证明只剩一个权威定义；
-6. 更新架构文件目录和本文的规模/验证记录；
-7. 执行完整交付门禁，审阅 diff 后只提交本次减重。
+没有改动公开 schema、CLI、NativeAgent、OpenFOAM 执行路径或 capability matrix，也没有运行新的
+CFD solve。最终交付门禁和本地提交结果记录在第 11 节。
 
 ## 9. 可信基线命令
 
@@ -189,12 +199,10 @@ PYTHONPATH=src /home/edwin/feal-venv-py312/bin/python -m compileall -q src tests
 
 PYTHONPATH=src /home/edwin/feal-venv-py312/bin/python -m pytest \
   -q -p no:cacheprovider \
-  tests/test_task_extractor.py \
+  tests/test_taskbuilder_*.py \
   tests/test_task_draft.py \
   tests/test_task_draft_validation.py \
   tests/test_task_compiler.py \
-  tests/test_taskbuilder_cli.py \
-  tests/test_taskbuilder_semantics.py \
   tests/test_asset_contracts.py \
   tests/test_poly_mesh_inspector.py \
   tests/test_desktop_workspace.py
@@ -204,8 +212,7 @@ QT_QPA_PLATFORM=offscreen PYTHONPATH=src \
   -q -p no:cacheprovider tests
 ```
 
-文档冻结前最近一次全量基线为 `1220 passed, 13 skipped`。这是预期比较点，不是允许跳过新鲜
-运行的理由；完成减重时必须记录新的完整输出和 skip 原因。
+减重前全量比较点为 `1220 passed, 13 skipped`；第 11 节记录减重后的新鲜结果和 skip 边界。
 
 发行物门禁、临时安装和真实输入复核的完整命令位于实施计划，避免本文复制容易漂移的构建
 步骤。
@@ -222,21 +229,30 @@ QT_QPA_PLATFORM=offscreen PYTHONPATH=src \
 
 这些候选都不能混入当前 TaskBuilder 清理提交。
 
-## 11. 本文档冻结时的新鲜验证
+## 11. 减重完成后的新鲜验证
 
-2026-08-13 在生产代码基线未变的前提下完成以下只读/测试验证：
+2026-08-13 在当前 `main` 工作树完成以下门禁：
 
 | 门禁 | 结果 |
 |---|---|
-| 本文、README、AGENTS、架构、设计和实施计划的本地 Markdown 链接 | `62 checked, 0 broken` |
-| `docs/architecture.md` 文件职责覆盖 | `198/198` 个生产 Python 文件 |
-| repository docs + import boundary | `21 passed in 1.46s` |
-| TaskBuilder/asset/compiler/Desktop workspace 聚焦回归 | `126 passed in 1.16s` |
-| 完整 deterministic/Qt-offscreen 回归 | `1220 passed, 13 skipped in 47.57s` |
+| 原 extractor 场景集合 | 拆分前后 45 个规范化 scenario ID 完全相等，全部通过 |
+| repository docs + import boundary | `22 passed in 1.47s` |
+| 最终 TaskBuilder/asset/compiler/Desktop 聚焦回归 | `148 passed in 2.27s` |
+| 完整 deterministic/Qt-offscreen 回归 | `1221 passed, 14 skipped in 46.92s` |
 | `compileall src tests` | exit 0 |
+| 真实 porousBlockage ingress/extractor/validation | `1 passed in 0.44s`；唯一 blocking tuple 为 `TASK_UNIT_AMBIGUOUS` / `geometry.length_unit` |
+| sdist -> wheel 内容一致性 | `2 passed in 0.09s` |
+| clean-wheel 导入 | 从 `/tmp` 成功导入公开 `extract_task_draft` 和五个新职责模块；所有 `__file__` 均位于临时安装目录 |
 | `git diff --check` | exit 0 |
-| 真实 porousBlockage TaskDraft 再验证 | 唯一 blocking issue 仍是 `geometry.length_unit` 的 `TASK_UNIT_AMBIGUOUS` |
 
-13 个 skip 是仓库既有的 opt-in 外部环境/真实模型/真实 OpenFOAM/发行物门禁，不应记为通过，
-也不是本次纯文档变更引入的失败。本次没有重建发行物、没有运行新 CFD、没有执行第二台机器或
-真实 GUI 门禁；这些动作属于实施计划最终阶段或仍为 `NOT_RUN` 的产品资格。
+发行物摘要：
+
+- `foampilot-0.2.0.tar.gz`：749194 bytes，SHA256
+  `eff5059de27b50892aeabcf23c91e5373800b9d196c0dd7ab23782748093c67d`；
+- `foampilot-0.2.0-py3-none-any.whl`：716027 bytes，SHA256
+  `dcee72dce63e18c380ec5a69fa2427b513eb064d4cf682c9e9a113226e99914d`。
+
+14 个 skip 中，13 个是仓库既有的 opt-in 外部环境、真实模型、真实 OpenFOAM、发行物或 GUI
+门禁；新增的 1 个是未设置 `FOAMPILOT_REAL_POLYMESH_CASE_ROOT` 时跳过真实资产门禁。该门禁
+随后已用已知本地案例显式运行并通过。本轮没有运行新的 CFD solve、第二台机器 qualification
+或真实 GUI 门禁，也没有升级版本、打 tag 或 push。

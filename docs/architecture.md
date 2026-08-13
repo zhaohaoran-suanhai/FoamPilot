@@ -1,6 +1,6 @@
 # FoamPilot 现行架构与程序职责规范
 
-状态：**现行架构基线，已冻结用于代码与测试减重**
+状态：**现行架构基线；TaskBuilder 等价减重已按本基线落地**
 
 日期：2026-08-13
 
@@ -526,8 +526,13 @@ registry、runner 或 store；不得 import Desktop/CLI 解决领域问题。
 | `taskbuilder/__init__.py` | NL request 编译公开 API | import | context/extract/validate/compile contracts | 内部拆分模块不承诺稳定 API |
 | `taskbuilder/models.py` | draft/fact/question/review/compilation 合同 | typed payload | TaskDraft 等 | 无模型调用/I/O |
 | `taskbuilder/context.py` | 模型前确定性 ingress facts | target、AssetBundle、topology | TaskIngressContext/agent payload | 冻结 Foundation 10、限制大小、不含 raw mesh |
-| `taskbuilder/extraction.py` | 模型提取、权威协调和 Draft 组装的现行集中实现 | request、assets、context、gateway | TaskDraft | 不执行 OpenFOAM；减重后应成为薄编排入口 |
-| `taskbuilder/projection.py` | validator/compiler 共用 authority 投影 | TaskDraft facts | compilable map/effective geometry | 不独立重判来源 |
+| `taskbuilder/extraction_protocol.py` | 提取模型的 transport schema、事实路径词表和 system prompt | model response payload | `_ExtractedTaskDraft` schema/prompt | 不协调来源、不读取资产、不调用 gateway |
+| `taskbuilder/authority.py` | 提取事实去重、证据绑定和来源降权 | extracted facts、request text | authority-reconciled `TaskFact` | 不接触 gateway、资产 I/O 或执行层 |
+| `taskbuilder/provided_mesh.py` | 已验证 polyMesh topology 到 geometry/mesh 权威的协调 | facts/questions、assets、ingress topology、request | reconciled facts/questions | 不检查、读取或复制文件 |
+| `taskbuilder/public_geometry.py` | 已验证 STL/OBJ/GEO metadata 到 geometry 权威的协调 | facts/questions、assets、ingress bundles、request | reconciled facts/questions | 不检查文件内容、不调用模型 |
+| `taskbuilder/questions.py` | 输入问题白名单和最终确定性重建 | facts/questions/assets | canonical input questions | 不创建 DraftReview、不拥有来源规则 |
+| `taskbuilder/extraction.py` | 唯一模型调用和提取阶段串行编排、Draft 组装 | request、assets、context、gateway | TaskDraft | 不复制协调规则，不执行 OpenFOAM |
+| `taskbuilder/projection.py` | validator/compiler/questions 共用 authority 投影 | TaskDraft 或 facts iterable | compilable map/effective geometry | 不独立重判来源 |
 | `taskbuilder/validation.py` | 输入权威的确定性 DraftReview | TaskDraft | DraftReview | 不阻断设计拥有的 solver/物性/时间候选 |
 | `taskbuilder/compiler.py` | confirmed review 到唯一 TaskSpec v3 | DraftReview | TaskCompilation/TaskSpec | 排除未确认模型事实；不 author |
 | `taskbuilder/messages_zh.py` | 稳定 TaskBuilder code 中文恢复文案 | code | message/recovery | 不改变 code/判定 |

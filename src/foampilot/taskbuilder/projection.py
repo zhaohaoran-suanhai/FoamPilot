@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 
 from .models import FactSource, TaskDraft, TaskFact
 
@@ -14,14 +14,22 @@ _COMPILABLE_SOURCES = {
 }
 
 
-def compilable_fact_map(draft: TaskDraft) -> dict[str, TaskFact]:
-    """Return only facts backed by an authority outside the model."""
+def compilable_fact_map_from_facts(
+    facts: Iterable[TaskFact],
+) -> dict[str, TaskFact]:
+    """Return facts backed by an authority outside the model."""
 
     return {
         item.path: item
-        for item in draft.facts
+        for item in facts
         if item.confirmed and item.source in _COMPILABLE_SOURCES
     }
+
+
+def compilable_fact_map(draft: TaskDraft) -> dict[str, TaskFact]:
+    """Return only compilable facts from a complete draft."""
+
+    return compilable_fact_map_from_facts(draft.facts)
 
 
 def effective_geometry_value(
@@ -48,4 +56,8 @@ def effective_geometry_value(
     return geometry
 
 
-__all__ = ["compilable_fact_map", "effective_geometry_value"]
+__all__ = [
+    "compilable_fact_map",
+    "compilable_fact_map_from_facts",
+    "effective_geometry_value",
+]

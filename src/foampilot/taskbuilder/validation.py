@@ -10,16 +10,7 @@ from foampilot.tasks import GeometryInput, MeshIntent
 from .messages_zh import taskbuilder_message_zh
 from .models import DraftIssue, DraftReview, TaskDraft
 from .projection import compilable_fact_map, effective_geometry_value
-
-
-_INPUT_QUESTION_PATHS = {
-    "geometry",
-    "geometry.dimensionality",
-    "geometry.length_unit",
-    "geometry.patch_roles",
-    "geometry.region_roles",
-    "mesh",
-}
+from .questions import INPUT_QUESTION_PATHS
 
 
 def _issue(
@@ -120,7 +111,7 @@ def validate_task_draft(
                 break
 
     for question in draft.unresolved_questions:
-        if question.path not in _INPUT_QUESTION_PATHS:
+        if question.path not in INPUT_QUESTION_PATHS:
             continue
         if question.path == "geometry.length_unit" and not geometry.get(
             "length_unit"
