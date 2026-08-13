@@ -1,0 +1,10 @@
+Time = 0.5
+Courant Number mean: 0.01 max: 0.05
+smoothSolver:  Solving for Ux, Initial residual = 0.02, Final residual = 0.001, No Iterations 2
+GAMG:  Solving for p, Initial residual = 0.01, Final residual = 0.0001, No Iterations 2
+time step continuity errors : sum local = 1e-07, global = -2e-08, cumulative = 3e-07
+Time = 1
+smoothSolver:  Solving for Ux, Initial residual = 0.002, Final residual = 0.0001, No Iterations 1
+GAMG:  Solving for p, Initial residual = 0.001, Final residual = 0.00001, No Iterations 1
+time step continuity errors : sum local = 1e-08, global = -2e-09, cumulative = 4e-07
+End

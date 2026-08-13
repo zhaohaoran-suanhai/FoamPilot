@@ -7,6 +7,13 @@ FoamPilot 的重要变更记录在此文件中。版本号遵循 Semantic Versio
 
 ### Added
 
+- 增加 contract-first 求解链：provided polyMesh 权威事实、分阶段 intent/design/authoring、
+  求解前 `AcceptancePlan`/`ObservationPlan`、单一 `RunFacts` 证据源以及确定性的
+  `DerivedMetrics`/`ResultReport`。
+- 增加 Foundation v10 流量、运动压差和区域平均量的系统拥有采集字典与 typed post-process
+  命令；增加 `foampilot results` 及 Desktop 结果/验收视图。
+- 增加跨 provided/generated mesh、region、稳态/瞬态、可压缩、传热、多相、failure/repair、
+  cancellation/resume 的当前-schema replay matrix。
 - 增加统一核心活动事件、模型/OpenFOAM 心跳、日志增长和增量残差事件。
 - 增加工程内持久化本机 job、detached worker、进程身份校验、心跳、取消请求和 Desktop 重连。
 - 增加确定性 job reconcile、身份安全的孤儿进程终止、`INTERRUPTED` 中立固化，以及
@@ -16,6 +23,13 @@ FoamPilot 的重要变更记录在此文件中。版本号遵循 Semantic Versio
 
 ### Changed
 
+- 新运行不再生成 `public-validation.json`；原生日志只由 evidence 层解析一次，观测值与显式
+  条件分别由 post-processing 和 acceptance 层处理。历史 public-validation 产物保持只读兼容。
+- 模型返回的 acceptance 阈值只有与 TaskSpec 中同一条显式声明及数值匹配时才保留用户权威；
+  其他阈值一律降级为未确认建议，不得影响 verdict。观测时间范围、验收 all/range 语义、
+  多区域绑定、solver/field 量纲以及 signed/magnitude reduction 均改为显式契约。
+- force/heat-flux 目前只保留类型化指标接口；由于通用采集所需的密度、相、壁面和物理语义尚未
+  完整建模，ObservationPlanner 会明确返回 `UNAVAILABLE`，而不是生成不完整字典。
 - Desktop 长任务不再由窗口进程持有；关闭窗口后继续运行，重新打开工程可恢复观察并显式取消。
 - 活跃 run 改为增量读取 workflow/log，节流文件扫描、缓存 manifest 验证，并在后台线程构建
   projection。
@@ -25,6 +39,13 @@ FoamPilot 的重要变更记录在此文件中。版本号遵循 Semantic Versio
   OpenFOAM executable identity 与 bubblewrap identity 纳入兼容性指纹。
 - job 状态持久化改为控制面关键写入；Desktop 孤儿终止、终态轮询和无 partial run 恢复动作按
   最终 reconcile 证据收紧。
+
+### Verification boundary
+
+- 本开发工作站已完成 Foundation OpenFOAM 10 的 generated mesh 与 provided polyMesh 实机门禁，
+  后者验证了流量、运动压差、cellZone 平均速度、残差和连续性证据。
+- 第二台干净 Ubuntu + Foundation v10 的跨机安装、自然语言求解与 Desktop 实机门禁仍为
+  `NOT_RUN`；公开/私有 evaluator、Knowledge 和 Skills 的物理分包仍按既定决定暂缓。
 
 ## [0.2.0] - 2026-08-11
 

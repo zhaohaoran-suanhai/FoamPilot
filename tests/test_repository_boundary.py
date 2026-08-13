@@ -15,6 +15,7 @@ SUPPORTED_COMMANDS = (
     "inspect",
     "report",
     "progress",
+    "results",
     "questions",
     "confirm",
     "preflight",

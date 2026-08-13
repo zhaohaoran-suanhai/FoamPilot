@@ -5,7 +5,7 @@ fork: foundation
 version: "10"
 knowledge_type: validation_pattern
 solvers: []
-models: [public-validation]
+models: [evidence-assessment]
 tags: [completion, conservation, physics, verdict]
 applicability:
   conditions:
@@ -15,9 +15,9 @@ applicability:
     - 没有 solver execution 或物理输出需要审查时不适用。
 source:
   kind: reviewed_engineering
-  title: FoamPilot native public validation
-  locator: src/foampilot/validation/native.py
-  sha256: 2868d54ee408c89dc13c1ba65ea7de3d79dd892e9e96a563dfb74ea70d2b66b8
+  title: FoamPilot native run assessment
+  locator: src/foampilot/evidence/assessment.py
+  sha256: 5f17b349be394b6066c71ea8641c3182a34cf807c7fd178489a04c2b94d9085c
   license_spdx: MIT
 leakage:
   visibility: public
@@ -27,7 +27,7 @@ content:
   summary: 零 return code 只是一个 gate；completion、final time、有限值、守恒、问题专用物理与 artifact integrity 构成相互独立的证据层。
   rules:
     - 要求执行 return code、timeout、fatal-marker、normal-End 与 final-time 检查。
-    - 独立于 shell success 评估 conservation 与 public physics。
+    - 独立于 shell success 记录 conservation；显式物理验收由下游 ResultReport 评估。
     - 私有 golden value 与 validator 必须位于 Agent-visible context 之外。
   failure_signals:
     - The verdict is PASS solely because the shell returned zero.

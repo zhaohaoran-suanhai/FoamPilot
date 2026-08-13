@@ -18,6 +18,8 @@ from foampilot.evidence import RunFacts
 from foampilot.observations import (
     ObservationPlan,
     ObservationPlanner,
+    audit_observation_field_dimensions,
+    collect_foundation10_observation_artifacts,
     first_party_observation_registry,
 )
 from foampilot.postprocessing import (
@@ -236,16 +238,14 @@ class ContractStagePipeline:
 
         def postprocess(_: WorkflowContext) -> StageOutcome:
             try:
-                artifacts = {
-                    item.observation_id: path
-                    for item in contracts.observations.items
-                    if (
-                        path := case_root
-                        / ".foampilot"
-                        / "observations"
-                        / f"{item.observation_id}.json"
-                    ).is_file()
-                }
+                dimension_failures = audit_observation_field_dimensions(
+                    case_root,
+                    contracts.observations,
+                )
+                artifacts = collect_foundation10_observation_artifacts(
+                    case_root,
+                    contracts.observations,
+                )
                 metrics = PostProcessingEngine(
                     calculators=foundation10_calculators()
                 ).derive(
@@ -253,6 +253,7 @@ class ContractStagePipeline:
                     run_facts,
                     case_root,
                     artifacts,
+                    preflight_errors=dimension_failures,
                 )
                 _write_json(attempt_root / "derived-metrics.json", metrics)
                 _write_json(self.run_dir / "derived-metrics.json", metrics)

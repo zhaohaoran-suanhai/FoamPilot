@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from foampilot.acceptance import AcceptanceRequest, AcceptanceScope
 from foampilot.agent import NativeAgent
 from foampilot.artifacts import ArtifactStore
 from foampilot.manifests import (
@@ -15,13 +16,92 @@ from foampilot.manifests import (
     CaseRegion,
 )
 from foampilot.plans import ExecutionPlan, GeneratedFile, NativeCommand
+from foampilot.observations import ObservationRequest, ObservationScope, TimeSelection
 from foampilot.runtime import resolve_runtime_config, run_preflight
+from foampilot.simulation import FactEvidence, SimulationIntent
 from foampilot.tasks import load_task_spec
 from tests.test_native_case_generation import RecordingModel
 
 
 ROOT = Path(__file__).resolve().parents[1]
 TASK = ROOT / "examples/tasks/provided-poly-mesh.yaml"
+
+
+def _observation(
+    observation_id: str,
+    kind: str,
+    *,
+    scope: str,
+    names: tuple[str, ...] = (),
+    time: str = "final",
+) -> ObservationRequest:
+    dimensions = {
+        "residual": "1",
+        "continuity": "1",
+        "flow_rate": "0 3 -1 0 0 0 0",
+        "pressure_difference": "0 2 -2 0 0 0 0",
+        "region_average": "0 1 -1 0 0 0 0",
+    }
+    return ObservationRequest(
+        observation_id=observation_id,
+        kind=kind,
+        quantity=kind,
+        dimension=dimensions[kind],
+        scope=ObservationScope(kind=scope, names=names),
+        time_selection=TimeSelection(kind=time),
+        provenance=(FactEvidence(kind="user_quote", detail=observation_id),),
+    )
+
+
+class ObservedProvidedMeshModel(RecordingModel):
+    def generate_structured(self, request, schema, **kwargs):
+        result = super().generate_structured(request, schema, **kwargs)
+        if schema is not SimulationIntent:
+            return result
+        requests = (
+            _observation("residual-history", "residual", scope="global", time="history"),
+            _observation("continuity-history", "continuity", scope="global", time="history"),
+            _observation("inlet-flow", "flow_rate", scope="patch", names=("inlet",)),
+            _observation("outlet-flow", "flow_rate", scope="patch", names=("outlet",)),
+            _observation(
+                "pressure-drop",
+                "pressure_difference",
+                scope="patch_pair",
+                names=("inlet", "outlet"),
+            ),
+            _observation(
+                "zone-average-velocity",
+                "region_average",
+                scope="cell_zone",
+                names=("zoneA",),
+            ).model_copy(update={"quantity": "velocity_magnitude"}),
+        )
+        acceptance = AcceptanceRequest(
+            condition_id="continuity-limit",
+            observation=requests[1],
+            operator="less_equal",
+            limit=1.0e-5,
+            unit="1",
+            scope=AcceptanceScope(time="latest"),
+            source="user_text",
+            confirmed=True,
+            provenance=(
+                FactEvidence(
+                    kind="user_quote",
+                    detail="absolute cumulative continuity <= 1e-5",
+                ),
+            ),
+        )
+        return result.model_copy(
+            update={
+                "value": result.value.model_copy(
+                    update={
+                        "observation_requests": requests,
+                        "acceptance_requests": (acceptance,),
+                    }
+                )
+            }
+        )
 
 
 def _provided_plan() -> ExecutionPlan:
@@ -221,7 +301,7 @@ def test_real_provided_mesh_vertical_gate(tmp_path: Path) -> None:
             f"{preflight.failure_code or preflight.failure_message}"
         )
 
-    model = RecordingModel([_provided_plan()])
+    model = ObservedProvidedMeshModel([_provided_plan()])
     outcome = NativeAgent(
         gateway=model,
         runtime_config=runtime,
@@ -254,4 +334,31 @@ def test_real_provided_mesh_vertical_gate(tmp_path: Path) -> None:
     case = outcome.run_dir / "attempt-01/case"
     assert (case / "constant/polyMesh/cellZones").is_file()
     assert (case / "0.04/U").is_file()
+    run_facts = json.loads(
+        (outcome.run_dir / "attempt-01/run-facts.json").read_text(encoding="utf-8")
+    )
+    assert run_facts["mesh_checks"][0]["mesh_ok"] is True
+    assert run_facts["solver_progress"][-1]["completed_normally"] is True
+    assert run_facts["residuals"]
+    assert run_facts["continuity"]
+    metrics = json.loads(
+        (outcome.run_dir / "derived-metrics.json").read_text(encoding="utf-8")
+    )
+    by_id = {item["observation_id"]: item for item in metrics["series"]}
+    for observation_id in (
+        "inlet-flow",
+        "outlet-flow",
+        "pressure-drop",
+        "zone-average-velocity",
+    ):
+        assert by_id[observation_id]["status"] == "AVAILABLE", by_id[observation_id]
+        assert by_id[observation_id]["samples"]
+    report = json.loads(
+        (outcome.run_dir / "result-report.json").read_text(encoding="utf-8")
+    )
+    assert report["verdict"] == "PASS"
+    assert [item["condition_id"] for item in report["conditions"]] == [
+        "continuity-limit"
+    ]
+    assert report["conditions"][0]["status"] == "PASS"
     assert ArtifactStore(tmp_path / "runs").verify(outcome.run_dir) == []

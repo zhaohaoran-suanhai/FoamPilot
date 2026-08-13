@@ -103,9 +103,28 @@ def test_one_failed_metric_does_not_erase_other_metrics(tmp_path: Path) -> None:
     assert "missing source" in metrics.require("missing").detail
 
 
+def test_preflight_error_is_isolated_to_one_metric(tmp_path: Path) -> None:
+    engine = PostProcessingEngine(
+        calculators={"continuity": GoodCalculator(), "residual": GoodCalculator()}
+    )
+    plan = ObservationPlan(
+        items=(_item("good"), _item("missing", kind="residual"))
+    )
+
+    metrics = engine.derive(
+        plan,
+        _facts(),
+        tmp_path,
+        preflight_errors={"missing": "OBSERVATION_FIELD_HEADER_MISSING: phi"},
+    )
+
+    assert metrics.require("good").status == "AVAILABLE"
+    assert metrics.require("missing").status == "UNAVAILABLE"
+    assert "HEADER_MISSING" in metrics.require("missing").detail
+
+
 def test_duplicate_calculator_registration_and_nonfinite_values_fail() -> None:
     with pytest.raises(ValueError, match="DUPLICATE"):
         PostProcessingEngine(calculators=[("continuity", GoodCalculator()), ("continuity", GoodCalculator())])
     with pytest.raises(Exception):
         MetricSample(value=float("nan"), unit="1", evidence_refs=("x",))
-

@@ -1,0 +1,94 @@
+schema_version: 1
+source: public_minimal_normalized_evidence
+scenarios:
+  - id: provided_poly_mesh
+    mesh_strategy: provided
+    solver: pisoFoam
+    solver_family: incompressible-laminar
+    regime: transient
+    physics_family: fluid
+    transition: normal
+
+  - id: generated_mesh
+    mesh_strategy: blockMesh
+    solver: icoFoam
+    solver_family: incompressible-laminar
+    regime: transient
+    physics_family: fluid
+    transition: normal
+
+  - id: region_case
+    mesh_strategy: provided
+    solver: chtMultiRegionFoam
+    solver_family: conjugate-heat-transfer
+    regime: transient
+    physics_family: heat_transfer
+    regions: [fluid, solid]
+    transition: normal
+
+  - id: steady_incompressible
+    mesh_strategy: provided
+    solver: simpleFoam
+    solver_family: incompressible-laminar
+    regime: steady
+    physics_family: fluid
+    transition: normal
+
+  - id: transient_incompressible
+    mesh_strategy: provided
+    solver: pisoFoam
+    solver_family: incompressible-laminar
+    regime: transient
+    physics_family: fluid
+    transition: normal
+
+  - id: compressible
+    mesh_strategy: provided
+    solver: rhoPimpleFoam
+    solver_family: compressible
+    regime: transient
+    physics_family: compressible
+    transition: normal
+
+  - id: heat_transfer
+    mesh_strategy: provided
+    solver: buoyantFoam
+    solver_family: heat-transfer
+    regime: transient
+    physics_family: heat_transfer
+    transition: normal
+
+  - id: multiphase
+    mesh_strategy: provided
+    solver: interFoam
+    solver_family: multiphase
+    regime: transient
+    physics_family: multiphase
+    transition: normal
+
+  - id: failure_repair
+    mesh_strategy: provided
+    solver: pisoFoam
+    solver_family: incompressible-laminar
+    regime: transient
+    physics_family: fluid
+    transition: failure_repair
+
+  - id: cancellation_resume
+    mesh_strategy: provided
+    solver: pisoFoam
+    solver_family: incompressible-laminar
+    regime: transient
+    physics_family: fluid
+    transition: cancellation_resume
+
+  - id: unsupported_target
+    mesh_strategy: provided
+    solver: pisoFoam
+    solver_family: incompressible-laminar
+    regime: transient
+    physics_family: fluid
+    transition: normal
+    target_version: "13"
+    supported: false
+    error_code: PLAN_TARGET_UNSUPPORTED

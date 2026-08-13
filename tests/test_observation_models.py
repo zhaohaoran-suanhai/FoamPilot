@@ -58,6 +58,35 @@ def test_observation_plan_rejects_duplicate_ids_and_unsafe_names() -> None:
         ObservationPlan(items=(_item(), _item()))
     with pytest.raises(ValidationError):
         ObservationScope(kind="patch", names=("../outlet",))
+    with pytest.raises(ValidationError):
+        ObservationScope(
+            kind="patch",
+            names=('inlet; #include "evil"',),
+        )
+    with pytest.raises(ValidationError):
+        ObservationScope(kind="cell_zone", names=("zone } functions { evil",))
+
+
+def test_region_binding_is_explicit_and_safe() -> None:
+    scope = ObservationScope(kind="region", names=("solid",), region="solid")
+    assert scope.region == "solid"
+
+    with pytest.raises(ValidationError):
+        ObservationScope(kind="region", names=("solid",))
+    patch = ObservationScope(
+        kind="patch",
+        names=("inlet",),
+        region="fluid",
+    )
+    assert patch.region == "fluid"
+    zone = ObservationScope(
+        kind="cell_zone",
+        names=("heater",),
+        region="solid",
+    )
+    assert zone.region == "solid"
+    with pytest.raises(ValidationError):
+        ObservationScope(kind="region", names=("solid",), region="../solid")
 
 
 def test_observation_requires_explicit_scope_time_dimension_and_provenance() -> None:

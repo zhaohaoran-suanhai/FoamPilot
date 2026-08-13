@@ -644,11 +644,14 @@ def test_non_empty_acceptance_contract_is_evaluated_from_run_facts(
         ]
     )
 
+    task = _task().model_copy(
+        update={"acceptance_intent": ["continuity <= 1e-5"]}
+    )
     outcome = _agent(
         tmp_path=tmp_path,
         model=model,
         runner=runner,
-    ).solve(_task())
+    ).solve(task)
 
     result = json.loads(
         (outcome.run_dir / "result-report.json").read_text(
@@ -688,11 +691,14 @@ def test_failed_acceptance_is_separate_from_successful_execution(
         ]
     )
 
+    task = _task().model_copy(
+        update={"acceptance_intent": ["continuity <= 1e-5"]}
+    )
     outcome = _agent(
         tmp_path=tmp_path,
         model=model,
         runner=runner,
-    ).solve(_task())
+    ).solve(task)
 
     assessment = json.loads(
         (outcome.run_dir / "attempt-01/run-assessment.json").read_text(

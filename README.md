@@ -26,10 +26,11 @@ Foundation 版本尚未完成 qualification。模型编写算例具有非确定�
 -> READY_TO_AUTHOR 后冻结 CaseDesign
 -> Case Author 一次编写不含命令的完整 CaseBundle
 -> CaseVerifier 检查设计一致性
+-> AcceptancePlan 与 ObservationPlan 在编写前冻结
 -> PlanCompiler 确定性生成 ExecutionPlan v4
 -> typed policy 与语义检查
 -> bubblewrap 或 audited host 原生 OpenFOAM 执行
--> evaluator 负责的检查
+-> RunFacts -> DerivedMetrics -> ResultReport 单一证据链
 -> 至多一次由证据限定范围的 repair
 -> 可重试模型后端中断后的严格 child continuation
 -> 不可变 artifact 与 SHA256 manifest
@@ -118,7 +119,7 @@ foampilot solve task.yaml \
 
 可选的 PySide6 工作台可以从自然语言 TaskDraft 或完整 TaskSpec 启动规范求解，
 并在同一界面实时显示 workflow、模型实际收到的公开 Knowledge/Skill 引用、
-OpenFOAM 残差、case、日志、公开验证和 artifact manifest：
+OpenFOAM 残差、case、日志、观测结果、显式验收和 artifact manifest：
 
 ```bash
 python -m pip install -e '.[desktop]'
@@ -226,11 +227,20 @@ foampilot solve \
 ```bash
 foampilot progress /tmp/foampilot-runs/RUN_DIR --json
 foampilot report /tmp/foampilot-runs/RUN_DIR --json
+foampilot results /tmp/foampilot-runs/RUN_DIR --json
 ```
 
 运行中的 CLI 与 Desktop 共享 `WorkflowProjection`。OpenFOAM 原始输出只由 evidence 层一次
 解析为 `RunFacts`，高频残差写入有界 `metrics.jsonl`；终态失败以 `FailureReport` 区分直接
 观察、确认原因和 hypothesis，界面不会把推测显示成已确认根因。
+
+`ObservationPlan` 先复用 RunFacts 和已写出的场，再按需增加系统拥有、allowlist 限定的
+Foundation v10 后处理字典或运行期采集。流量、运动压差和区域平均量已有本机实机采集闭环；
+力和热流目前保留类型化指标接口，但采集器会明确报告 `UNAVAILABLE`，不会宣称已经支持。
+只有含明确 operator、limit、unit 和 scope 且已经确认的条件才能改变 `ResultReport`；普通
+“观察/监测”要求不会被偷偷转换成通过门槛。
+历史指标采用有界投影；超过 1000 个样本会显式显示 `PARTIAL`，不会让截断后的数据冒充完整
+时间范围并产生通过判定。
 
 在不修改 parent 的前提下，续跑可重试的 generation 或 repair 中断：
 
@@ -244,7 +254,7 @@ foampilot resume /tmp/foampilot-runs/PARENT_RUN \
 
 这里的 `resume` 只恢复 summary 明确允许的模型生成/修复请求，不是从任意 OpenFOAM 时间目录
 断点续算。若要从一个 manifest 有效的 parent 完整重新执行 preflight、case generation、
-OpenFOAM 和 public validation，并保留显式 lineage：
+OpenFOAM 和结果评估，并保留显式 lineage：
 
 ```bash
 foampilot rerun /tmp/foampilot-runs/PARENT_RUN \
@@ -270,7 +280,7 @@ foampilot solve TASK.yaml \
 
 计划复用要求规范 TaskSpec、公开资产字节、OpenFOAM 目标、solver 和资源预算严格兼容；
 拒绝时返回 `PLAN_REUSE_REJECTED`，不会暗中退回模型生成。网格命中只跳过网格生成命令，
-当前 run 仍重新执行 `checkMesh`、目标 solver 和公开验证。未提供这两个参数时保持冷路径，
+当前 run 仍重新执行 `checkMesh`、目标 solver 和结果评估。未提供这两个参数时保持冷路径，
 qualification 也不启用复用。
 
 默认后端通过公开 `codex exec` 调用已登录的 Codex CLI；FoamPilot 不读取认证文件。
@@ -390,7 +400,7 @@ foampilot improve compare BASELINE.json CURRENT.json \
 
 ## 失败分层
 
-FoamPilot 会报告：
+当前规范 solve 会报告：
 
 - `REQUEST_INCOMPLETE`;
 - `ROUTING_UNRESOLVED`;
@@ -400,22 +410,40 @@ FoamPilot 会报告：
 - `PLAN_INVALID`;
 - `STATIC_INSPECTION_FAILED`;
 - `SOLVER_FAILED`;
-- `PUBLIC_VALIDATION_FAILED`;
-- `PUBLIC_VALIDATION_PASS`.
+- `ACCEPTANCE_FAILED`;
+- `ACCEPTANCE_INCOMPLETE`;
+- `RUN_COMPLETED`.
 
 RunSummary v2 还报告 workflow state（`COMPLETED`、`FAILED` 或 `DEFERRED`）、
 可选 native status、primary failure 与 terminal blocker。因此，repair 阶段模型后端
 中断时可以保留 `SOLVER_FAILED`，并独立报告可重试 backend blocker。
 
-`PUBLIC_VALIDATION_PASS` 只覆盖公开任务声明的检查。独立 qualification 层仍可能根据
-物理指标拒绝已完成求解，报告必须保留这一区别。
+`RUN_COMPLETED` 表示原生执行和规范证据链完成；只有存在显式条件时，`ResultReport.PASS`
+才表示这些条件通过。两者都不能替代独立 qualification。历史只读 run 仍可能显示
+`PUBLIC_VALIDATION_PASS`/`PUBLIC_VALIDATION_FAILED`，新运行不再生成这组状态。
+
+截至 2026-08-13，本开发工作站已通过 Foundation OpenFOAM 10 的 generated mesh 和 provided
+polyMesh 本机实机闭环，包括 `checkMesh`、solver 正常结束、残差、连续性、patch 流量、运动
+压差及 cellZone 平均速度。尚无第二台干净 Ubuntu + Foundation v10 机器，所以跨机安装、
+自然语言求解与 Desktop 实机门禁仍为 `NOT_RUN`，不能从本机结果外推。
 
 ## 开发验证
 
 ```bash
-PYTHONPATH=src python -B -m pytest -q -p no:cacheprovider tests
-python -m pip wheel . --no-deps --wheel-dir dist
+QT_QPA_PLATFORM=offscreen PYTHONPATH=src \
+  python -B -m pytest -q -p no:cacheprovider tests
+python -c 'from setuptools import build_meta; print(build_meta.build_sdist("dist"))'
+python -m pip wheel dist/foampilot-*.tar.gz \
+  --no-deps --no-build-isolation --wheel-dir /tmp/foampilot-wheel
+cp /tmp/foampilot-wheel/foampilot-*.whl dist/
+FOAMPILOT_VERIFY_DISTRIBUTION=1 \
+  PYTHONPATH=src python -B -m pytest -q -p no:cacheprovider \
+  tests/test_distribution_contents.py
 ```
+
+先从 sdist 再构建 wheel 是发布门禁的一部分：它避免历史 `build/lib` 把源码中已经删除的模块
+重新带入 wheel。显式设置 `FOAMPILOT_VERIFY_DISTRIBUTION=1` 后，制品缺失、多份或源码过期
+都会失败；`tests/test_distribution_contents.py` 会检查规范模块、源码一致性和机器本地路径边界。
 
 真实 OpenFOAM 测试需要宿主机 runtime，并有意与确定性单元测试分离。
 

@@ -31,6 +31,7 @@ acceptance_intent:
 - provided mesh passes the system-owned checkMesh probe
 - solver reports normal End
 - final solver time is at least 0.04 s
+- absolute cumulative continuity <= 1e-5
 explicit_facts:
 - field_path: geometry.input
   value:

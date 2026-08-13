@@ -18,7 +18,7 @@ protected_paths: []
 request_text: Starting from an empty case directory, solve a two-dimensional transient
   laminar incompressible flow in a rectangular enclosure 0.10 m wide and 0.06 m high,
   extruded 0.001 m through the suppressed direction. Use a uniform 40 by 24 by 1 hexahedral
-  mesh. The left vertical wall moves upward at (0 0.05 0) m/s; the right, top, and
+  mesh and the Foundation OpenFOAM 10 icoFoam solver. The left vertical wall moves upward at (0 0.05 0) m/s; the right, top, and
   bottom walls are stationary no-slip walls; the two thin front/back planes are empty.
   Initially velocity and kinematic pressure are zero. The kinematic viscosity is 1.0e-4
   m2/s. Advance from 0 to 1.0 s with a fixed 0.002 s time step and write every 0.2
@@ -33,6 +33,14 @@ acceptance_intent:
 - required fields remain finite
 - absolute cumulative continuity error is no greater than 1.0e-5
 explicit_facts:
+- field_path: numerics.delta_t
+  value: 0.002
+  source: user_text
+  impact: high
+  evidence:
+  - kind: user_quote
+    detail: fixed 0.002 s time step
+  confirmed: true
 - field_path: acceptance.legacy_checks.mesh-quality
   value:
     name: mesh-quality

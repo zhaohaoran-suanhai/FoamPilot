@@ -84,6 +84,28 @@ def test_unconfirmed_inferred_threshold_is_not_a_gate() -> None:
     assert compiled.uncompiled[0].code == "ACCEPTANCE_CONFIRMATION_REQUIRED"
 
 
+def test_all_scope_requires_a_history_observation() -> None:
+    request = AcceptanceRequest(
+        condition_id="all-time-limit",
+        observation=_observation(),
+        operator="less_equal",
+        limit=0.1,
+        unit="1",
+        scope=AcceptanceScope(time="all"),
+        source="user_text",
+        confirmed=True,
+        provenance=(FactEvidence(kind="user_quote", detail="all time <= 0.1"),),
+    )
+    compiled = AcceptanceCompiler().compile(
+        observation_requests=(), condition_requests=(request,)
+    )
+    assert compiled.conditions == ()
+    assert (
+        compiled.uncompiled[0].code
+        == "ACCEPTANCE_OBSERVATION_TIME_SCOPE_INSUFFICIENT"
+    )
+
+
 def test_closed_operators_reject_arbitrary_expression() -> None:
     payload = {
         "condition_id": "unsafe",
@@ -113,4 +135,3 @@ def test_between_and_relative_error_require_complete_parameters() -> None:
     }
     with pytest.raises(ValidationError):
         AcceptanceRequest.model_validate(base)
-

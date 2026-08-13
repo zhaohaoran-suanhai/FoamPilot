@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from foampilot.preprocessing import InputMeshFacts
 from foampilot.simulation import SimulationIntent
+from foampilot.routing.registry import capability_for_solver
 
 from .models import EvidenceStrategy, ObservationItem, ObservationPlan, ObservationRequest
 from .registry import ObservationExtensionRegistry
@@ -16,13 +17,64 @@ class ObservationPlanningError(ValueError):
     pass
 
 
-def _validate_scope(request: ObservationRequest, facts: tuple[InputMeshFacts, ...]) -> None:
+def _design_scope_names(design: object, prefix: str) -> set[str]:
+    proposal = getattr(design, "proposal", None)
+    values = getattr(proposal, "iter_values", lambda: ())()
+    names = set()
+    for fact in values:
+        path = str(getattr(fact, "field_path", ""))
+        parts = path.split(".")
+        if len(parts) >= 3 and parts[0] == prefix:
+            names.add(parts[1])
+    return names
+
+
+def _validate_scope(
+    request: ObservationRequest,
+    facts: tuple[InputMeshFacts, ...],
+    design: object,
+) -> None:
+    local_scope = request.scope.kind in {
+        "patch", "patch_pair", "cell_zone", "region"
+    }
+    if local_scope and request.scope.region is None and len(facts) > 1:
+        raise ObservationPlanningError(
+            "MESH_REGION_REQUIRED: local scope is ambiguous across mesh regions"
+        )
+    relevant = facts
+    if request.scope.region is not None:
+        relevant = tuple(
+            mesh for mesh in facts if mesh.region == request.scope.region
+        )
+        if not relevant:
+            raise ObservationPlanningError(
+                "MESH_REGION_UNKNOWN: " + request.scope.region
+            )
+    if local_scope and not facts:
+        known = {
+            "patch": _design_scope_names(design, "boundaries"),
+            "patch_pair": _design_scope_names(design, "boundaries"),
+            "cell_zone": _design_scope_names(design, "cell_zones"),
+            "region": _design_scope_names(design, "regions"),
+        }[request.scope.kind]
+        missing = tuple(name for name in request.scope.names if name not in known)
+        if missing:
+            raise ObservationPlanningError(
+                "MESH_SCOPE_UNKNOWN: " + ", ".join(missing)
+            )
+        if request.scope.region is not None:
+            regions = _design_scope_names(design, "regions")
+            if request.scope.region not in regions:
+                raise ObservationPlanningError(
+                    "MESH_REGION_UNKNOWN: " + request.scope.region
+                )
+        return
     if request.scope.kind in {"patch", "patch_pair"}:
-        known = {patch.name for mesh in facts for patch in mesh.patches}
+        known = {patch.name for mesh in relevant for patch in mesh.patches}
     elif request.scope.kind == "cell_zone":
-        known = {zone.name for mesh in facts for zone in mesh.cell_zones}
+        known = {zone.name for mesh in relevant for zone in mesh.cell_zones}
     elif request.scope.kind == "region":
-        known = {mesh.region for mesh in facts if mesh.region is not None}
+        known = {mesh.region for mesh in relevant if mesh.region is not None}
     else:
         return
     missing = tuple(name for name in request.scope.names if name not in known)
@@ -32,11 +84,60 @@ def _validate_scope(request: ObservationRequest, facts: tuple[InputMeshFacts, ..
         )
 
 
-def _strategy(request: ObservationRequest, registry: ObservationExtensionRegistry) -> EvidenceStrategy:
+def _solver_compressibility(design: object) -> str | None:
+    if design is None:
+        return None
+    proposal = getattr(design, "proposal", None)
+    solver_fact = getattr(proposal, "solver_family", None)
+    solver = getattr(solver_fact, "value", None)
+    capability = capability_for_solver(str(solver)) if solver is not None else None
+    return capability.compressibility if capability is not None else "unknown"
+
+
+def _strategy(
+    request: ObservationRequest,
+    registry: ObservationExtensionRegistry,
+    design: object,
+) -> EvidenceStrategy:
     descriptor = registry.resolve(request.kind)
     if request.scope.kind not in descriptor.supported_scope_kinds:
         raise ObservationPlanningError(
             f"OBSERVATION_SCOPE_UNSUPPORTED: {request.kind}:{request.scope.kind}"
+        )
+    if descriptor.strategies == ("unavailable",):
+        return EvidenceStrategy(
+            kind="unavailable",
+            reason=(
+                f"Foundation OpenFOAM 10 collector for {request.kind} "
+                "is not implemented"
+            ),
+        )
+    contract = descriptor.resolve_quantity_contract(
+        request.quantity,
+        request.dimension,
+    )
+    if descriptor.quantity_contracts and contract is None:
+        return EvidenceStrategy(
+            kind="unavailable",
+            reason=(
+                "no registered Foundation OpenFOAM 10 quantity/dimension "
+                f"contract for {request.quantity}:{request.dimension}"
+            ),
+        )
+    compressibility = _solver_compressibility(design)
+    if (
+        contract is not None
+        and compressibility is not None
+        and contract.solver_compressibility != "any"
+        and contract.solver_compressibility != compressibility
+    ):
+        return EvidenceStrategy(
+            kind="unavailable",
+            reason=(
+                "quantity/dimension contract is incompatible with the frozen "
+                f"solver/field semantics: {request.quantity}:{request.dimension} "
+                f"requires {contract.solver_compressibility}, got {compressibility}"
+            ),
         )
     if "run_facts" in descriptor.strategies:
         return EvidenceStrategy(kind="run_facts")
@@ -80,7 +181,6 @@ class ObservationPlanner:
         registry: ObservationExtensionRegistry,
         acceptance_plan: object | None = None,
     ) -> ObservationPlan:
-        del design
         unique: dict[str, ObservationRequest] = {}
         for request in intent.observation_requests:
             previous = unique.get(request.observation_id)
@@ -105,11 +205,11 @@ class ObservationPlanner:
         items = []
         for observation_id in sorted(unique):
             request = unique[observation_id]
-            _validate_scope(request, mesh_facts)
+            _validate_scope(request, mesh_facts, design)
             items.append(
                 ObservationItem(
                     **request.model_dump(mode="python"),
-                    evidence_strategy=_strategy(request, registry),
+                    evidence_strategy=_strategy(request, registry, design),
                     required_for_condition_ids=tuple(
                         sorted(condition_ids.get(observation_id, ()))
                     ),

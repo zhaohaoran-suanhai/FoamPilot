@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from foampilot.observations import EvidenceStrategy, ObservationItem, ObservationPlan, ObservationScope, TimeSelection
+from foampilot.observations import inject_observation_fragments
 from foampilot.simulation import FactEvidence
 from tests.test_plan_compiler import _bundle, _context, _environment, _task
 from foampilot.extensions import CapabilityRegistry
@@ -32,17 +33,28 @@ def test_postprocess_observation_command_is_system_compiled() -> None:
             ]
         }
     )
+    observation_plan = ObservationPlan(items=(item,))
+    bundle, _ = inject_observation_fragments(_bundle(), observation_plan)
     plan = compile_execution_plan(
         design=context.design,
-        bundle=_bundle(),
+        bundle=bundle,
         environment=environment,
         task=_task(),
         registry=CapabilityRegistry.planning_first_party(),
-        observation_plan=ObservationPlan(items=(item,)),
+        observation_plan=observation_plan,
     )
 
     command = plan.commands[-1]
     assert command.stage == "postprocess"
     assert command.executable == "postProcess"
     assert command.mpi_ranks == 1
-    assert command.args == ["-func", "surfaceFieldValue"]
+    assert command.args == [
+        "-dict",
+        "system/foampilot-observation-outlet-flow",
+        "-latestTime",
+    ]
+    assert 1 <= command.timeout_seconds <= _task().resource_budget.max_wall_seconds
+    assert any(
+        item.path == "system/foampilot-observation-outlet-flow"
+        for item in plan.files
+    )

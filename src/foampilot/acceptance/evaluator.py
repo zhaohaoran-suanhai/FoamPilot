@@ -15,20 +15,43 @@ from .models import (
 )
 
 
-def _latest_scalar(series: MetricSeries) -> tuple[float | None, str | None, tuple[str, ...]]:
+def _latest_sample(series: MetricSeries):
     if not series.samples:
-        return None, None, ()
-    sample = series.samples[-1]
-    if not isinstance(sample.value, (int, float)):
-        return None, sample.unit, sample.evidence_refs
-    return float(sample.value), sample.unit, sample.evidence_refs
+        return None
+    timed = [sample for sample in series.samples if sample.time is not None]
+    return max(timed, key=lambda sample: float(sample.time)) if timed else series.samples[-1]
 
 
-def _matches(condition: AcceptanceCondition, value: float) -> bool:
+def _scoped_samples(condition: AcceptanceCondition, series: MetricSeries):
+    samples = list(series.samples)
+    scope = condition.scope
+    if scope.time == "range":
+        assert scope.start is not None and scope.end is not None
+        return [
+            sample
+            for sample in samples
+            if sample.time is not None and scope.start <= sample.time <= scope.end
+        ]
+    if scope.time in {"latest", "final"}:
+        timed = [sample for sample in samples if sample.time is not None]
+        if timed:
+            latest = max(float(sample.time) for sample in timed)
+            return [sample for sample in timed if float(sample.time) == latest]
+        return samples[-1:]
+    return samples
+
+
+def _matches(
+    condition: AcceptanceCondition,
+    value: float | tuple[float, ...],
+) -> bool:
     if condition.operator == "exists":
         return True
     if condition.operator == "finite":
-        return math.isfinite(value)
+        values = value if isinstance(value, tuple) else (value,)
+        return all(math.isfinite(component) for component in values)
+    if isinstance(value, tuple):
+        return False
     if condition.operator == "less_equal":
         assert condition.limit is not None
         return value <= condition.limit
@@ -67,26 +90,32 @@ class AcceptanceEvaluator:
                     )
                 )
                 continue
-            value, unit, refs = _latest_scalar(series)
+            sample = _latest_sample(series)
             observations.append(
                 ObservationResult(
                     observation_id=request.observation_id,
                     status=series.status,
-                    latest_value=value,
-                    unit=unit,
-                    evidence_refs=refs,
+                    latest_value=(sample.value if sample is not None else None),
+                    unit=(sample.unit if sample is not None else None),
+                    evidence_refs=(sample.evidence_refs if sample is not None else ()),
                 )
             )
         results: list[ConditionResult] = []
         missing: list[str] = []
         for condition in plan.conditions:
             series = by_id.get(condition.observation_id)
-            value, unit, refs = (
-                _latest_scalar(series)
-                if series is not None and series.status != "UNAVAILABLE"
-                else (None, None, ())
+            selected = (
+                _scoped_samples(condition, series)
+                if series is not None and series.status == "AVAILABLE"
+                else []
             )
-            if value is None:
+            accepts_vectors = condition.operator in {"exists", "finite"}
+            supported_samples = [
+                sample
+                for sample in selected
+                if accepts_vectors or isinstance(sample.value, (int, float))
+            ]
+            if not selected or len(supported_samples) != len(selected):
                 detail = "required scalar metric is unavailable"
                 missing.append(condition.observation_id)
                 results.append(
@@ -98,30 +127,47 @@ class AcceptanceEvaluator:
                     )
                 )
                 continue
-            if unit != condition.unit:
+            if any(sample.unit != condition.unit for sample in supported_samples):
+                sample = supported_samples[-1]
                 missing.append(condition.observation_id)
                 results.append(
                     ConditionResult(
                         condition_id=condition.condition_id,
                         observation_id=condition.observation_id,
                         status="NOT_EVALUATED",
-                        observed_value=value,
-                        unit=unit,
+                        observed_value=(
+                            float(sample.value)
+                            if isinstance(sample.value, (int, float))
+                            else None
+                        ),
+                        unit=sample.unit,
                         detail=f"unit mismatch: expected {condition.unit}",
-                        evidence_refs=refs,
+                        evidence_refs=sample.evidence_refs,
                     )
                 )
                 continue
-            passed = _matches(condition, value)
+            evaluated = [
+                (sample, _matches(condition, sample.value))
+                for sample in supported_samples
+            ]
+            failed = next(
+                ((sample, passed) for sample, passed in evaluated if not passed),
+                None,
+            )
+            sample, passed = failed or evaluated[-1]
             results.append(
                 ConditionResult(
                     condition_id=condition.condition_id,
                     observation_id=condition.observation_id,
                     status="PASS" if passed else "FAIL",
-                    observed_value=value,
-                    unit=unit,
+                    observed_value=(
+                        float(sample.value)
+                        if isinstance(sample.value, (int, float))
+                        else None
+                    ),
+                    unit=sample.unit,
                     detail=("condition satisfied" if passed else "condition not satisfied"),
-                    evidence_refs=refs,
+                    evidence_refs=sample.evidence_refs,
                 )
             )
         if not results:

@@ -66,11 +66,12 @@ TaskSpec
 -> CapabilityProfile
 -> 按槽位组织的上下文
 -> SimulationIntent / CaseDesign
+-> AcceptancePlan / ObservationPlan
 -> CaseBundle / CaseVerifier
 -> PlanCompiler / ExecutionPlan v4
 -> 策略和语义检查
 -> 原生 OpenFOAM
--> 公开验证
+-> RunFacts / DerivedMetrics / ResultReport
 -> 外部 qualification
 ```
 
@@ -79,8 +80,8 @@ Qualification YAML 是 evaluator 配置，不是逐算例的 case 编写适配�
 
 ## 判定结果
 
-- `PASS`：native 公开验证、manifest 验证以及全部必需外部指标均通过；
-- `FAIL_AGENT`：case 编写、执行、公开验证、manifest 或物理指标失败；
+- `PASS`：native `ResultReport`、manifest 验证以及全部必需外部指标均通过；
+- `FAIL_AGENT`：case 编写、执行、显式 acceptance、manifest 或物理指标失败；
 - `DEFERRED_BACKEND`：可重试的模型后端故障中断了生成或修复，不属于
   Agent/CFD 失败；
 - `BLOCKED_ENVIRONMENT`：OpenFOAM、沙箱或其他本地运行依赖不可用；
@@ -109,6 +110,9 @@ Qualification 报告会分别统计：
 条件求解通过率定义为
 `public_validation_pass / target_solver_started`。
 
+历史 qualification 报告仍保留 `public_validation_pass` 指标名以确保只读兼容；新运行的规范
+事实来自 `RunAssessment` 与 `ResultReport`，qualification 不得再次解析 solver 日志。
+
 对于 continuation 结果，模型请求数、传输尝试数和模型耗时会在经过验证的
 parent/child lineage 上累计。每个单独运行的产物仍然保持独立固化。
 
@@ -135,3 +139,8 @@ backend deferred 与 blocked environment 都为 0。30 个 artifact manifest 全
 `PUBLIC_VALIDATION_PASS`。它验证了从已安装 wheel 执行 case 编写和 repair 的闭环，
 不等价于严格的 15 题物理 qualification。详见
 [独立真实算例 gate 报告](reports/2026-07-29-standalone-real-gate.md)。
+
+2026-08-13 的当前-schema 本机门禁额外验证了 provided polyMesh 不被生成文件覆盖、真实
+`checkMesh`/`icoFoam` 正常完成，以及流量、运动压差、cellZone 平均速度、残差与连续性从
+单一证据链进入 `DerivedMetrics`。该门禁是本机 Foundation v10 工程闭环证据，不是第二台
+干净机器的跨机安装资格，也不替代上述物理 qualification。

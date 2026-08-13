@@ -10,8 +10,8 @@ FoamPilot 是面向 Foundation OpenFOAM v10 的独立 Agent 工具包。规范�
 FAISS、MCP、Case renderer、`Allrun` 或第二套兼容状态机。
 
 OpenFOAM 负责网格 utility 和数值求解。FoamPilot 负责 TaskSpec 校验、能力路由、公开
-上下文、分阶段模型推理、确定性 typed command 编译、安全执行、公开验证、有限 repair、qualification
-和不可变证据。可选 TaskBuilder 可以在 run 创建前把完整自然语言请求编译为相同 TaskSpec；
+上下文、分阶段模型推理、确定性 typed command 编译、安全执行、单一证据提取、显式验收、
+有限 repair、qualification 和不可变证据。可选 TaskBuilder 可以在 run 创建前把完整自然语言请求编译为相同 TaskSpec；
 它不得直接运行 OpenFOAM。
 
 ## 规范命令
@@ -29,6 +29,7 @@ foampilot solve TASK.yaml --run-root RUNS \
   --reuse-verified-plan RUNS/SOURCE_RUN --derived-cache CACHE_ROOT --json
 foampilot resume RUNS/PARENT_RUN --run-root RUNS --backend auto --json
 foampilot report RUN_DIR --json
+foampilot results RUN_DIR --json
 foampilot questions RUN_DIR --json
 foampilot confirm RUN_DIR --answers ANSWERS.yaml --run-root RUNS --json
 
@@ -74,8 +75,14 @@ foampilot qualify suite \
   reference、golden value、受保护路径或目标 case 映射。
 - 命令只能包含 executable 和 args。禁止 shell、重定向、命令替换、`Allrun`、`mpirun`、
   `orterun`、host file 和外部绝对路径；MPI launcher 由 Runner 构造。
-- 不要添加只为制造评测证据的可选 function object。Evaluator 应优先读取 solver log 和
-  写出场。
+- 不要添加只为制造评测证据的可选 function object。ObservationPlanner 应优先复用
+  `RunFacts` 和写出场，只按已确认观测要求添加系统拥有的采集配置。
+- quantity/dimension、signed/magnitude、time selection 与 multi-region binding 必须冻结在
+  观测契约中；field-backed 指标在求值前要核对实际 OpenFOAM field header dimensions。
+- 模型不能自证 acceptance 的用户权威；阈值必须与 TaskSpec 的显式 acceptance statement
+  逐条且数值一致，未通过 authority audit 的条件只能进入 uncompiled。
+- OpenFOAM 日志只由 evidence 层解析一次；PostProcessor 只消费 `RunFacts` 和已声明的结构化
+  观测输出，AcceptanceEvaluator 只计算显式且已确认的条件。
 
 ## 模型后端
 
@@ -129,7 +136,8 @@ foampilot qualify suite \
 
 - qualification 复用同一条 `NativeAgent.solve()` 路径，官方目标和 reference 只允许
   evaluator 访问。
-- `PUBLIC_VALIDATION_PASS` 与 qualification `PASS` 是不同证据层，不能互相替代。
+- 当前 `RUN_COMPLETED`/`ResultReport.PASS` 与 qualification `PASS` 是不同证据层，不能互相
+  替代；`PUBLIC_VALIDATION_PASS` 只用于历史产物兼容。
 - `foampilot improve analyze` 和 `foampilot improve compare` 只在冻结证据上离线运行，
   不会自动 promotion。
 - 官方 example 只能作为事后 teacher reference，用于提取通用原则；不得复制完整 case、

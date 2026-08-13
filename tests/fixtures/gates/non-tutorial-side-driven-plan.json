@@ -1,4 +1,9 @@
 {
+  "compiled_from_design_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "compiler_identities": {
+    "foampilot.mesh.block-mesh": "1.0.0/protocol-1",
+    "foampilot.solver.foundation10-serial": "1.0.0/protocol-1"
+  },
   "commands": [
     {
       "args": [],
@@ -90,5 +95,5 @@
       "transport": "Newtonian"
     }
   },
-  "schema_version": 3
+  "schema_version": 4
 }

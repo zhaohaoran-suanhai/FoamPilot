@@ -13,17 +13,20 @@ golden data，或自行判定正式 benchmark PASS。
 0. 可选：把自然语言和显式公开附件通过 `TaskDraft -> DraftReview -> TaskCompiler` 编译为
    公开 `TaskSpec`；任何 blocking/confirmable 问题必须先解决。
 1. 加载公开 `TaskSpec`。
-2. 发现 Foundation OpenFOAM v10 与已安装原生 executable。
-3. 根据任务文本动态检索有界公开知识。
-4. 一次性向模型请求全部生成文件与 typed command。
-5. 应用确定性路径、命令、资源与受保护数据 policy。
-6. 在空 case 目录中物化文件并执行静态检查。
-7. 通过沙箱 Runner 执行 typed command。
-8. 执行由 evaluator 负责的公开检查并保留证据。
-9. 只允许使用已配置、由证据限定范围的 repair 预算。
+2. 原子检查公开资产；provided polyMesh 在模型调用前生成权威 `InputMeshFacts`。
+3. 发现 Foundation OpenFOAM v10 与已安装原生 executable，并检索有界公开知识。
+4. 模型只解释 `SimulationIntent`；程序解析权威需求并暴露缺失/冲突。
+5. 模型只提出一个完整 `CaseDesignProposal`；RiskGate 决定是否可以冻结。
+6. 程序编译 `AcceptancePlan` 与 `ObservationPlan`。
+7. 模型根据冻结 CaseDesign 一次编写全部相关 case 文件，不生成命令。
+8. CaseVerifier 检查一致性；PlanCompiler 从第一方扩展生成 typed command。
+9. 物化、静态检查，并通过 Runner 执行 Foundation v10。
+10. EvidenceExtractor 一次生成 `RunFacts`，再生成 `DerivedMetrics` 与 `ResultReport`。
+11. 只允许使用已配置、由证据和冻结 envelope 限定范围的 repair 预算。
 
-步骤 4 与 5 之间没有 model reviewer。规范路径中不存在逐文件 model loop、预选
-knowledge-ID allowlist、CaseSpec resolution 或 renderer。
+规范路径中不存在逐文件 model loop、model reviewer、预选 knowledge-ID allowlist、CaseSpec
+renderer 或模型拥有的执行命令。三个模型阶段是串行且职责单一的：理解任务、形成完整设计、
+编写完整 CaseBundle。
 
 ### 保守求解前 gate
 
@@ -48,6 +51,7 @@ foampilot plan TASK.yaml --output PLAN.json --model-name MODEL --json
 foampilot solve TASK.yaml --run-root RUN_ROOT --model-name MODEL --json
 foampilot inspect TASK.yaml PLAN.json CASE_DIR --json
 foampilot report RUN_DIR --json
+foampilot results RUN_DIR --json
 
 foampilot knowledge validate src/foampilot/knowledge/openfoam10 --json
 foampilot knowledge search src/foampilot/knowledge/openfoam10 "QUERY" \
@@ -67,8 +71,8 @@ foampilot improve compare BASELINE.json CURRENT.json \
   --json
 ```
 
-退出码：0 表示通过，2 表示 CLI 输入无效，3 表示 environment block，4 表示执行或
-public-validation 失败，5 表示未预期内部错误。
+退出码：0 表示命令成功，2 表示 CLI 输入无效，3 表示 environment block，4 表示执行或
+显式 acceptance 失败，5 表示未预期内部错误。
 
 ## Python 边界
 
@@ -76,14 +80,15 @@ public-validation 失败，5 表示未预期内部错误。
 
 - `TaskDraft`, `DraftReview`, `TaskCompilation`;
 - `TaskSpec`;
-- `ExecutionPlan`, `GeneratedFile`, and `NativeCommand`;
+- `AssetBundle`, `InputMeshFacts`, `SimulationIntent`, `CaseDesign`;
+- `ObservationPlan`, `CaseBundle`, `ExecutionPlan`, and `NativeCommand`;
+- `RunFacts`, `DerivedMetrics`, and `ResultReport`;
 - `NativeAgent`;
 - `RuntimeConfig` and `PlanRunner`;
-- `PublicValidationReport`;
 - `ArtifactStore`.
 
 `NativeAgent.solve()` 负责完整状态机。Adapter 应保留其 JSON outcome 与 artifact path，
-而不是重新实现 generation、execution、validation 或 repair。
+而不是重新实现 intent、design、authoring、execution、evidence、acceptance 或 repair。
 
 TaskBuilder 是求解前边界，不持有 Runner，也不创建 solve run。上游 Agent 可以使用
 `extract_task_draft()`、`validate_task_draft()` 和 `compile_task_draft()`，但不得把模型推断的

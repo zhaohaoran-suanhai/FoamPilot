@@ -57,10 +57,23 @@ class PostProcessingEngine:
         run_facts: RunFacts,
         case_root: str | Path,
         artifacts: Mapping[str, Path] | None = None,
+        preflight_errors: Mapping[str, str] | None = None,
     ) -> DerivedMetrics:
         root = Path(case_root).resolve()
         values: list[MetricSeries] = []
         for item in plan.items:
+            if item.observation_id in (preflight_errors or {}):
+                values.append(
+                    MetricSeries(
+                        observation_id=item.observation_id,
+                        quantity=item.quantity,
+                        dimension=item.dimension,
+                        scope=item.scope,
+                        status="UNAVAILABLE",
+                        detail=str(preflight_errors[item.observation_id]),
+                    )
+                )
+                continue
             calculator = self.calculators.get(item.kind)
             if calculator is None:
                 values.append(

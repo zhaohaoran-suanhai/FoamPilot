@@ -24,6 +24,7 @@ evaluation/runs/
 *.foam
 processor*/
 postProcessing/
+!tests/fixtures/contract_first/*.log
 
 # Local design and execution plans; not part of the deliverable repository.
 docs/superpowers/

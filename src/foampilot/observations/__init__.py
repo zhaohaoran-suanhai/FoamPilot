@@ -15,6 +15,7 @@ from .registry import (
     ObservationExtensionDescriptor,
     ObservationExtensionRegistry,
     ObservationRegistryError,
+    QuantityContract,
     UnsupportedObservationError,
     first_party_observation_registry,
 )
@@ -29,11 +30,17 @@ __all__ = [
     "ObservationPlan",
     "ObservationRequest",
     "ObservationRegistryError",
+    "QuantityContract",
     "ObservationScope",
     "ObservationWarning",
     "TimeSelection",
     "UnsupportedObservationError",
     "first_party_observation_registry",
+    "audit_observation_field_dimensions",
+    "collect_foundation10_observation_artifacts",
+    "compile_foundation10_observations",
+    "inject_observation_fragments",
+    "verify_observation_field_dimensions",
 ]
 
 
@@ -48,14 +55,20 @@ def __getattr__(name: str):
     if name in {
         "CompiledObservationFragments",
         "ObservationConfigFragment",
+        "audit_observation_field_dimensions",
+        "collect_foundation10_observation_artifacts",
         "compile_foundation10_observations",
         "inject_observation_fragments",
+        "verify_observation_field_dimensions",
     }:
         from .openfoam10 import (
             CompiledObservationFragments,
             ObservationConfigFragment,
+            audit_observation_field_dimensions,
+            collect_foundation10_observation_artifacts,
             compile_foundation10_observations,
             inject_observation_fragments,
+            verify_observation_field_dimensions,
         )
 
         return locals()[name]

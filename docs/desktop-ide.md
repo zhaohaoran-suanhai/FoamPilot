@@ -63,7 +63,10 @@ isolation；TaskDraft 不接收 Runtime 参数。
   内容哈希和 Skill；只显示固化的公开上下文，不展示隐藏思维过程；
 - “残差监控”：读取 evidence 层写入的 `metrics.jsonl`，以 `log10` 曲线实时刷新，并列出
   各场最新的 initial/final residual 和时间步；Desktop 不再自行解析 solver stdout；
-- “产物”：最终 `RunSummary`、选中文件、公开验证/qualification 报告；
+- “结果/验收”：读取规范 `DerivedMetrics`/`ResultReport`，展示观测范围、最新值、单位、
+  AVAILABLE/PARTIAL/UNAVAILABLE、显式条件与 PASS/FAIL/INCOMPLETE/NOT_REQUESTED；界面不重算
+  指标或 verdict；
+- “产物”：最终 `RunSummary`、选中文件、结果/qualification 报告；
 - 左侧：当前 run 内经过安全路径检查的 case、日志、报告和 workflow 文件；
 - 底部：排序后的 workflow 时间线、OpenFOAM 日志以及 TaskBuilder/solve 进程输出；
 - 右侧：IDE Job、当前阶段、Workflow、Native、Qualification、Manifest，以及配置来源、
@@ -102,12 +105,12 @@ parent manifest 与 `rerun_same_input`/`rerun_with_changes` lineage。两者都�
 
 - `IDE Job`：持久化 worker 的运行、取消或终态，以及心跳健康度；
 - `Workflow`：规范 Agent 工作流是完成、失败还是暂缓；
-- `Native`：OpenFOAM/公开验证达到的状态；
+- `Native`：OpenFOAM 执行与显式 acceptance 达到的状态；
 - `Qualification`：只有独立 qualification 证据时才成立，普通 run 显示
   `not available`；
 - `Manifest`：固化 run 文件是否与 `artifact-manifest.json` 一致。
 
-`PUBLIC_VALIDATION_PASS` 不等于严格 qualification `PASS`。active run 的 manifest 显示
+`RUN_COMPLETED` 或 `ResultReport.PASS` 不等于严格 qualification `PASS`。active run 的 manifest 显示
 `pending` 属正常现象；run 固化后才进行完整性判定。
 
 ## 打开已有 Run

@@ -80,8 +80,26 @@ def compile_execution_plan(
     if observation_plan is not None:
         from foampilot.observations import compile_foundation10_observations
 
+        postprocess_count = sum(
+            item.evidence_strategy.kind == "postprocess_command"
+            for item in observation_plan.items
+        )
+        remaining_timeout = task.resource_budget.max_wall_seconds - sum(
+            item.timeout_seconds for item in fragments.commands
+        )
+        if postprocess_count > remaining_timeout:
+            _raise(
+                "OBSERVATION_TIMEOUT_BUDGET_EXHAUSTED",
+                "one second per post-process command cannot fit the wall budget",
+            )
+        per_command_timeout = (
+            max(1, remaining_timeout // postprocess_count)
+            if postprocess_count
+            else 20
+        )
         observation_commands = compile_foundation10_observations(
-            observation_plan
+            observation_plan,
+            postprocess_timeout_seconds=per_command_timeout,
         ).commands
         unavailable = sorted(
             set(command.executable for command in observation_commands)

@@ -56,3 +56,29 @@ def test_model_collision_with_system_owned_fragment_is_rejected() -> None:
     )
     with pytest.raises(CaseAuthoringError, match="OBSERVATION_SYSTEM_PATH_COLLISION"):
         inject_observation_fragments(bundle, _history_plan())
+
+
+def test_final_only_observation_does_not_add_missing_runtime_include() -> None:
+    plan = _history_plan().model_copy(
+        update={
+            "items": (
+                _history_plan().items[0].model_copy(
+                    update={
+                        "time_selection": TimeSelection(kind="final"),
+                        "evidence_strategy": EvidenceStrategy(
+                            kind="postprocess_command",
+                            collector_id="foundation10.flow_rate",
+                        ),
+                    }
+                ),
+            )
+        }
+    )
+
+    bundle, fragments = inject_observation_fragments(_bundle(), plan)
+
+    control = next(
+        item.content for item in bundle.files if item.path == "system/controlDict"
+    )
+    assert '#include "foampilot-observations"' not in control
+    assert "system/foampilot-observations" not in fragments.system_owned_paths

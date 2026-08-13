@@ -11,6 +11,7 @@ from foampilot.agent import NativeAgent
 from foampilot.artifacts import ArtifactStore
 from foampilot.environment import EnvironmentSnapshot
 from foampilot.models import (
+    ModelResult,
     ModelGateway,
     load_backend_registry,
 )
@@ -18,6 +19,7 @@ from foampilot.plans import ExecutionPlan
 from foampilot.runtime.protection import runtime_protected_paths
 from foampilot.runtime.sandbox import build_sandbox_argv
 from foampilot.tasks import load_task_spec
+from foampilot.simulation.design import CaseDesignProposal
 from tests.test_native_case_generation import RecordingModel
 from tests.support.runtime import real_runtime_config
 
@@ -31,6 +33,30 @@ TASKS = (
 FROZEN_PLAN = (
     PACKAGE_ROOT / "tests/fixtures/gates/non-tutorial-side-driven-plan.json"
 )
+
+
+class FrozenPlanModel(RecordingModel):
+    """Adapt the frozen public CaseBundle to the current staged contracts."""
+
+    def generate_structured(self, request, schema, **kwargs):
+        result = super().generate_structured(request, schema, **kwargs)
+        if schema is not CaseDesignProposal:
+            return result
+        payload = json.loads(request.user_prompt)
+        resolved = {
+            item["field_path"]: item
+            for item in payload["ResolvedRequirements"]["resolved"]
+        }
+        proposal = result.value
+        assert isinstance(proposal, CaseDesignProposal)
+        numerical = tuple(
+            type(item).model_validate(resolved.get(item.field_path, item.model_dump()))
+            for item in proposal.numerical_design
+        )
+        return ModelResult(
+            **result.model_dump(exclude={"value"}),
+            value=proposal.model_copy(update={"numerical_design": numerical}),
+        )
 
 
 @pytest.mark.skipif(
@@ -47,7 +73,7 @@ def test_real_frozen_plan_executes_with_requested_runtime_policy(
     store = ArtifactStore(tmp_path / "runs")
 
     outcome = NativeAgent(
-        gateway=RecordingModel([plan]),
+        gateway=FrozenPlanModel([plan]),
         runtime_config=runtime,
         artifact_store=store,
     ).solve(load_task_spec(TASKS[0]))
@@ -125,7 +151,7 @@ def test_real_preferred_fallback_allows_low_risk_and_blocks_dynamic_code(
 
     low_store = ArtifactStore(tmp_path / "low-risk-runs")
     low = NativeAgent(
-        gateway=RecordingModel([plan]),
+        gateway=FrozenPlanModel([plan]),
         runtime_config=runtime,
         artifact_store=low_store,
     ).solve(task)
@@ -153,7 +179,7 @@ def test_real_preferred_fallback_allows_low_risk_and_blocks_dynamic_code(
     coded_plan = plan.model_copy(update={"files": coded_files})
     high_store = ArtifactStore(tmp_path / "high-risk-runs")
     high = NativeAgent(
-        gateway=RecordingModel([coded_plan]),
+        gateway=FrozenPlanModel([coded_plan]),
         runtime_config=runtime,
         artifact_store=high_store,
     ).solve(task)

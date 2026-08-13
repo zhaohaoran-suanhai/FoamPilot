@@ -13,6 +13,8 @@ from foampilot.preprocessing import (
     MeshPatchFact,
     MeshZoneFact,
 )
+from foampilot.acceptance import AcceptanceRequest, AcceptanceScope
+from foampilot.observations import ObservationRequest, ObservationScope, TimeSelection
 from foampilot.simulation import FactEvidence, ResolvedValue, SimulationIntent
 from foampilot.simulation.intent import interpret_intent
 from foampilot.tasks import TaskSpec
@@ -258,7 +260,229 @@ def test_interpreter_rejects_self_asserted_authority_and_forbidden_decisions() -
 
     assert all(fact.field_path != "solver.family" for fact in intent.facts)
     assert all(fact.field_path != "numerics.div_scheme" for fact in intent.facts)
-    assert intent.audit_warnings
+
+
+def _acceptance_response(
+    *,
+    detail: str,
+    limit: float,
+    source: str = "user_text",
+    confirmed: bool = True,
+    observation_kind: str = "continuity",
+    quantity: str = "continuity",
+    operator: str = "less_equal",
+    unit: str = "1",
+    acceptance_scope: AcceptanceScope | None = None,
+) -> SimulationIntent:
+    observation = ObservationRequest(
+        observation_id="continuity",
+        kind=observation_kind,
+        quantity=quantity,
+        dimension=unit,
+        scope=ObservationScope(kind="global"),
+        time_selection=TimeSelection(kind="latest"),
+        provenance=(FactEvidence(kind="user_quote", detail=detail),),
+    )
+    return SimulationIntent(
+        observation_requests=(observation,),
+        acceptance_requests=(
+            AcceptanceRequest(
+                condition_id="continuity-limit",
+                observation=observation,
+                operator=operator,
+                limit=limit,
+                unit=unit,
+                scope=acceptance_scope or AcceptanceScope(time="latest"),
+                source=source,
+                confirmed=confirmed,
+                provenance=(FactEvidence(kind="user_quote", detail=detail),),
+            ),
+        ),
+    )
+
+
+def test_model_cannot_forge_a_user_confirmed_acceptance_threshold() -> None:
+    gateway = ScriptedIntentGateway(
+        _acceptance_response(detail="continuity <= 1e-99", limit=1.0e-99)
+    )
+
+    intent = interpret_intent(
+        _task("solve this flow"),
+        asset_facts=(),
+        mesh_facts=(),
+        capability_kinds=("solver:icoFoam",),
+        gateway=gateway,
+        budget=_window(),
+        trace=InMemoryModelTraceSink(),
+    )
+
+    request = intent.acceptance_requests[0]
+    assert request.source == "model_inference"
+    assert request.confirmed is False
+    assert "ACCEPTANCE_AUTHORITY_DOWNGRADED:continuity-limit" in intent.audit_warnings
+
+
+def test_model_cannot_change_numeric_threshold_behind_a_real_user_quote() -> None:
+    statement = "absolute cumulative continuity <= 1e-5"
+    task = _task(statement).model_copy(update={"acceptance_intent": [statement]})
+    gateway = ScriptedIntentGateway(
+        _acceptance_response(detail=statement, limit=1.0e-99)
+    )
+    intent = interpret_intent(
+        task,
+        asset_facts=(),
+        mesh_facts=(),
+        capability_kinds=("solver:icoFoam",),
+        gateway=gateway,
+        budget=_window(),
+        trace=InMemoryModelTraceSink(),
+    )
+    assert intent.acceptance_requests[0].source == "model_inference"
+    assert intent.acceptance_requests[0].confirmed is False
+
+
+def test_model_cannot_reverse_operator_behind_a_real_user_quote() -> None:
+    statement = "absolute cumulative continuity >= 1e-5"
+    task = _task(statement).model_copy(update={"acceptance_intent": [statement]})
+    gateway = ScriptedIntentGateway(
+        _acceptance_response(
+            detail=statement,
+            limit=1.0e-5,
+            operator="less_equal",
+        )
+    )
+
+    intent = interpret_intent(
+        task,
+        asset_facts=(),
+        mesh_facts=(),
+        capability_kinds=("solver:icoFoam",),
+        gateway=gateway,
+        budget=_window(),
+        trace=InMemoryModelTraceSink(),
+    )
+
+    assert intent.acceptance_requests[0].source == "model_inference"
+    assert intent.acceptance_requests[0].confirmed is False
+
+
+def test_model_cannot_substitute_observable_behind_a_real_user_quote() -> None:
+    statement = "absolute cumulative continuity <= 1e-5"
+    task = _task(statement).model_copy(update={"acceptance_intent": [statement]})
+    gateway = ScriptedIntentGateway(
+        _acceptance_response(
+            detail=statement,
+            limit=1.0e-5,
+            observation_kind="flow_rate",
+            quantity="volumetric_flow_rate",
+        )
+    )
+
+    intent = interpret_intent(
+        task,
+        asset_facts=(),
+        mesh_facts=(),
+        capability_kinds=("solver:icoFoam",),
+        gateway=gateway,
+        budget=_window(),
+        trace=InMemoryModelTraceSink(),
+    )
+
+    assert intent.acceptance_requests[0].source == "model_inference"
+    assert intent.acceptance_requests[0].confirmed is False
+
+
+def test_unit_exponent_cannot_be_reused_as_a_forged_threshold() -> None:
+    statement = "pressure difference <= 10 m2/s2"
+    task = _task(statement).model_copy(update={"acceptance_intent": [statement]})
+    gateway = ScriptedIntentGateway(
+        _acceptance_response(
+            detail=statement,
+            limit=2.0,
+            observation_kind="pressure_difference",
+            quantity="pressure_difference",
+            unit="m2/s2",
+        )
+    )
+
+    intent = interpret_intent(
+        task,
+        asset_facts=(),
+        mesh_facts=(),
+        capability_kinds=("solver:icoFoam",),
+        gateway=gateway,
+        budget=_window(),
+        trace=InMemoryModelTraceSink(),
+    )
+
+    assert intent.acceptance_requests[0].source == "model_inference"
+    assert intent.acceptance_requests[0].confirmed is False
+
+
+def test_unrelated_time_number_cannot_be_reused_as_threshold() -> None:
+    statement = "continuity <= 1e-5 at final time 10"
+    task = _task(statement).model_copy(update={"acceptance_intent": [statement]})
+    gateway = ScriptedIntentGateway(
+        _acceptance_response(detail=statement, limit=10.0)
+    )
+
+    intent = interpret_intent(
+        task,
+        asset_facts=(),
+        mesh_facts=(),
+        capability_kinds=("solver:icoFoam",),
+        gateway=gateway,
+        budget=_window(),
+        trace=InMemoryModelTraceSink(),
+    )
+
+    assert intent.acceptance_requests[0].source == "model_inference"
+    assert intent.acceptance_requests[0].confirmed is False
+
+
+def test_model_cannot_narrow_an_all_time_condition_to_latest() -> None:
+    statement = "continuity <= 1e-5 throughout the simulation"
+    task = _task(statement).model_copy(update={"acceptance_intent": [statement]})
+    gateway = ScriptedIntentGateway(
+        _acceptance_response(detail=statement, limit=1.0e-5)
+    )
+
+    intent = interpret_intent(
+        task,
+        asset_facts=(),
+        mesh_facts=(),
+        capability_kinds=("solver:icoFoam",),
+        gateway=gateway,
+        budget=_window(),
+        trace=InMemoryModelTraceSink(),
+    )
+
+    assert intent.acceptance_requests[0].source == "model_inference"
+    assert intent.acceptance_requests[0].confirmed is False
+
+
+def test_exact_task_acceptance_statement_retains_user_authority() -> None:
+    statement = "absolute cumulative continuity <= 1e-5"
+    task = _task(f"Solve the flow; {statement}.").model_copy(
+        update={"acceptance_intent": [statement]}
+    )
+    gateway = ScriptedIntentGateway(
+        _acceptance_response(detail=statement, limit=1.0e-5)
+    )
+
+    intent = interpret_intent(
+        task,
+        asset_facts=(),
+        mesh_facts=(),
+        capability_kinds=("solver:icoFoam",),
+        gateway=gateway,
+        budget=_window(),
+        trace=InMemoryModelTraceSink(),
+    )
+
+    request = intent.acceptance_requests[0]
+    assert request.source == "user_text"
+    assert request.confirmed is True
 
 
 def test_verified_explicit_task_fact_remains_authoritative() -> None:

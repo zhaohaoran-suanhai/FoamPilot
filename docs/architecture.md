@@ -27,7 +27,11 @@ FoamPilot 只支持一条从公开 TaskSpec 到证据限定结果的规范求解
 - `plans`：由第一方能力扩展确定性编译 ExecutionPlan v4 与分阶段 typed native command；
 - `inspection`：CaseBundle/CaseDesign 一致性、算例内静态安全与高置信度跨文件语义检查；
 - `runtime`：Foundation v10 发现、bubblewrap/audited-host 自动选择、显式 MPI 启动、预算与日志；
-- `validation`：由 evaluator 负责检查命令、日志与写出字段；
+- `observations`：在 authoring 前冻结需要采集的证据，并生成系统拥有的 Foundation v10
+  function-object 字典或 typed post-process 命令；
+- `evidence`：一次解析原生命令日志并冻结 `RunFacts` 与不含用户阈值的 `RunAssessment`；
+- `postprocessing`：只从 `RunFacts` 或已声明的结构化 OpenFOAM 输出生成 `DerivedMetrics`；
+- `acceptance`：只把用户明确确认的条件编译并求值为 `ResultReport`；
 - `artifacts`：不可变 attempt 与 SHA256 manifest；
 - `qualification`：按角色执行 suite，并使用紧凑 packaged reference 做外部物理比较。
 
@@ -66,6 +70,20 @@ TaskSpec v3 + authoritative asset/mesh facts
    `- CAPABILITY_UNAVAILABLE -> finalize unsupported design
 ```
 
+进入 Case Author 前还会确定性编译 `AcceptancePlan -> ObservationPlan`。因此验收判定与 case
+编写解耦，但需要保存的最小证据会在求解前确定；模型能看到观测契约，却不能编写采集命令或
+系统 function object。完整的新运行证据链是：
+
+```text
+AssetBundle -> InputMeshFacts -> SimulationIntent -> CaseDesign
+-> ObservationPlan -> CaseBundle -> ExecutionPlan -> RunFacts
+-> DerivedMetrics -> ResultReport
+```
+
+事实权威分三层：网格数量、patch/zone 和拓扑来自程序；区域的物理含义与工程目标来自用户；
+solver、模型和数值方案属于经过 RiskGate 的工程设计。后续模块只能消费上游的结构化结果，
+不得重新读取同一份日志或原始网格得出第二套事实。
+
 RiskGate 依据事实来源、影响等级、缺失项、冲突和注册能力计算状态；它不读取模型 confidence。
 `CONCRETE_CONFIRMATION_REQUIRED` 绑定一个问题、一个字段、候选 ID 和完整 typed 候选值。
 不存在 accept-all、continue-anyway 或高影响风险 override。`foampilot questions` 只展示已
@@ -99,7 +117,10 @@ advisory。随后 OpenFOAM 读取模型编写并已通过设计一致性检查�
 标记为 `author` 或 `public_asset` 的 field 必须在执行前存在。标记为 `mesh`、`initialize`
 或 `solver` 的 field 只检查 region/path 一致性，不会错误地要求它们在创建命令前存在。
 
-执行后，公开 validation 判断要求的结果是否存在并满足声明检查。任务若允许另一次 attempt，
+执行后，`EvidenceExtractor` 先形成与用户阈值无关的 `RunFacts` 和 `RunAssessment`；系统观测
+输出再被规范化为 `DerivedMetrics`，最后只有已确认的 `AcceptanceCondition` 才能改变
+`ResultReport.verdict`。仅请求观察而未声明阈值时 verdict 为 `NOT_REQUESTED`，缺失必要证据为
+`INCOMPLETE`，不能静默算作通过。任务若允许另一次 attempt，
 系统先分类失败；只有 solver/validation 层的 `numerical_instability` 且冻结设计含非空
 `NumericalRepairEnvelope` 时才可请求自动 repair。repair 模型返回不含命令的
 `RepairProposal`，其数值字段、操作方向、范围、目标文件和 dictionary keyword 必须全部落在
@@ -127,8 +148,9 @@ repair 是已授权、已关闭、需确认还是被策略拒绝。
 workflow、RunFacts/FailureReport、问题、指标和 manifest 内的产物链接。指标损坏只产生
 warning，不得改写 workflow 终态。
 
-`workflow-events.jsonl` 是 task、environment、context、intent、requirements、design、generation、plan、
-materialization、inspection、OpenFOAM、public-validation、repair 与 finalization 阶段的
+`workflow-events.jsonl` 是 task、environment、context、intent、requirements、design、acceptance、
+observation、generation、plan、materialization、inspection、OpenFOAM、evidence、post-processing、
+acceptance-evaluation、repair 与 finalization 阶段的
 有序、fsync 持久化记录。Checkpoint 采用独占写入，绝不替换。
 
 `RunSummary` schema v2 分离三个问题：
@@ -190,6 +212,26 @@ post-processing 不会修改 artifact manifest。
 `tests/fixtures/artifact-replay` 下的确定性 replay gate 包含经过边界限制和 secret scan
 的 single-region、MPI、include、buoyant、multi-region 与 known-failure 历史产物。
 Replay 用于保护兼容性，不能替代 native qualification。
+
+`tests/fixtures/contract_first` 另提供当前 schema 的跨场景链路矩阵，覆盖 provided/generated
+mesh、region、稳态/瞬态、不可压缩/可压缩、传热、多相、failure/repair 与 cancellation/resume。
+generated mesh 场景不借用 provided-mesh 资产事实；多区域 patch/zone 必须显式绑定 region；
+可压缩与不可压缩的 `phi`/`p` 使用不同量纲契约。矩阵中的原始 Foundation 表会先经过正式
+collector，而不是直接伪造内部 JSON。它证明通用契约和类型化失败边界，不代表每一种物理族
+都已完成真实工程 qualification。
+
+`ObservationPlanner` 会将冻结 solver 与 quantity/dimension contract 对齐；field-backed
+观测在求值前还会读取实际写出场的 header，验证 `U`、`p`、`T` 或 `rho` 的 OpenFOAM
+dimensions。流量正负号与向量/模长是显式 contract 语义，不能由 PostProcessor 静默转换。
+`time_range` 会编译成 typed `postProcess -time start:end` 并在 collector 侧再次筛选；
+acceptance 的 `latest/final/all/range` 由确定性求值器逐样本执行，任何缺失区间都返回
+`NOT_EVALUATED`。所有指标投影最多保留 1000 个样本；发生截断时状态必须是 `PARTIAL`，
+依赖完整覆盖的验收只能返回 `INCOMPLETE`。
+
+截至 2026-08-13，本开发工作站已通过 Foundation OpenFOAM 10 的本机 blockMesh 与 provided
+polyMesh 实机闭环；后者包含真实流量、运动压差、cellZone 平均速度、残差和连续性证据。
+尚无第二台干净 Ubuntu + Foundation v10 机器，因此跨机安装、自然语言求解与 Desktop 实机
+门禁仍是明确的未验证项。
 
 当前端到端状态机、实测阶段耗时、失败分类与 operational-readiness 边界，见
 [运行流程与求解前健康度分析](runtime-workflow-and-pre-solve-health-analysis.md)。

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 import json
+import re
 from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -20,6 +21,7 @@ ObservationKind = Literal[
     "force",
     "heat_flux",
 ]
+_OPENFOAM_WORD = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 EvidenceStrategyKind = Literal[
     "run_facts",
     "written_field",
@@ -43,15 +45,16 @@ class ObservationScope(_StrictFrozenModel):
     def validate_names(cls, values: tuple[str, ...]) -> tuple[str, ...]:
         if len(values) != len(set(values)):
             raise ValueError("scope names must be unique")
-        if any(
-            not value
-            or value in {".", ".."}
-            or "/" in value
-            or "\\" in value
-            for value in values
-        ):
+        if any(_OPENFOAM_WORD.fullmatch(value) is None for value in values):
             raise ValueError("scope names must be safe OpenFOAM identifiers")
         return values
+
+    @field_validator("region")
+    @classmethod
+    def validate_region(cls, value: str | None) -> str | None:
+        if value is not None and _OPENFOAM_WORD.fullmatch(value) is None:
+            raise ValueError("region must be a safe OpenFOAM identifier")
+        return value
 
     @model_validator(mode="after")
     def validate_shape(self) -> Self:
@@ -64,6 +67,11 @@ class ObservationScope(_StrictFrozenModel):
         }[self.kind]
         if len(self.names) != required:
             raise ValueError(f"{self.kind} scope requires {required} names")
+        if self.kind == "region":
+            if self.region is None or self.region != self.names[0]:
+                raise ValueError(
+                    "region scope requires a matching explicit region binding"
+                )
         return self
 
 

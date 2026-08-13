@@ -55,6 +55,41 @@ class AcceptanceCompiler:
                     )
                 )
                 continue
+            selection = request.observation.time_selection
+            scope = request.scope
+            insufficient = (
+                scope.time == "all" and selection.kind != "history"
+            ) or (
+                scope.time == "range"
+                and not (
+                    selection.kind == "history"
+                    or (
+                        selection.kind == "time_range"
+                        and selection.start is not None
+                        and selection.end is not None
+                        and scope.start is not None
+                        and scope.end is not None
+                        and selection.start <= scope.start
+                        and selection.end >= scope.end
+                    )
+                )
+            )
+            if insufficient:
+                uncompiled.append(
+                    UncompiledRequirement(
+                        condition_id=request.condition_id,
+                        code="ACCEPTANCE_OBSERVATION_TIME_SCOPE_INSUFFICIENT",
+                        detail=(
+                            "acceptance scope requires history that the observation "
+                            "request does not preserve"
+                        ),
+                        recovery=(
+                            "request history or a covering time_range before compiling "
+                            "this acceptance condition"
+                        ),
+                    )
+                )
+                continue
             conditions.append(
                 AcceptanceCondition(
                     condition_id=request.condition_id,
