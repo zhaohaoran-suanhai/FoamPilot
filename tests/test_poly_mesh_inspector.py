@@ -9,7 +9,11 @@ import pytest
 
 from foampilot.assets import OpenFOAMPolyMeshAdapter
 from foampilot.cli.main import _declared_task_assets
-from foampilot.preprocessing import PolyMeshInspectionError, inspect_poly_mesh
+from foampilot.preprocessing import (
+    PolyMeshInspectionError,
+    inspect_poly_mesh,
+    inspect_poly_mesh_topology,
+)
 
 
 FIXTURE = Path(__file__).parent / "fixtures/poly_mesh/minimal"
@@ -82,6 +86,32 @@ def test_inspector_reports_patch_and_zone_facts(tmp_path: Path) -> None:
     assert "boundary face coverage is contiguous" in facts.topology_observations
     assert facts.raw_content_included is False
     assert len(facts.model_dump_json().encode("utf-8")) < 64 * 1024
+
+
+def test_topology_inspector_does_not_claim_a_length_unit(tmp_path: Path) -> None:
+    mesh_root, bundle = _staged_bundle(tmp_path)
+
+    facts = inspect_poly_mesh_topology(mesh_root, bundle)
+
+    assert facts.points == 12
+    assert facts.faces == 11
+    assert facts.cells == 2
+    assert facts.unscaled_bounds.minimum == (0.0, 0.0, 0.0)
+    assert facts.unscaled_bounds.maximum == (2.0, 1.0, 0.1)
+    assert [(item.name, item.patch_type) for item in facts.patches] == [
+        ("inlet", "patch"),
+        ("outlet", "patch"),
+        ("top", "symmetryPlane"),
+        ("bottom", "symmetryPlane"),
+        ("frontAndBack", "empty"),
+    ]
+    assert [(item.name, item.element_count) for item in facts.cell_zones] == [
+        ("zoneA", 1)
+    ]
+    payload = facts.model_dump(mode="json")
+    assert "declared_length_unit" not in payload
+    assert "bounding_box_m" not in payload
+    assert payload["raw_content_included"] is False
 
 
 def test_gzip_and_plain_meshes_have_equivalent_physical_facts(

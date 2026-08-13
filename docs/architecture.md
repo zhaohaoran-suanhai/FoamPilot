@@ -5,8 +5,8 @@ FoamPilot 只支持一条从公开 TaskSpec 到证据限定结果的规范求解
 
 ## 组件
 
-- `taskbuilder`：从自然语言和显式公开附件 metadata 提取带来源事实，检查缺失信息并确定性
-  编译 TaskSpec；
+- `taskbuilder`：先验证显式公开附件，并对原生 polyMesh 生成单位无关拓扑事实，再从自然语言
+  提取带来源事实、检查输入权威缺口并确定性编译 TaskSpec；
 - `tasks`：严格校验公开要求与资源预算；
 - `assets`/`extensions`：通过关闭动态 entry point 的第一方注册表验证并原子 staging 文件或
   OpenFOAM `polyMesh` 目录资产；
@@ -37,10 +37,13 @@ FoamPilot 只支持一条从公开 TaskSpec 到证据限定结果的规范求解
 
 ## 数据流
 
-完整自然语言请求可以先经过 `TaskExtractor -> DraftValidator -> TaskCompiler`。模型只能做
-结构化事实提取；用户原文与附件来源由系统复核，高影响模型推断必须确认，系统默认值只由
-Compiler 引入。TaskBuilder 不调用 Runner，失败也不创建 solve run。qualification 继续直接
-使用冻结 TaskSpec。
+完整自然语言请求可以先经过
+`AssetManifest -> PolyMeshTopologyInspector -> TaskExtractor -> AuthorityReconciler -> DraftValidator -> TaskCompiler`。
+模型只能做结构化事实提取；用户原文与附件来源由系统复核，未确认的模型推断只保留为审计
+数据，不会进入 TaskSpec。TaskBuilder 只处理输入权威：未知长度单位、维度或损坏/未声明资产
+会阻断；solver、物性候选、边界数值和时间控制交给后续 Intent/CaseDesigner/RiskGate。系统
+默认值只由 Compiler 引入。TaskBuilder 不调用 Runner，失败也不创建 solve run。
+qualification 继续直接使用冻结 TaskSpec。
 
 环境发现后，确定性 router 创建 `CapabilityProfile`。其依据包括任务中的显式事实、已安装
 executable 和已审查 solver-family metadata。只有 candidate set 含糊时才允许请求模型
@@ -52,9 +55,12 @@ patch/region role 或 mesh strategy 不得由 probe 猜测；必要的外部网�
 generation 调用处结束。进入 native execution 后，每个 attempt 生成独立的
 `mesh-quality-report.json`，把日志观测值与 TaskSpec 阈值分开保存。
 
-provided 原生网格走单独的确定性路径：`OpenFOAMMeshBundle -> InputMeshFacts ->` 系统受控
-`checkMesh -> ExecutedMeshFacts`。目录 manifest、成员 hash、inspector identity 进入续跑和
-缓存指纹。模型收到紧凑 patch/zone/count/bounds 事实，但永远不拥有网格生成命令或成员写权限。
+provided 原生网格走单独的确定性路径：
+`OpenFOAMMeshBundle -> PolyMeshTopologyFacts -> 用户长度单位 -> InputMeshFacts ->` 系统受控
+`checkMesh -> ExecutedMeshFacts`。`PolyMeshTopologyFacts` 只包含未缩放坐标边界和不依赖单位的
+patch/zone/count/topology，不会把 OpenFOAM 坐标静默解释为米。目录 manifest、成员 hash、
+inspector identity 进入续跑和缓存指纹。模型收到这些紧凑事实，但永远不拥有网格生成命令或
+成员写权限。
 
 路由与上下文完成后，规范 live 路径依次固化：
 

@@ -7,7 +7,12 @@ from foampilot.taskbuilder import (
     compile_task_draft,
     validate_task_draft,
 )
-from tests.test_task_draft_validation import _complete_draft, _fact, _without
+from tests.test_task_draft_validation import (
+    _complete_draft,
+    _fact,
+    _provided_mesh_draft,
+    _without,
+)
 
 
 def _with_facts(draft: TaskDraft, *facts: dict) -> TaskDraft:
@@ -35,6 +40,32 @@ def test_compiler_emits_task_v3_without_legacy_public_checks() -> None:
         "resources.memory_mib",
         "mesh.strategy",
     }
+
+
+def test_compiler_uses_frozen_product_target_over_extracted_target() -> None:
+    payload = _complete_draft().model_dump(mode="json")
+    payload["facts"].extend(
+        [
+            _fact("openfoam.distribution", "openfoam_com"),
+            _fact("openfoam.version", "2512"),
+        ]
+    )
+    draft = TaskDraft.model_validate(payload)
+
+    task = compile_task_draft(validate_task_draft(draft)).task
+
+    assert task.openfoam_target.distribution == "foundation"
+    assert task.openfoam_target.version == "10"
+    assert task.explicit_value("openfoam.distribution") is None
+    assert task.explicit_value("openfoam.version") is None
+
+
+def test_editable_draft_cannot_change_frozen_product_target() -> None:
+    payload = _complete_draft().model_dump(mode="json")
+    payload["ingress_context"]["target"]["version"] = "13"
+
+    with pytest.raises(ValueError, match="Foundation OpenFOAM 10"):
+        TaskDraft.model_validate(payload)
 
 
 def test_transient_vof_requirements_remain_acceptance_intent_and_facts() -> None:
@@ -115,10 +146,69 @@ def test_same_confirmed_draft_compiles_to_same_task_hash() -> None:
     assert first.task == second.task
 
 
-def test_compiler_refuses_blocking_or_unconfirmed_review() -> None:
+def test_compiler_accepts_missing_design_owned_material() -> None:
     review = validate_task_draft(
         _without(_complete_draft(), "materials.fluid")
     )
 
-    with pytest.raises(ValueError, match="TASK_COMPILATION_FAILED"):
-        compile_task_draft(review)
+    task = compile_task_draft(review).task
+
+    assert task.explicit_value("materials.fluid") is None
+
+
+def test_compiler_builds_provided_route_without_design_values() -> None:
+    task = compile_task_draft(
+        validate_task_draft(_provided_mesh_draft())
+    ).task
+
+    assert task.openfoam_target.distribution == "foundation"
+    assert task.openfoam_target.version == "10"
+    assert task.geometry is not None
+    assert task.geometry.mode == "openfoam_mesh"
+    assert task.geometry.assets[0].format == "openfoam_mesh"
+    assert task.mesh is not None
+    assert task.mesh.strategy == "provided"
+    assert task.explicit_value("physics.solver") is None
+    assert task.explicit_value("materials.fluid") is None
+    assert task.explicit_value("operating.end_time") is None
+
+
+def test_compiler_excludes_unconfirmed_model_inference() -> None:
+    payload = _provided_mesh_draft().model_dump(mode="json")
+    payload["facts"].append(
+        _fact(
+            "physics.solver",
+            "icoFoam",
+            source="model_inference",
+            confirmed=False,
+        )
+    )
+    draft = TaskDraft.model_validate(payload)
+
+    task = compile_task_draft(validate_task_draft(draft)).task
+
+    assert task.explicit_value("physics.solver") is None
+
+
+def test_compiler_composes_confirmed_unit_without_relabeling_mesh_fact() -> None:
+    payload = _provided_mesh_draft(length_unit=None).model_dump(mode="json")
+    payload["facts"].append(
+        _fact(
+            "geometry.length_unit",
+            "m",
+            source="user_confirmation",
+            confirmed=True,
+        )
+    )
+    draft = TaskDraft.model_validate(payload)
+
+    task = compile_task_draft(validate_task_draft(draft)).task
+
+    assert task.geometry is not None
+    assert task.geometry.length_unit == "m"
+    assert task.explicit_value("geometry.length_unit") == "m"
+    geometry_fact = next(
+        item for item in task.explicit_facts
+        if item.field_path == "geometry.input"
+    )
+    assert geometry_fact.source == "deterministic_rule"

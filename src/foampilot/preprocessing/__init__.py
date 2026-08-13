@@ -13,8 +13,13 @@ from .models import (
     MeshQualityReport,
     MeshZoneFact,
     PatchRoleMatch,
+    PolyMeshTopologyFacts,
 )
-from .poly_mesh import PolyMeshInspectionError, inspect_poly_mesh
+from .poly_mesh import (
+    PolyMeshInspectionError,
+    inspect_poly_mesh,
+    inspect_poly_mesh_topology,
+)
 
 __all__ = [
     "BoundingBox",
@@ -26,10 +31,12 @@ __all__ = [
     "MeshPatchFact",
     "MeshQualityReport",
     "PatchRoleMatch",
+    "PolyMeshTopologyFacts",
     "MeshZoneFact",
     "PolyMeshInspectionError",
     "mesh_quality_from_run_facts",
     "probe_geometry",
     "probe_provided_mesh",
     "inspect_poly_mesh",
+    "inspect_poly_mesh_topology",
 ]

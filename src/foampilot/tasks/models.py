@@ -240,6 +240,25 @@ class TaskSpec(StrictModel):
                     "provided mesh strategy requires an atomic polyMesh "
                     "directory asset"
                 )
+        if geometry is not None:
+            compatible_mesh_strategies = {
+                "openfoam_mesh": {"provided"},
+                "surface": {"auto", "snappyHexMesh", "gmsh", "provided"},
+                "gmsh": {"auto", "gmsh"},
+                "parametric": {"auto", "blockMesh", "gmsh"},
+            }[geometry.mode]
+            if mesh is None and geometry.mode == "openfoam_mesh":
+                raise ValueError(
+                    "openfoam_mesh geometry requires provided mesh strategy"
+                )
+            if (
+                mesh is not None
+                and mesh.strategy not in compatible_mesh_strategies
+            ):
+                raise ValueError(
+                    f"geometry mode {geometry.mode!r} is incompatible with "
+                    f"mesh strategy {mesh.strategy!r}"
+                )
         visible = json.dumps(
             self.agent_payload(),
             ensure_ascii=False,

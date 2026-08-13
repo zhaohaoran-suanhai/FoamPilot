@@ -526,6 +526,41 @@ def test_v3_rejects_ambiguous_units_duplicate_roles_and_undeclared_assets() -> N
         )
 
 
+def test_v3_rejects_openfoam_mesh_without_provided_strategy() -> None:
+    geometry = {
+        "mode": "openfoam_mesh",
+        "dimensionality": "two_d",
+        "description": "native mesh",
+        "length_unit": "m",
+        "assets": [
+            {
+                "path": "mesh/native",
+                "format": "openfoam_mesh",
+                "role": "volume_mesh",
+            }
+        ],
+    }
+    asset = {
+        "path": "mesh/native",
+        "sha256": "a" * 64,
+        "purpose": "native mesh",
+        "kind": "directory",
+        "install_path": "constant/polyMesh",
+        "bundle_manifest_sha256": "a" * 64,
+    }
+
+    with pytest.raises(ValidationError, match="incompatible"):
+        TaskSpec.model_validate(
+            _payload(
+                public_assets=[asset],
+                explicit_facts=_geometry_mesh_facts(
+                    geometry,
+                    {"strategy": "auto"},
+                ),
+            )
+        )
+
+
 def test_v1_is_not_accepted_by_the_canonical_task_model() -> None:
     with pytest.raises(ValidationError, match="schema_version"):
         TaskSpec.model_validate(_payload(schema_version=1))

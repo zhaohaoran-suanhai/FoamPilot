@@ -979,18 +979,9 @@ class FoamPilotMainWindow(QMainWindow):
         for column in range(self.draft_tree.columnCount()):
             self.draft_tree.resizeColumnToContents(column)
         self._draft_can_compile = review.can_compile
-        self._draft_needs_confirmation = bool(
-            draft.unresolved_questions
-            or any(
-                not fact.confirmed and fact.impact in {"medium", "high"}
-                for fact in draft.facts
-            )
-            or any(
-                assumption.source == "model_inference"
-                and assumption.impact in {"medium", "high"}
-                for assumption in draft.assumptions
-            )
-        )
+        # Only concrete questions have an actionable confirmation path. Model
+        # inferences and assumptions remain visible audit information.
+        self._draft_needs_confirmation = bool(draft.unresolved_questions)
         self.diagnostics_viewer.setPlainText(
             json.dumps(
                 {

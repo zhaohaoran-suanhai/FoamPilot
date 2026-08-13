@@ -3,12 +3,23 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import PurePosixPath
 
-from foampilot.environment import EnvironmentSnapshot
 from foampilot.tasks import GeometryInput, MeshIntent
 
 from .messages_zh import taskbuilder_message_zh
-from .models import DraftIssue, DraftReview, FactSource, TaskDraft
+from .models import DraftIssue, DraftReview, TaskDraft
+from .projection import compilable_fact_map, effective_geometry_value
+
+
+_INPUT_QUESTION_PATHS = {
+    "geometry",
+    "geometry.dimensionality",
+    "geometry.length_unit",
+    "geometry.patch_roles",
+    "geometry.region_roles",
+    "mesh",
+}
 
 
 def _issue(
@@ -36,15 +47,15 @@ def _mapping(value: object) -> Mapping[str, object]:
 
 def validate_task_draft(
     draft: TaskDraft,
-    environment: EnvironmentSnapshot | None = None,
+    environment: object | None = None,
 ) -> DraftReview:
     """Separate blockers, confirmations and visible low-risk defaults."""
 
-    facts = draft.fact_map()
+    del environment  # Capability availability belongs to the later RiskGate.
+    facts = compilable_fact_map(draft)
     issues: list[DraftIssue] = []
 
-    geometry_fact = facts.get("geometry")
-    geometry = _mapping(geometry_fact.value) if geometry_fact is not None else {}
+    geometry = _mapping(effective_geometry_value(facts))
     if not geometry:
         issues.append(
             _issue("TASK_REQUEST_INCOMPLETE", "blocking", "geometry")
@@ -53,7 +64,7 @@ def validate_task_draft(
         issues.append(
             _issue("TASK_UNIT_AMBIGUOUS", "blocking", "geometry.length_unit")
         )
-    if geometry:
+    if geometry and geometry.get("length_unit"):
         try:
             GeometryInput.model_validate(geometry)
         except ValueError:
@@ -61,13 +72,38 @@ def validate_task_draft(
                 _issue("TASK_REQUEST_INCOMPLETE", "blocking", "geometry")
             )
     mesh_fact = facts.get("mesh")
-    if mesh_fact is not None:
+    if mesh_fact is None:
+        if geometry.get("mode") == "openfoam_mesh":
+            issues.append(
+                _issue("TASK_REQUEST_INCOMPLETE", "blocking", "mesh")
+            )
+    else:
         try:
-            MeshIntent.model_validate(mesh_fact.value)
+            mesh = MeshIntent.model_validate(mesh_fact.value)
         except ValueError:
             issues.append(
                 _issue("TASK_REQUEST_INCOMPLETE", "blocking", "mesh")
             )
+        else:
+            compatible = {
+                "openfoam_mesh": {"provided"},
+                "surface": {"auto", "snappyHexMesh", "gmsh", "provided"},
+                "gmsh": {"auto", "gmsh"},
+                "parametric": {"auto", "blockMesh", "gmsh"},
+            }.get(str(geometry.get("mode")))
+            if compatible is not None and mesh.strategy not in compatible:
+                issues.append(
+                    _issue("TASK_REQUEST_INCOMPLETE", "blocking", "mesh")
+                )
+            if mesh.strategy == "provided" and not any(
+                item.kind == "directory"
+                and item.install_path is not None
+                and PurePosixPath(item.install_path).name == "polyMesh"
+                for item in draft.assets
+            ):
+                issues.append(
+                    _issue("TASK_REQUEST_INCOMPLETE", "blocking", "mesh")
+                )
     declared_assets = {item.path for item in draft.assets}
     geometry_assets = geometry.get("assets", [])
     if isinstance(geometry_assets, list):
@@ -83,111 +119,15 @@ def validate_task_draft(
                 )
                 break
 
-    for path in (
-        "physics.regime",
-        "physics.compressibility",
-        "physics.phase_family",
-    ):
-        if path not in facts:
-            issues.append(
-                _issue("TASK_PHYSICS_AMBIGUOUS", "confirmable", path)
-            )
-
-    physics_family = (
-        str(facts["physics.family"].value)
-        if "physics.family" in facts
-        else "fluid"
-    )
-    phase_family = (
-        str(facts["physics.phase_family"].value)
-        if "physics.phase_family" in facts
-        else "unknown"
-    )
-    if physics_family in {"solid", "solid_mechanics"}:
-        material_path = "materials.solid"
-    else:
-        material_path = "materials.fluid"
-    if material_path not in facts:
-        issues.append(
-            _issue("TASK_REQUEST_INCOMPLETE", "blocking", material_path)
-        )
-    energy = (
-        str(facts["physics.energy"].value)
-        if "physics.energy" in facts
-        else "unknown"
-    )
-    if energy == "enabled" and "materials.thermal" not in facts:
-        issues.append(
-            _issue(
-                "TASK_REQUEST_INCOMPLETE",
-                "blocking",
-                "materials.thermal",
-            )
-        )
-    if physics_family == "conjugate_heat_transfer":
-        for path in ("materials.fluid", "materials.solid"):
-            if path not in facts:
-                issues.append(
-                    _issue("TASK_REQUEST_INCOMPLETE", "blocking", path)
-                )
-        region_roles = geometry.get("region_roles", [])
-        if not isinstance(region_roles, list) or len(region_roles) < 2:
-            issues.append(
-                _issue(
-                    "TASK_REQUEST_INCOMPLETE",
-                    "blocking",
-                    "geometry.region_roles",
-                )
-            )
-    if "boundaries" not in facts:
-        issues.append(
-            _issue("TASK_REQUEST_INCOMPLETE", "blocking", "boundaries")
-        )
-    if (
-        facts.get("physics.regime") is not None
-        and facts["physics.regime"].value == "transient"
-        and "operating.end_time" not in facts
-    ):
-        issues.append(
-            _issue(
-                "TASK_REQUEST_INCOMPLETE",
-                "blocking",
-                "operating.end_time",
-            )
-        )
-    if phase_family == "vof" and "initial.phase_fraction" not in facts:
-        issues.append(
-            _issue(
-                "TASK_REQUEST_INCOMPLETE",
-                "blocking",
-                "initial.phase_fraction",
-            )
-        )
-
-    for fact in draft.facts:
-        if (
-            not fact.confirmed
-            and fact.impact in {"medium", "high"}
-            and fact.source == FactSource.MODEL_INFERENCE
-        ):
-            issues.append(
-                _issue("TASK_PHYSICS_AMBIGUOUS", "confirmable", fact.path)
-            )
-
-    for assumption in draft.assumptions:
-        if (
-            assumption.source == "model_inference"
-            and assumption.impact in {"medium", "high"}
-        ):
-            issues.append(
-                _issue(
-                    "TASK_PHYSICS_AMBIGUOUS",
-                    "confirmable",
-                    assumption.path,
-                )
-            )
-
     for question in draft.unresolved_questions:
+        if question.path not in _INPUT_QUESTION_PATHS:
+            continue
+        if question.path == "geometry.length_unit" and not geometry.get(
+            "length_unit"
+        ):
+            continue
+        if question.path == "geometry" and not geometry:
+            continue
         issues.append(
             _issue(
                 (
@@ -200,19 +140,6 @@ def validate_task_draft(
                 detail=question.prompt_zh,
             )
         )
-
-    solver = facts.get("physics.solver")
-    if solver is not None and environment is not None:
-        name = str(solver.value)
-        if name not in environment.executable_names:
-            issues.append(
-                _issue(
-                    "TASK_CAPABILITY_UNAVAILABLE",
-                    "blocking",
-                    "physics.solver",
-                    detail=f"明确要求的 {name} 未被发现。",
-                )
-            )
 
     for path in (
         "resources.max_attempts",
@@ -238,12 +165,9 @@ def validate_task_draft(
         if key not in seen:
             seen.add(key)
             unique.append(item)
-    can_compile = (
-        draft.status == "confirmed"
-        and not any(
-            item.severity in {"blocking", "confirmable"}
-            for item in unique
-        )
+    can_compile = not any(
+        item.severity in {"blocking", "confirmable"}
+        for item in unique
     )
     return DraftReview(
         draft=draft,

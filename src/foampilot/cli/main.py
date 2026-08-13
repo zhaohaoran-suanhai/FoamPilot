@@ -23,7 +23,11 @@ from foampilot.activity import (
 from foampilot.agent import (
     NativeAgent,
 )
-from foampilot.assets import BundleMember, compute_bundle_manifest_sha256
+from foampilot.assets import (
+    BundleMember,
+    compute_bundle_manifest_sha256,
+    poly_mesh_region_from_install_path,
+)
 from foampilot.artifacts import ArtifactStore, is_successful_native_status
 from foampilot.environment import discover_environment
 from foampilot.inspection import inspect_native_case
@@ -82,10 +86,10 @@ from foampilot.skills import (
     load_skill_scenarios,
     validate_skill,
 )
-from foampilot.tasks import load_task_spec
-from foampilot.tasks import PublicAsset
+from foampilot.tasks import PublicAsset, load_task_spec
 from foampilot.taskbuilder import (
     TaskDraft,
+    build_task_ingress_context,
     compile_task_draft,
     extract_task_draft,
     validate_task_draft,
@@ -839,12 +843,32 @@ def _declared_task_assets(
     install_paths: list[Path] | None = None,
 ) -> list[PublicAsset]:
     root = (asset_root or request_file.parent).resolve()
+
+    def safe_source(relative: Path, *, option: str) -> Path:
+        current = root
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                raise ValueError(
+                    f"{option} resolves through a symlink and is unsafe: "
+                    f"{relative}"
+                )
+        try:
+            resolved = (root / relative).resolve(strict=True)
+        except OSError as error:
+            raise ValueError(
+                f"{option} is missing or unsafe: {relative}"
+            ) from error
+        if not resolved.is_relative_to(root):
+            raise ValueError(f"{option} escapes --asset-root and is unsafe")
+        return resolved
+
     result: list[PublicAsset] = []
     for relative in paths:
         if relative.is_absolute() or ".." in relative.parts:
             raise ValueError("--asset must be a safe path relative to --asset-root")
-        source = root / relative
-        if source.is_symlink() or not source.is_file():
+        source = safe_source(relative, option="--asset")
+        if not source.is_file():
             raise ValueError(f"declared asset is missing or not a file: {relative}")
         if source.stat().st_size > MAX_TASK_ASSET_BYTES:
             raise ValueError(
@@ -877,8 +901,8 @@ def _declared_task_assets(
             raise ValueError(
                 "--asset-install-path must be a safe case-relative path"
             )
-        source = root / relative
-        if source.is_symlink() or not source.is_dir():
+        source = safe_source(relative, option="--asset-dir")
+        if not source.is_dir():
             raise ValueError(
                 f"declared asset directory is missing or unsafe: {relative}"
             )
@@ -931,7 +955,9 @@ def _declared_task_assets(
             kind="openfoam_poly_mesh",
             source_path=relative.as_posix(),
             install_path=install_path.as_posix(),
-            region=None,
+            region=poly_mesh_region_from_install_path(
+                install_path.as_posix()
+            ),
             members=members,
         )
         result.append(
@@ -964,6 +990,8 @@ def _task_builder(arguments: argparse.Namespace) -> int:
                 str(path.resolve()) for path in arguments.protected_path
             )
         )
+        asset_root = (arguments.asset_root or arguments.request_file.parent).resolve()
+        ingress_context = build_task_ingress_context(assets, asset_root)
         trace = InMemoryModelTraceSink()
         activity_reporter = _activity_reporter(arguments)
         extraction_started = time.monotonic()
@@ -985,6 +1013,7 @@ def _task_builder(arguments: argparse.Namespace) -> int:
             ),
             trace=trace,
             protected_paths=protected,
+            ingress_context=ingress_context,
         )
         _write_yaml_exclusive(
             arguments.output,

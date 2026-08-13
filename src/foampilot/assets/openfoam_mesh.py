@@ -44,7 +44,7 @@ def _digest(path: Path) -> tuple[str, int]:
     return value.hexdigest(), size
 
 
-def _region_from_install_path(install_path: str) -> str | None:
+def poly_mesh_region_from_install_path(install_path: str) -> str | None:
     parts = PurePosixPath(install_path).parts
     if parts == ("constant", "polyMesh"):
         return None
@@ -129,7 +129,7 @@ class OpenFOAMPolyMeshAdapter:
                 "ASSET_BUNDLE_UNSAFE",
                 f"polyMesh source is missing or unsafe: {declaration.path}",
             )
-        region = _region_from_install_path(declaration.install_path)
+        region = poly_mesh_region_from_install_path(declaration.install_path)
         members: list[BundleMember] = []
         total_bytes = 0
         for logical_name in (*REQUIRED, *OPTIONAL):

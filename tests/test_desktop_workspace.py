@@ -114,7 +114,7 @@ def _draft_payload() -> dict[str, object]:
     }
 
 
-def test_confirm_task_draft_applies_answers_and_confirms_inference() -> None:
+def test_confirm_task_draft_applies_only_explicit_answers() -> None:
     text = yaml.safe_dump(
         _draft_payload(),
         sort_keys=False,
@@ -131,8 +131,8 @@ def test_confirm_task_draft_applies_answers_and_confirms_inference() -> None:
         "user_confirmation"
     )
     compressibility = confirmed.fact_map()["physics.compressibility"]
-    assert compressibility.confirmed is True
-    assert compressibility.source == "user_confirmation"
+    assert compressibility.confirmed is False
+    assert compressibility.source == "model_inference"
     assert validate_task_draft(confirmed).can_compile is True
 
 
@@ -145,3 +145,63 @@ def test_confirm_task_draft_requires_answer_without_candidate() -> None:
 
     with pytest.raises(DesktopWorkspaceError, match="answer is required"):
         confirm_task_draft(text, {})
+
+
+def test_confirm_task_draft_answers_separate_geometry_unit_question() -> None:
+    payload = _draft_payload()
+    geometry = next(
+        item for item in payload["facts"]
+        if isinstance(item, dict) and item.get("path") == "geometry"
+    )
+    geometry["value"]["length_unit"] = None
+    payload["unresolved_questions"] = [
+        {
+            "question_id": "q_geometry_length_unit",
+            "path": "geometry.length_unit",
+            "kind": "blocking",
+            "prompt_zh": "网格坐标长度单位是什么？",
+            "reason_zh": "物理尺度需要用户确认。",
+            "candidate": None,
+        }
+    ]
+    payload["status"] = "incomplete"
+    text = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+
+    confirmed_text = confirm_task_draft(
+        text,
+        {"q_geometry_length_unit": "m"},
+    )
+    confirmed = TaskDraft.model_validate(yaml.safe_load(confirmed_text))
+
+    assert confirmed.fact_map()["geometry.length_unit"].value == "m"
+    assert validate_task_draft(confirmed).can_compile is True
+
+
+def test_confirm_task_draft_answers_separate_geometry_dimension_question() -> None:
+    payload = _draft_payload()
+    geometry = next(
+        item for item in payload["facts"]
+        if isinstance(item, dict) and item.get("path") == "geometry"
+    )
+    geometry["value"]["dimensionality"] = None
+    payload["unresolved_questions"] = [
+        {
+            "question_id": "q_geometry_dimensionality",
+            "path": "geometry.dimensionality",
+            "kind": "blocking",
+            "prompt_zh": "该网格应按二维、轴对称还是三维求解？",
+            "reason_zh": "输入事实没有给出唯一维度解释。",
+            "candidate": None,
+        }
+    ]
+    payload["status"] = "incomplete"
+    text = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+
+    confirmed_text = confirm_task_draft(
+        text,
+        {"q_geometry_dimensionality": "three_d"},
+    )
+    confirmed = TaskDraft.model_validate(yaml.safe_load(confirmed_text))
+
+    assert confirmed.fact_map()["geometry.dimensionality"].value == "three_d"
+    assert validate_task_draft(confirmed).can_compile is True

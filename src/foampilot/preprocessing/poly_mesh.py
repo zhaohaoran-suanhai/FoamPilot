@@ -15,6 +15,7 @@ from .models import (
     InputMeshFacts,
     MeshPatchFact,
     MeshZoneFact,
+    PolyMeshTopologyFacts,
 )
 
 
@@ -373,13 +374,11 @@ def _validate_topology(
     return cells
 
 
-def inspect_poly_mesh(
+def inspect_poly_mesh_topology(
     bundle_root: Path,
     bundle: AssetBundle,
-    *,
-    length_unit: LengthUnit,
-) -> InputMeshFacts:
-    """Return compact authoritative facts without exposing raw mesh content."""
+) -> PolyMeshTopologyFacts:
+    """Return compact topology facts without assuming a coordinate unit."""
 
     root = Path(bundle_root).resolve()
     required_paths = {
@@ -422,9 +421,8 @@ def inspect_poly_mesh(
     )
     if not points:
         raise _fail("POLYMESH_TOPOLOGY_INVALID", "mesh has no points")
-    scale = _UNIT_TO_METRES[length_unit]
-    minimum = tuple(min(item[axis] for item in points) * scale for axis in range(3))
-    maximum = tuple(max(item[axis] for item in points) * scale for axis in range(3))
+    minimum = tuple(min(item[axis] for item in points) for axis in range(3))
+    maximum = tuple(max(item[axis] for item in points) for axis in range(3))
     dimensionality = tuple(
         f"empty patch {patch.name}"
         for patch in patches
@@ -434,18 +432,17 @@ def inspect_poly_mesh(
         member.logical_name: member.sha256
         for member in bundle.members
     }
-    return InputMeshFacts(
+    return PolyMeshTopologyFacts(
         bundle_manifest_sha256=bundle.manifest_sha256,
         inspector_id="foampilot.mesh.poly-mesh",
         inspector_version="1.0.0",
         region=bundle.region,
-        declared_length_unit=length_unit,
         source_member_sha256=source_hashes,
         points=len(points),
         faces=len(faces),
         internal_faces=len(neighbour),
         cells=cells,
-        bounding_box_m=BoundingBox(minimum=minimum, maximum=maximum),
+        unscaled_bounds=BoundingBox(minimum=minimum, maximum=maximum),
         patches=patches,
         cell_zones=cell_zones,
         face_zones=face_zones,
@@ -460,4 +457,42 @@ def inspect_poly_mesh(
     )
 
 
-__all__ = ["PolyMeshInspectionError", "inspect_poly_mesh"]
+def inspect_poly_mesh(
+    bundle_root: Path,
+    bundle: AssetBundle,
+    *,
+    length_unit: LengthUnit,
+) -> InputMeshFacts:
+    """Return compact unit-aware facts without exposing raw mesh content."""
+
+    topology = inspect_poly_mesh_topology(bundle_root, bundle)
+    scale = _UNIT_TO_METRES[length_unit]
+    minimum = tuple(value * scale for value in topology.unscaled_bounds.minimum)
+    maximum = tuple(value * scale for value in topology.unscaled_bounds.maximum)
+    return InputMeshFacts(
+        bundle_manifest_sha256=topology.bundle_manifest_sha256,
+        inspector_id=topology.inspector_id,
+        inspector_version=topology.inspector_version,
+        region=topology.region,
+        declared_length_unit=length_unit,
+        source_member_sha256=topology.source_member_sha256,
+        points=topology.points,
+        faces=topology.faces,
+        internal_faces=topology.internal_faces,
+        cells=topology.cells,
+        bounding_box_m=BoundingBox(minimum=minimum, maximum=maximum),
+        patches=topology.patches,
+        cell_zones=topology.cell_zones,
+        face_zones=topology.face_zones,
+        point_zones=topology.point_zones,
+        dimensionality_observations=topology.dimensionality_observations,
+        topology_observations=topology.topology_observations,
+        warnings=topology.warnings,
+    )
+
+
+__all__ = [
+    "PolyMeshInspectionError",
+    "inspect_poly_mesh",
+    "inspect_poly_mesh_topology",
+]

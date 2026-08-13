@@ -95,6 +95,50 @@ def _environment(*executables: str) -> EnvironmentSnapshot:
     )
 
 
+def _provided_mesh_draft(*, length_unit: str | None = "m") -> TaskDraft:
+    geometry = {
+        "mode": "openfoam_mesh",
+        "dimensionality": "two_d",
+        "description": "supplied native OpenFOAM mesh",
+        "length_unit": length_unit,
+        "assets": [
+            {
+                "path": "mesh/native",
+                "format": "openfoam_mesh",
+                "role": "volume_mesh",
+            }
+        ],
+    }
+    return TaskDraft.model_validate(
+        {
+            "draft_id": "draft-provided-mesh",
+            "request_text": (
+                "Solve a transient incompressible laminar flow on the "
+                "supplied mesh and choose suitable engineering parameters."
+            ),
+            "facts": [
+                _fact("geometry", geometry),
+                _fact("mesh", {"strategy": "provided"}),
+                _fact("physics.regime", "transient"),
+                _fact("physics.compressibility", "incompressible"),
+                _fact("physics.phase_family", "single_phase"),
+                _fact("physics.turbulence", "laminar"),
+            ],
+            "assets": [
+                {
+                    "path": "mesh/native",
+                    "sha256": "d" * 64,
+                    "purpose": "native mesh",
+                    "kind": "directory",
+                    "install_path": "constant/polyMesh",
+                    "bundle_manifest_sha256": "d" * 64,
+                }
+            ],
+            "status": "confirmed",
+        }
+    )
+
+
 def test_complete_confirmed_request_compiles_with_only_advisories() -> None:
     review = validate_task_draft(_complete_draft())
 
@@ -103,6 +147,17 @@ def test_complete_confirmed_request_compiles_with_only_advisories() -> None:
         item.severity for item in review.issues
     } & {"blocking", "confirmable"}
     assert any(item.severity == "advisory" for item in review.issues)
+
+
+def test_task_draft_v1_migrates_to_v2_with_default_ingress_context() -> None:
+    payload = _complete_draft().model_dump(mode="json")
+    payload["schema_version"] = 1
+    payload.pop("ingress_context")
+
+    migrated = TaskDraft.model_validate(payload)
+
+    assert migrated.schema_version == 2
+    assert migrated.ingress_context.target.version == "10"
 
 
 def test_missing_geometry_unit_is_blocking() -> None:
@@ -143,7 +198,7 @@ def test_geometry_and_mesh_must_match_compiler_contract_before_compile() -> None
     assert not review.can_compile
 
 
-def test_missing_fluid_material_and_boundaries_are_blocking() -> None:
+def test_missing_fluid_material_and_boundaries_are_deferred_to_design() -> None:
     draft = _without(
         _complete_draft(),
         "materials.fluid",
@@ -155,20 +210,82 @@ def test_missing_fluid_material_and_boundaries_are_blocking() -> None:
     blocking_paths = {
         item.field_path for item in review.issues if item.severity == "blocking"
     }
-    assert {"materials.fluid", "boundaries"} <= blocking_paths
+    assert not {"materials.fluid", "boundaries"} & blocking_paths
 
 
-def test_missing_regime_is_confirmable_not_silently_defaulted() -> None:
+def test_design_owned_values_do_not_block_task_ingress() -> None:
+    draft = _provided_mesh_draft()
+
+    review = validate_task_draft(draft)
+
+    assert review.can_compile is True
+    assert not {
+        "physics.solver",
+        "materials.fluid",
+        "boundaries",
+        "operating.end_time",
+        "operating.time_step",
+    } & {
+        item.field_path
+        for item in review.issues
+        if item.severity in {"blocking", "confirmable"}
+    }
+
+
+def test_provided_mesh_without_length_unit_remains_blocked() -> None:
+    review = validate_task_draft(_provided_mesh_draft(length_unit=None))
+
+    assert review.can_compile is False
+    assert [
+        item.field_path
+        for item in review.issues
+        if item.severity == "blocking"
+    ] == ["geometry.length_unit"]
+
+
+def test_explicit_unit_question_does_not_duplicate_specific_unit_issue() -> None:
+    payload = _provided_mesh_draft(length_unit=None).model_dump(mode="json")
+    payload["unresolved_questions"] = [
+        {
+            "question_id": "q_geometry_length_unit",
+            "path": "geometry.length_unit",
+            "kind": "blocking",
+            "prompt_zh": "该网格的坐标长度单位是什么？",
+            "reason_zh": "物理尺度不能由坐标猜测。",
+        }
+    ]
+    payload["status"] = "incomplete"
+
+    review = validate_task_draft(TaskDraft.model_validate(payload))
+
+    blocking = [item for item in review.issues if item.severity == "blocking"]
+    assert [(item.code, item.field_path) for item in blocking] == [
+        ("TASK_UNIT_AMBIGUOUS", "geometry.length_unit")
+    ]
+
+
+def test_separately_confirmed_length_unit_completes_atomic_mesh_geometry() -> None:
+    payload = _provided_mesh_draft(length_unit=None).model_dump(mode="json")
+    payload["facts"].append(
+        _fact(
+            "geometry.length_unit",
+            "m",
+            source="user_confirmation",
+            confirmed=True,
+        )
+    )
+
+    review = validate_task_draft(TaskDraft.model_validate(payload))
+
+    assert review.can_compile is True
+
+
+def test_missing_regime_is_deferred_to_intent_interpretation() -> None:
     review = validate_task_draft(
         _without(_complete_draft(), "physics.regime")
     )
 
-    assert any(
-        item.code == "TASK_PHYSICS_AMBIGUOUS"
-        and item.severity == "confirmable"
-        and item.field_path == "physics.regime"
-        for item in review.issues
-    )
+    assert not any(item.field_path == "physics.regime" for item in review.issues)
 
 
 def test_geometry_asset_must_be_declared() -> None:
@@ -191,7 +308,53 @@ def test_geometry_asset_must_be_declared() -> None:
     assert any(item.code == "TASK_ASSET_UNRESOLVED" for item in review.issues)
 
 
-def test_explicit_solver_must_exist_in_discovered_environment() -> None:
+def test_validation_blocks_incompatible_geometry_and_mesh_strategy() -> None:
+    payload = _complete_draft().model_dump(mode="json")
+    geometry = next(
+        item for item in payload["facts"] if item["path"] == "geometry"
+    )
+    geometry["value"] = {
+        "mode": "surface",
+        "dimensionality": "three_d",
+        "description": "public body surface",
+        "length_unit": "mm",
+        "assets": [
+            {"path": "geometry/body.stl", "format": "stl", "role": "body"}
+        ],
+    }
+    payload["assets"] = [
+        {
+            "path": "geometry/body.stl",
+            "sha256": "d" * 64,
+            "purpose": "body",
+        }
+    ]
+    payload["facts"].append(_fact("mesh", {"strategy": "provided"}))
+
+    review = validate_task_draft(TaskDraft.model_validate(payload))
+
+    assert any(
+        item.severity == "blocking" and item.field_path == "mesh"
+        for item in review.issues
+    )
+
+
+def test_openfoam_mesh_requires_explicit_provided_strategy() -> None:
+    payload = _provided_mesh_draft().model_dump(mode="json")
+    payload["facts"] = [
+        item for item in payload["facts"] if item["path"] != "mesh"
+    ]
+
+    review = validate_task_draft(TaskDraft.model_validate(payload))
+
+    assert review.can_compile is False
+    assert any(
+        item.severity == "blocking" and item.field_path == "mesh"
+        for item in review.issues
+    )
+
+
+def test_taskbuilder_defers_solver_capability_to_later_risk_gate() -> None:
     payload = _complete_draft().model_dump(mode="json")
     payload["facts"].append(_fact("physics.solver", "madeUpFoam"))
     review = validate_task_draft(
@@ -199,14 +362,11 @@ def test_explicit_solver_must_exist_in_discovered_environment() -> None:
         environment=_environment("icoFoam", "simpleFoam"),
     )
 
-    assert any(
-        item.code == "TASK_CAPABILITY_UNAVAILABLE"
-        and item.severity == "blocking"
-        for item in review.issues
-    )
+    assert not any(item.code == "TASK_CAPABILITY_UNAVAILABLE" for item in review.issues)
+    assert review.can_compile is True
 
 
-def test_unconfirmed_model_physics_is_confirmable() -> None:
+def test_unconfirmed_model_physics_is_audit_only_at_task_ingress() -> None:
     payload = _complete_draft().model_dump(mode="json")
     regime = next(
         item for item in payload["facts"] if item["path"] == "physics.regime"
@@ -216,14 +376,10 @@ def test_unconfirmed_model_physics_is_confirmable() -> None:
 
     review = validate_task_draft(TaskDraft.model_validate(payload))
 
-    assert any(
-        item.field_path == "physics.regime"
-        and item.severity == "confirmable"
-        for item in review.issues
-    )
+    assert not any(item.field_path == "physics.regime" for item in review.issues)
 
 
-def test_high_impact_model_assumption_is_confirmable() -> None:
+def test_high_impact_model_assumption_is_audit_only_at_task_ingress() -> None:
     payload = _complete_draft().model_dump(mode="json")
     payload["assumptions"] = [
         {
@@ -238,9 +394,8 @@ def test_high_impact_model_assumption_is_confirmable() -> None:
 
     review = validate_task_draft(TaskDraft.model_validate(payload))
 
-    assert any(
+    assert not any(
         item.field_path == "materials.fluid.kinematic_viscosity"
-        and item.severity == "confirmable"
         for item in review.issues
     )
-    assert not review.can_compile
+    assert review.can_compile

@@ -145,8 +145,10 @@ foampilot task validate-draft task-draft.yaml --json
 foampilot task compile task-draft.yaml --output task.yaml --json
 ```
 
-TaskBuilder 只提取带来源的事实并使用低风险确定性默认值。缺少单位、物性、边界值、初始条件、
-终止时间或工程容差时不会猜测，也不会进入 case generation。当前 CLI 是三个可审计步骤，
+TaskBuilder 只提取带来源的公开输入事实并使用低风险确定性默认值。它只阻断后续工程设计不能
+安全发明的输入权威缺口，例如未知几何长度单位、无法确定的维度、未声明或损坏的资产。solver、
+物性候选、边界数值、时间步和终止时间等工程选择进入后续 CaseDesigner，再由 RiskGate 决定
+是否需要逐字段确认或补充信息；TaskBuilder 不再提前重复追问。当前 CLI 是三个可审计步骤，
 尚未提供多轮聊天或交互式澄清表单。
 
 新的 authoring 路径只接受 `TaskSpec v3`；`TaskSpec v2` 只允许用于历史 run 的只读展示。进入
@@ -200,9 +202,11 @@ foampilot task draft \
   --json
 ```
 
-provided 路径会在模型调用前固化 `asset-bundles.json`、`input-mesh-facts.json` 和
-`pre-authoring-mesh-facts.json`；系统读取 patch/zone/count/bounds 并运行受控 `checkMesh`，
-模型只负责基于这些权威事实编写 case，不能重新生成或覆盖网格。示例见
+`task draft` 会在第一次模型调用前验证目录 manifest，并用第一方解析器产生不假定单位的紧凑
+拓扑事实，包括 patch、zone、数量和未缩放 bounds；原始 points/faces 内容不会进入模型上下文。
+polyMesh 自身不携带可靠长度单位，因此提示词未明确单位时只返回一个具体单位问题。单位确认并
+编译后，solve 阶段才固化 `asset-bundles.json`、`input-mesh-facts.json` 和
+`pre-authoring-mesh-facts.json`，并运行受控 `checkMesh`。模型不能重新生成或覆盖网格。示例见
 `examples/tasks/provided-poly-mesh.yaml`。
 
 校验公开 TaskSpec：

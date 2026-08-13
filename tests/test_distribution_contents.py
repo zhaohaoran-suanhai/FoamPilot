@@ -16,19 +16,9 @@ REMOVED_VALIDATION_MODULES = {
     "foampilot/validation/policies.py",
     "foampilot/validation/public_checks.py",
 }
-PHASE5_RELEASE_SOURCES = (
-    "foampilot/acceptance/compiler.py",
-    "foampilot/acceptance/evaluator.py",
-    "foampilot/agent/contract_stages.py",
-    "foampilot/observations/__init__.py",
-    "foampilot/observations/models.py",
-    "foampilot/observations/planner.py",
-    "foampilot/observations/openfoam10.py",
-    "foampilot/observations/registry.py",
-    "foampilot/plans/compiler.py",
-    "foampilot/postprocessing/engine.py",
-    "foampilot/postprocessing/openfoam10.py",
-    "foampilot/simulation/intent.py",
+PRODUCTION_PYTHON_SOURCES = tuple(
+    path.relative_to(ROOT / "src").as_posix()
+    for path in sorted((ROOT / "src" / "foampilot").rglob("*.py"))
 )
 
 
@@ -57,7 +47,12 @@ def test_built_wheel_does_not_resurrect_deleted_validation_modules() -> None:
             if archive.getinfo(name).file_size <= 2_000_000
         )
         packaged_sources = {
-            name: archive.read(name) for name in PHASE5_RELEASE_SOURCES
+            name: archive.read(name) for name in PRODUCTION_PYTHON_SOURCES
+        }
+        packaged_python_sources = {
+            name
+            for name in names
+            if name.startswith("foampilot/") and name.endswith(".py")
         }
 
     assert REMOVED_VALIDATION_MODULES.isdisjoint(names)
@@ -67,7 +62,8 @@ def test_built_wheel_does_not_resurrect_deleted_validation_modules() -> None:
     assert "foampilot/acceptance/evaluator.py" in names
     assert b"/home/edwin" not in payload
     assert b"feal-venv" not in payload
-    for name in PHASE5_RELEASE_SOURCES:
+    assert packaged_python_sources == set(PRODUCTION_PYTHON_SOURCES)
+    for name in PRODUCTION_PYTHON_SOURCES:
         assert packaged_sources[name] == (ROOT / "src" / name).read_bytes()
 
 
@@ -75,9 +71,16 @@ def test_built_sdist_does_not_include_stale_build_tree() -> None:
     with tarfile.open(_sdist(), "r:gz") as archive:
         names = tuple(archive.getnames())
         prefix = names[0].split("/", 1)[0]
-        for name in PHASE5_RELEASE_SOURCES:
+        packaged_python_sources = {
+            name.removeprefix(f"{prefix}/src/")
+            for name in names
+            if name.startswith(f"{prefix}/src/foampilot/")
+            and name.endswith(".py")
+        }
+        for name in PRODUCTION_PYTHON_SOURCES:
             member = archive.extractfile(f"{prefix}/src/{name}")
             assert member is not None
             assert member.read() == (ROOT / "src" / name).read_bytes()
 
     assert not any("/build/lib/" in name for name in names)
+    assert packaged_python_sources == set(PRODUCTION_PYTHON_SOURCES)

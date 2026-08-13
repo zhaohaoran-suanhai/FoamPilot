@@ -15,6 +15,7 @@ from .models import (
     TaskCompilation,
     TaskFact,
 )
+from .projection import compilable_fact_map, effective_geometry_value
 
 
 _RESOURCE_DEFAULTS = {
@@ -125,13 +126,17 @@ def compile_task_draft(review: DraftReview) -> TaskCompilation:
             "TASK_COMPILATION_FAILED: blocking or confirmable issues remain"
         )
     draft = review.draft
-    facts = draft.fact_map()
+    facts = compilable_fact_map(draft)
     compiler_diagnostics = _metric_diagnostics(facts)
     assumptions = list(draft.assumptions)
 
-    distribution = _fact_value(facts, "openfoam.distribution", "foundation")
-    version = _fact_value(facts, "openfoam.version", "10")
-    if "openfoam.version" not in facts:
+    # The current product target is an executable capability boundary, not an
+    # editable task fact or serialized-draft preference.
+    distribution = "foundation"
+    version = "10"
+    for target_path in ("openfoam.distribution", "openfoam.version"):
+        facts.pop(target_path, None)
+    if not any(item.path == "openfoam.version" for item in draft.facts):
         assumptions.append(
             _system_assumption(
                 "default-openfoam-version",
@@ -151,7 +156,7 @@ def compile_task_draft(review: DraftReview) -> TaskCompilation:
                 )
             )
 
-    geometry = _fact_value(facts, "geometry")
+    geometry = effective_geometry_value(facts) or None
     mesh = _fact_value(facts, "mesh")
     if mesh is None:
         mesh = {"strategy": "auto"}
@@ -193,9 +198,45 @@ def compile_task_draft(review: DraftReview) -> TaskCompilation:
             "geometry": "geometry.input",
             "mesh": "mesh.intent",
         }.get(path, path)
-        explicit_facts.append(
-            _resolved_fact(fact, field_path=mapped_path).model_dump(mode="json")
-        )
+        if path == "geometry" and geometry != fact.value:
+            component_facts = [
+                facts[component]
+                for component in (
+                    "geometry.dimensionality",
+                    "geometry.length_unit",
+                    "geometry.patch_roles",
+                    "geometry.region_roles",
+                )
+                if component in facts
+            ]
+            explicit_facts.append(
+                ResolvedValue(
+                    field_path=mapped_path,
+                    value=geometry,
+                    source="deterministic_rule",
+                    impact="high",
+                    evidence=(
+                        FactEvidence(
+                            kind="task_draft_geometry",
+                            detail=f"geometry asset authority: {fact.evidence}",
+                        ),
+                        *(
+                            FactEvidence(
+                                kind=f"task_draft_{item.path.replace('.', '_')}",
+                                detail=(
+                                    f"{item.path} authority: {item.evidence}"
+                                ),
+                            )
+                            for item in component_facts
+                        ),
+                    ),
+                    confirmed=True,
+                ).model_dump(mode="json")
+            )
+        else:
+            explicit_facts.append(
+                _resolved_fact(fact, field_path=mapped_path).model_dump(mode="json")
+            )
     if "mesh" not in facts:
         explicit_facts.append(
             ResolvedValue(

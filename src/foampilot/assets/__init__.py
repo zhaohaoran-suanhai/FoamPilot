@@ -7,7 +7,11 @@ from .models import (
     StagedAsset,
     compute_bundle_manifest_sha256,
 )
-from .openfoam_mesh import AssetBundleError, OpenFOAMPolyMeshAdapter
+from .openfoam_mesh import (
+    AssetBundleError,
+    OpenFOAMPolyMeshAdapter,
+    poly_mesh_region_from_install_path,
+)
 from .public_file import PublicFileAdapter
 
 __all__ = [
@@ -17,6 +21,7 @@ __all__ = [
     "BundleMember",
     "StagedAsset",
     "OpenFOAMPolyMeshAdapter",
+    "poly_mesh_region_from_install_path",
     "PublicFileAdapter",
     "compute_bundle_manifest_sha256",
 ]

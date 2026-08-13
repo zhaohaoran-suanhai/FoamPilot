@@ -977,6 +977,23 @@ def test_incomplete_draft_can_be_confirmed_and_compiled_without_yaml_editing(
     assert window.solve_button.isEnabled() is True
 
 
+def test_audit_only_model_inference_does_not_enable_confirmation(
+    qtbot,
+) -> None:
+    window = FoamPilotMainWindow(job_controller=RecordingJobController())
+    qtbot.addWidget(window)
+    payload = yaml.safe_load(_draft_yaml())
+    payload["unresolved_questions"] = []
+    payload["status"] = "confirmed"
+
+    window.load_draft_text(
+        yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+    )
+
+    assert window.confirm_draft_button.isEnabled() is False
+    assert window._draft_needs_confirmation is False
+
+
 def test_discovered_run_starts_live_refresh_and_updates_residuals(
     qtbot,
     tmp_path: Path,

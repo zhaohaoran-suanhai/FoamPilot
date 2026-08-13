@@ -148,43 +148,12 @@ def confirm_task_draft(text: str, answers: dict[str, object]) -> str:
         for item in facts
         if isinstance(item, dict) and isinstance(item.get("path"), str)
     }
-    for item in facts:
-        if not isinstance(item, dict):
-            continue
-        if item.get("impact") in {"medium", "high"} and not item.get(
-            "confirmed"
-        ):
-            item["source"] = "user_confirmation"
-            item["confirmed"] = True
-            item["evidence"] = (
-                str(item.get("evidence", "")).strip()
-                + "; desktop user confirmed"
-            ).strip("; ")
-
     assumptions = result["assumptions"]
     assert isinstance(assumptions, list)
-    retained_assumptions: list[object] = []
-    for assumption in assumptions:
-        if (
-            isinstance(assumption, dict)
-            and assumption.get("source") == "model_inference"
-            and assumption.get("impact") in {"medium", "high"}
-        ):
-            path = str(assumption["path"])
-            if path not in by_path:
-                fact = {
-                    "path": path,
-                    "value": assumption["value"],
-                    "source": "user_confirmation",
-                    "evidence": "desktop user confirmed model assumption",
-                    "impact": assumption["impact"],
-                    "confirmed": True,
-                }
-                facts.append(fact)
-                by_path[path] = fact
-        else:
-            retained_assumptions.append(assumption)
-    result["assumptions"] = retained_assumptions
+    # A submitted answer confirms only its exact question path. Model facts
+    # and assumptions remain audit data; an unrelated answer must never
+    # promote them to user authority.
+    result["assumptions"] = assumptions
 
     questions = result["unresolved_questions"]
     assert isinstance(questions, list)

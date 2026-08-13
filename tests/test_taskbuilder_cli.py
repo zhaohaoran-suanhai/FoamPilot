@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
 
 import yaml
 
@@ -12,6 +13,9 @@ from foampilot.models import (
     GatewayRequestError,
 )
 from tests.test_task_draft_validation import _complete_draft, _without
+
+
+POLY_MESH_FIXTURE = Path(__file__).parent / "fixtures/poly_mesh/minimal"
 
 
 def _write_draft(path: Path, draft) -> None:
@@ -127,16 +131,7 @@ def test_task_draft_declares_poly_mesh_directory_as_one_asset(
     request = tmp_path / "request.md"
     request.write_text("Use the supplied native mesh.", encoding="utf-8")
     mesh = tmp_path / "mesh/native"
-    mesh.mkdir(parents=True)
-    for name, content in {
-        "points": b"points\n",
-        "faces": b"faces\n",
-        "owner": b"owner\n",
-        "neighbour": b"neighbour\n",
-        "boundary": b"boundary\n",
-        "cellZones": b"zones\n",
-    }.items():
-        (mesh / name).write_bytes(content)
+    shutil.copytree(POLY_MESH_FIXTURE, mesh)
     output = tmp_path / "draft.yaml"
     expected = _complete_draft()
     captured = []
@@ -147,8 +142,12 @@ def test_task_draft_declares_poly_mesh_directory_as_one_asset(
     )
 
     def fake_extract(request_text, assets, gateway, **kwargs):
-        del request_text, gateway, kwargs
+        del request_text, gateway
         captured.extend(assets)
+        context = kwargs["ingress_context"]
+        assert context.target.version == "10"
+        assert context.poly_mesh_topologies[0].patches[-1].name == "frontAndBack"
+        assert context.poly_mesh_topologies[0].cell_zones[0].name == "zoneA"
         return expected.model_copy(update={"assets": assets})
 
     monkeypatch.setattr("foampilot.cli.main.extract_task_draft", fake_extract)
@@ -180,6 +179,168 @@ def test_task_draft_declares_poly_mesh_directory_as_one_asset(
     assert "members" not in payload["assets"][0]
 
 
+def test_task_draft_accepts_multi_region_poly_mesh_manifest(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    request = tmp_path / "request.md"
+    request.write_text("Use the supplied fluid-region mesh.", encoding="utf-8")
+    mesh = tmp_path / "mesh/native"
+    shutil.copytree(POLY_MESH_FIXTURE, mesh)
+    captured = []
+    monkeypatch.setattr(
+        "foampilot.cli.main._native_gateway",
+        lambda arguments, **kwargs: object(),
+    )
+
+    def fake_extract(request_text, assets, gateway, **kwargs):
+        del request_text, gateway
+        captured.extend(assets)
+        assert kwargs["ingress_context"].poly_mesh_topologies[0].region == "fluid"
+        return _complete_draft().model_copy(update={"assets": assets})
+
+    monkeypatch.setattr("foampilot.cli.main.extract_task_draft", fake_extract)
+
+    assert main(
+        [
+            "task",
+            "draft",
+            "--request-file",
+            str(request),
+            "--asset-dir",
+            "mesh/native",
+            "--asset-install-path",
+            "constant/fluid/polyMesh",
+            "--output",
+            str(tmp_path / "draft.yaml"),
+            "--json",
+        ]
+    ) == 0
+    assert captured[0].install_path == "constant/fluid/polyMesh"
+    assert captured[0].bundle_manifest_sha256
+    assert json.loads(capsys.readouterr().out)["status"] == "PASS"
+
+
+def test_task_draft_rejects_file_asset_through_escaping_parent_symlink(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    root = tmp_path / "assets"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (outside / "secret.stl").write_text("external", encoding="utf-8")
+    (root / "link").symlink_to(outside, target_is_directory=True)
+    request = root / "request.md"
+    request.write_text("Use the declared surface.", encoding="utf-8")
+    monkeypatch.setattr(
+        "foampilot.cli.main._native_gateway",
+        lambda arguments, **kwargs: (_ for _ in ()).throw(
+            AssertionError("model gateway must not be created")
+        ),
+    )
+
+    assert main(
+        [
+            "task",
+            "draft",
+            "--request-file",
+            str(request),
+            "--asset-root",
+            str(root),
+            "--asset",
+            "link/secret.stl",
+            "--output",
+            str(tmp_path / "draft.yaml"),
+            "--json",
+        ]
+    ) == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "INVALID_INPUT"
+    assert "unsafe" in payload["error"]
+
+
+def test_task_draft_rejects_directory_asset_through_escaping_parent_symlink(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    root = tmp_path / "assets"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    shutil.copytree(POLY_MESH_FIXTURE, outside / "native")
+    (root / "link").symlink_to(outside, target_is_directory=True)
+    request = root / "request.md"
+    request.write_text("Use the declared mesh.", encoding="utf-8")
+    monkeypatch.setattr(
+        "foampilot.cli.main._native_gateway",
+        lambda arguments, **kwargs: (_ for _ in ()).throw(
+            AssertionError("model gateway must not be created")
+        ),
+    )
+
+    assert main(
+        [
+            "task",
+            "draft",
+            "--request-file",
+            str(request),
+            "--asset-root",
+            str(root),
+            "--asset-dir",
+            "link/native",
+            "--asset-install-path",
+            "constant/polyMesh",
+            "--output",
+            str(tmp_path / "draft.yaml"),
+            "--json",
+        ]
+    ) == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "INVALID_INPUT"
+    assert "unsafe" in payload["error"]
+
+
+def test_task_draft_rejects_malformed_poly_mesh_before_model_call(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    request = tmp_path / "request.md"
+    request.write_text("Use the supplied native mesh.", encoding="utf-8")
+    mesh = tmp_path / "mesh/native"
+    shutil.copytree(POLY_MESH_FIXTURE, mesh)
+    (mesh / "boundary").write_text("not a boundary file\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "foampilot.cli.main._native_gateway",
+        lambda arguments, **kwargs: (_ for _ in ()).throw(
+            AssertionError("model gateway must not be created")
+        ),
+    )
+
+    assert main(
+        [
+            "task",
+            "draft",
+            "--request-file",
+            str(request),
+            "--asset-dir",
+            "mesh/native",
+            "--asset-install-path",
+            "constant/polyMesh",
+            "--output",
+            str(tmp_path / "draft.yaml"),
+            "--json",
+        ]
+    ) == 2
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "INVALID_INPUT"
+    assert "POLYMESH_PARSE_FAILED" in payload["error"]
+
+
 def test_task_draft_rejects_unpaired_directory_arguments(
     tmp_path: Path,
     capsys,
@@ -206,17 +367,17 @@ def test_task_draft_rejects_unpaired_directory_arguments(
     assert "paired" in payload["error"]
 
 
-def test_validate_draft_returns_four_for_blocking_review(
+def test_validate_draft_passes_when_only_design_owned_material_is_missing(
     tmp_path: Path,
     capsys,
 ) -> None:
     path = tmp_path / "draft.yaml"
     _write_draft(path, _without(_complete_draft(), "materials.fluid"))
 
-    assert main(["task", "validate-draft", str(path), "--json"]) == 4
+    assert main(["task", "validate-draft", str(path), "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["status"] == "TASK_REQUEST_INCOMPLETE"
-    assert any(item["severity"] == "blocking" for item in payload["issues"])
+    assert payload["status"] == "PASS"
+    assert not any(item["severity"] == "blocking" for item in payload["issues"])
 
 
 def test_compile_writes_canonical_task_and_visible_assumptions(

@@ -96,8 +96,9 @@ case 风险和实际 backend。qualification 只能使用 `sandbox_required`。
 
 ### 从自然语言生成 TaskSpec
 
-先把问题定义完整写入 `request.md`。单位、物性、边界数值、初始条件和瞬态终止时间应明确；
-几何附件必须以相对路径显式声明：
+先把物理意图写入 `request.md`，并以相对路径显式声明几何附件。几何长度单位属于输入权威，
+必须由用户文本或显式确认给出；物性、边界数值、初始条件和瞬态控制可以由用户明确指定，也可
+交给后续 CaseDesigner 提出受 RiskGate 约束的候选：
 
 ```bash
 foampilot task draft \
@@ -116,11 +117,13 @@ foampilot task compile task-draft.yaml \
   --json
 ```
 
-不带附件时省略 `--asset` 和 `--asset-root`。`draft` 只把公开 request 和附件 metadata 交给
-模型，不读取目标 tutorial，也不运行 OpenFOAM。完整且有明确证据的事实可以直接确认；缺少
-高影响信息时返回 `TASK_REQUEST_INCOMPLETE` 或 `TASK_CONFIRMATION_REQUIRED`，并在 draft/review
-中给出中文问题。当前 CLI 不包含交互式澄清表单；补充 request 或由上游 Agent/界面记录
-`user_confirmation` 后，再生成并校验新的 draft。输出文件采用独占创建，不覆盖已有文件。
+不带附件时省略 `--asset` 和 `--asset-root`。`draft` 只把公开 request、附件 metadata 和系统
+解析出的紧凑输入事实交给模型，不读取目标 tutorial，也不运行 OpenFOAM。完整且有明确证据的
+事实可以直接确认；只有输入权威缺口才在这里返回 `TASK_REQUEST_INCOMPLETE`。solver、物性和
+时间控制等设计缺口由 solve 阶段的 CaseDesigner/RiskGate 产生规范的
+`CONFIRMATION_REQUIRED` 或 `INFORMATION_REQUIRED`。当前 CLI 不包含交互式澄清表单；补充
+request 或由上游 Agent/界面记录 `user_confirmation` 后，再校验和编译 draft。输出文件采用
+独占创建，不覆盖已有文件。
 模型进程、网络或服务暂时不可用时，`draft` 返回退出码 3、稳定 backend code、中文 message 和
 recovery，不会把问题记为 OpenFOAM failure。
 
@@ -139,12 +142,14 @@ foampilot task draft \
   --json
 ```
 
-编译后的 TaskSpec 使用 `geometry.mode: openfoam_mesh` 和 `mesh.strategy: provided`。系统验证
-必需成员和可选 zones，记录整个目录的 manifest/hash，并原子化安装到声明的 case 相对位置。
-在首次模型生成前，`PolyMeshInspector` 产生紧凑的 `input-mesh-facts.json`，系统受控
-`checkMesh` 产生 `pre-authoring-mesh-facts.json`；`asset-bundles.json` 保存资产清单。模型只
-看到结构化点/面/单元数量、bounds、patch 和 zone 事实，不能读取或覆盖原始网格成员。完整
-手写示例见 `examples/tasks/provided-poly-mesh.yaml`，求解时需传入 `--public-asset-root`：
+在首次 TaskDraft 模型调用前，`PolyMeshInspector` 已验证必需成员和可选 zones，并产生不声明
+长度单位的 `PolyMeshTopologyFacts`。模型只看到结构化点/面/单元数量、未缩放 bounds、patch
+和 zone 事实，不能读取或覆盖原始网格成员。提示词没有长度单位时，TaskDraft 会只询问这一项，
+而不会再要求用户重复提供 patch/zone、solver、物性或时间控制。单位确认后，编译的 TaskSpec
+使用 `geometry.mode: openfoam_mesh` 和 `mesh.strategy: provided`；solve 阶段原子化安装目录，
+再保存 `asset-bundles.json`、单位感知的 `input-mesh-facts.json` 和受控 `checkMesh` 生成的
+`pre-authoring-mesh-facts.json`。完整手写示例见 `examples/tasks/provided-poly-mesh.yaml`，求解
+时需传入 `--public-asset-root`：
 
 ```bash
 foampilot solve examples/tasks/provided-poly-mesh.yaml \

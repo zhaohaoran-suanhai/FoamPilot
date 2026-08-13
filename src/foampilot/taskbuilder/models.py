@@ -17,6 +17,8 @@ from pydantic import (
 
 from foampilot.tasks import PublicAsset, TaskSpec
 
+from .context import TaskIngressContext
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -93,7 +95,7 @@ class TaskQuestion(StrictModel):
 
 
 class TaskDraft(StrictModel):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     draft_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]*$")
     request_text: str = Field(min_length=1)
     facts: list[TaskFact] = Field(default_factory=list)
@@ -101,7 +103,25 @@ class TaskDraft(StrictModel):
     unresolved_questions: list[TaskQuestion] = Field(default_factory=list)
     assets: list[PublicAsset] = Field(default_factory=list)
     protected_paths: list[str] = Field(default_factory=list)
+    ingress_context: TaskIngressContext = Field(
+        default_factory=TaskIngressContext
+    )
     status: TaskDraftStatus
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_v1(cls, value):
+        if not isinstance(value, dict):
+            return value
+        if value.get("schema_version", 1) != 1:
+            return value
+        migrated = dict(value)
+        migrated["schema_version"] = 2
+        migrated.setdefault(
+            "ingress_context",
+            TaskIngressContext().model_dump(mode="json"),
+        )
+        return migrated
 
     @field_validator("request_text")
     @classmethod
@@ -143,13 +163,6 @@ class TaskDraft(StrictModel):
         if self.status == TaskDraftStatus.CONFIRMED:
             if self.unresolved_questions:
                 raise ValueError("confirmed draft cannot have unresolved questions")
-            if any(
-                not item.confirmed and item.impact in {"medium", "high"}
-                for item in self.facts
-            ):
-                raise ValueError(
-                    "confirmed draft cannot contain unconfirmed high-impact facts"
-                )
         for protected in self.protected_paths:
             if protected in self.request_text:
                 raise ValueError("request text contains a protected path")
@@ -175,12 +188,9 @@ class DraftReview(StrictModel):
 
     @model_validator(mode="after")
     def validate_compilation_flag(self) -> Self:
-        expected = (
-            self.draft.status == TaskDraftStatus.CONFIRMED
-            and not any(
-                item.severity in {"blocking", "confirmable"}
-                for item in self.issues
-            )
+        expected = not any(
+            item.severity in {"blocking", "confirmable"}
+            for item in self.issues
         )
         if self.can_compile != expected:
             raise ValueError("can_compile is inconsistent with draft review")
