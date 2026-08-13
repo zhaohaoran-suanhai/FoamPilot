@@ -47,7 +47,9 @@ foampilot qualify suite \
 - 新的 authoring 输入只接受 `TaskSpec v3`。`TaskSpec v2` 仅用于历史 run 的只读报告，禁止
   重新进入 authoring、resume 或 qualification。
 - 完整自然语言请求可以经过 `TaskDraft -> DraftReview -> TaskCompiler`，但高影响模型推断不能
-  冒充 `user_confirmation`，缺少单位、物性、边界值或终止条件时不得进入 generation。
+  冒充 `user_confirmation`。TaskBuilder 只阻断必须由用户或资产提供的输入权威缺口，例如未知
+  几何长度单位、未声明资产或维度冲突；solver、物性候选、边界数值、时间控制和工程容差交给
+  后续 CaseDesigner/RiskGate，不得在 TaskBuilder 中重复追问或猜测。
 - 将用户需求转换为保留几何、物理、工况、资源、输出和公开验收条件的最小 TaskSpec；
   qualification 继续直接使用冻结 TaskSpec。
 - 默认从空 case 开始；只有 TaskSpec 显式声明并通过校验的 public asset 可以进入工作目录。

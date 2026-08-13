@@ -1,5 +1,8 @@
 # FoamPilot 架构、运行流程与功能边界
 
+> 本文是面向读者的系统说明。package/文件职责、输入输出、唯一权威和禁止边界以
+> [FoamPilot 现行架构与程序职责规范](architecture.md) 为准；两者冲突时不得使用本文覆盖该规范。
+
 ## 1. 文档范围
 
 本文介绍 FoamPilot 当前仓库中已经实现的规范运行路径。内容以
@@ -42,8 +45,10 @@ FAISS、MCP、预先存在的目标 tutorial、Case renderer 或 `Allrun` 脚本
 - 可选的几何输入、显式长度单位、patch/region role 和网格质量意图。
 
 TaskBuilder 不直接调用 OpenFOAM：模型只提取带来源的 `TaskDraft`，确定性 Validator 区分
-blocking、confirmable 和 advisory，Compiler 只填充公开可见的低风险运行默认值。单位、物性、
-边界值、初始条件、终止时间和工程容差等高影响事实缺失时不会被猜测，也不会进入 case generation。
+blocking、confirmable 和 advisory，Compiler 只填充公开可见的低风险运行默认值。TaskBuilder
+只阻断必须由用户或资产提供的输入权威缺口，例如未知几何长度单位、未声明资产或维度冲突；
+solver、物性候选、边界数值、时间控制和工程容差由后续 CaseDesigner/RiskGate 处理，不会在
+TaskBuilder 被猜测或重复追问。所有必须由用户或资产提供的缺失输入都不会被猜测。
 当前提供的是三个可审计 CLI/Python 步骤，尚未提供持续聊天会话、交互表单或一条命令完成澄清与求解。
 
 新的 authoring 只接受 v3；`TaskSpec v2` 只供历史 run 的只读 adapter 展示，不能重新进入

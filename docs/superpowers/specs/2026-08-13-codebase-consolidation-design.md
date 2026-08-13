@@ -16,6 +16,10 @@
 
 “减重”以降低认知负担和重复维护为准，不以删除最多代码或减少最多测试数量为准。
 
+本设计从属于 [FoamPilot 现行架构与程序职责规范](../../architecture.md)。该架构规范定义系统
+流程、package/文件职责、输入输出、唯一副作用所有者和禁止边界，是所有减重判断的第一权威。
+如果某项清理无法证明符合架构规范第 9 节的等价性规则，则该清理不进入本轮。
+
 ## 2. 不在本轮范围内
 
 - 不继续运行新的 CFD 求解或 qualification；
@@ -81,6 +85,10 @@ TaskBuilder 输入链按以下职责拆分，模块只使用包内接口：
 
 `extraction.py` 不再实现领域核验细节。各模块通过显式函数传递 `TaskFact`、`TaskQuestion`、
 `PublicAsset` 和 `TaskIngressContext`，不得通过全局可变状态通信，也不得新增第二套 fact 解释器。
+
+上述拆分只改变 `taskbuilder` 内部组织，对应架构规范中 `taskbuilder/extraction.py` 的薄编排目标。
+TaskDraft、DraftReview、TaskSpec、错误码、来源权威和 CLI/Desktop 投影保持不变。实施计划必须为
+每个移动的函数记录“原文件 -> 新文件 -> 架构职责 -> 等价测试”映射。
 
 减重目标为 `extraction.py` 不超过约 300 行，新增职责模块原则上不超过约 400 行。该数值是
 认知复杂度警戒线，不是通过机械拆分空壳文件规避的硬性质量指标。
@@ -167,6 +175,13 @@ CLI、compiler、validator 和 `TaskSpec` 测试保留在原文件，除非存�
 6. 从干净 sdist 构建 wheel，发行物源码集合与工作树完全一致；
 7. wheel 安装到临时目录后，从该目录成功导入新拆分模块并验证真实草稿；
 8. `git status --short` 只包含本轮预期变更，提交后为空。
+
+此外必须检查：
+
+- `docs/architecture.md` 的文件级目录仍覆盖全部生产 Python 文件；
+- package import-boundary 测试仍通过；
+- side effect owner 没有增加；
+- 删除/合并清单中的每一项都有架构职责与保留实现映射。
 
 本轮不声称新的 OpenFOAM solver completion、物理验收或跨机 qualification。
 
