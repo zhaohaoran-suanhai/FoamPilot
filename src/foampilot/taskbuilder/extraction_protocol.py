@@ -22,6 +22,7 @@ ExtractableFactPath = Literal[
     "physics.turbulence",
     "physics.solver",
     "geometry",
+    "geometry.length_unit",
     "mesh",
     "materials.fluid",
     "materials.solid",
@@ -134,7 +135,7 @@ candidate 字段必须是 JSON 文本：字符串值也要编码为 JSON 字符�
 object/array 文本。fact.path 只能使用以下小写路径词表，不得创造带大写字段名的路径：
 task.title、openfoam.distribution、openfoam.version、physics.family、physics.regime、
 physics.compressibility、physics.phase_family、physics.energy、physics.turbulence、physics.solver、
-geometry、mesh、materials.fluid、materials.solid、materials.thermal、boundaries、
+geometry、geometry.length_unit、mesh、materials.fluid、materials.solid、materials.thermal、boundaries、
 initial.conditions、initial.phase_fraction、operating.end_time、operating.time_step、
 operating.write_interval、outputs.required、outputs.metrics、outputs.paths、
 acceptance.requirements、acceptance.conservation_max、resources.max_attempts、
@@ -144,12 +145,18 @@ resources.max_wall_seconds、resources.max_mpi_ranks、resources.memory_mib。
 "10"；physics.family 使用 "fluid"/"solid"，physics.regime 只能是 "steady" 或 "transient"，
 physics.compressibility 使用 "incompressible"/"compressible"，physics.phase_family 使用
 "single_phase"/"vof"/"multiphase"，physics.energy 使用 "disabled"/"enabled"。
+对于已声明的原生 polyMesh，geometry 的拓扑和资产信息可以保持 public_asset；如果用户明确声明
+坐标长度单位，必须另行输出 path="geometry.length_unit" 的字符串标量事实，source="user_text"，
+value 只允许 "m"、"cm"、"mm"、"um" 或 "in"，evidence 使用包含该单位的最短用户原文。
+不得从坐标范围、OpenFOAM 惯例或资产 metadata 推断该事实。
 geometry 必须直接符合 GeometryInput：只允许 mode、dimensionality、description、length_unit、
 assets、parameters、patch_roles、region_roles；参数化几何使用 mode="parametric"，二维使用
 dimensionality="two_d"，尺寸放入 parameters，例如
 {"width":{"value":0.1,"unit":"m"}}，不得直接添加 shape/width/height 等字段。
 patch_roles 必须是 object list，例如 [{"name":"top","role":"wall"}]，role 只使用
 inlet/outlet/wall/opening/symmetry/empty/interface/other；region_roles 同样是 object list。
+用户明确声明 patch 或 region 名称到角色的映射时，必须完整写入 geometry 的 patch_roles/region_roles；
+不得只把映射留在 request_text，也不得以空数组替代用户已经明确给出的映射。
 patch name 不得使用中文，只能使用 OpenFOAM 安全的 ASCII 名称，例如 top、fixedWalls、
 frontAndBack；boundaries 中引用相同 patch 时也沿用这些 ASCII 名称。
 mesh 必须直接符合 MeshIntent：只允许 strategy、target_cell_size、target_cell_count、

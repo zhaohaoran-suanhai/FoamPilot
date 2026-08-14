@@ -13,6 +13,7 @@ from foampilot.models import BackendError, BackendFailureKind, ModelRequest
 from foampilot.models.command_backend import (
     CommandBackend,
     CommandBackendConfig,
+    CommandStateRoot,
     codex_exec_config,
 )
 
@@ -151,6 +152,16 @@ def test_codex_preset_never_mentions_auth_files() -> None:
         ("codex", "--version"),
         ("codex", "login", "status"),
     )
+    assert config.state_root is not None
+    assert config.state_root.variable == "CODEX_HOME"
+    assert config.state_root.default_home_relative == ".codex"
+
+
+def test_command_state_root_is_part_of_the_public_model_api() -> None:
+    import foampilot.models as model_api
+
+    assert model_api.CommandStateRoot is CommandStateRoot
+    assert "CommandStateRoot" in model_api.__all__
 
 
 def test_command_backend_rejects_unknown_placeholder() -> None:
@@ -161,6 +172,28 @@ def test_command_backend_rejects_unknown_placeholder() -> None:
             argv_template=("runner", "{auth_file}"),
             probe_argv=(("runner", "--version"),),
         )
+
+
+@pytest.mark.parametrize(
+    "default_home_relative",
+    ("", "../state", "/tmp/state"),
+)
+def test_command_state_root_rejects_unsafe_home_relative_default(
+    default_home_relative: str,
+) -> None:
+    with pytest.raises(ValueError):
+        CommandStateRoot(
+            variable="FOAMPILOT_TEST_STATE_ROOT",
+            default_home_relative=default_home_relative,
+        )
+
+
+@pytest.mark.parametrize("variable", ("", "bad-name", "1ROOT"))
+def test_command_state_root_rejects_invalid_environment_variable(
+    variable: str,
+) -> None:
+    with pytest.raises(ValueError):
+        CommandStateRoot(variable=variable)
 
 
 def test_command_backend_maps_missing_executable() -> None:
@@ -178,6 +211,111 @@ def test_command_backend_maps_missing_executable() -> None:
 
     assert captured.value.kind == BackendFailureKind.BACKEND_UNAVAILABLE
     assert captured.value.retryable is False
+
+
+def test_command_backend_probe_rejects_missing_state_root_before_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    missing = tmp_path / "missing-state-root"
+    monkeypatch.setenv("FOAMPILOT_TEST_STATE_ROOT", str(missing))
+
+    def unexpected_run(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("probe command must not start")
+
+    monkeypatch.setattr("subprocess.run", unexpected_run)
+    backend = CommandBackend(
+        CommandBackendConfig(
+            backend_id="stateful-command",
+            model="test",
+            argv_template=("fake-model",),
+            probe_argv=(("fake-model", "--probe"),),
+            pass_env=("PATH", "FOAMPILOT_TEST_STATE_ROOT"),
+            state_root={
+                "variable": "FOAMPILOT_TEST_STATE_ROOT",
+            },
+        )
+    )
+
+    health = backend.probe(timeout_seconds=1)
+
+    assert health.state == "misconfigured"
+    assert health.code == BackendFailureKind.BACKEND_MISCONFIGURED.value
+    assert missing.name not in health.recovery
+
+
+def test_command_backend_exchange_rejects_missing_state_root_before_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    missing = tmp_path / "missing-state-root"
+    monkeypatch.setenv("FOAMPILOT_TEST_STATE_ROOT", str(missing))
+
+    def unexpected_supervisor(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("model command must not start")
+
+    monkeypatch.setattr(
+        "foampilot.models.command_backend.run_supervised_process",
+        unexpected_supervisor,
+    )
+    backend = CommandBackend(
+        CommandBackendConfig(
+            backend_id="stateful-command",
+            model="test",
+            argv_template=("fake-model",),
+            probe_argv=(("fake-model", "--probe"),),
+            pass_env=("PATH", "FOAMPILOT_TEST_STATE_ROOT"),
+            state_root={
+                "variable": "FOAMPILOT_TEST_STATE_ROOT",
+            },
+        )
+    )
+
+    with pytest.raises(BackendError) as captured:
+        backend.exchange(_request(), timeout_seconds=1)
+
+    assert captured.value.kind == BackendFailureKind.BACKEND_MISCONFIGURED
+    assert captured.value.retryable is False
+
+
+def test_command_backend_probe_accepts_writable_state_root_without_touching_members(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_root = tmp_path / "state-root"
+    state_root.mkdir()
+    opaque_member = state_root / "opaque-existing-member"
+    opaque_member.write_text("unchanged", encoding="utf-8")
+    monkeypatch.setenv("FOAMPILOT_TEST_STATE_ROOT", str(state_root))
+    observed: list[dict[str, str]] = []
+
+    def successful_run(*args, **kwargs):
+        del args
+        observed.append(dict(kwargs["env"]))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("subprocess.run", successful_run)
+    backend = CommandBackend(
+        CommandBackendConfig(
+            backend_id="stateful-command",
+            model="test",
+            argv_template=("fake-model",),
+            probe_argv=(("fake-model", "--probe"),),
+            pass_env=("PATH", "FOAMPILOT_TEST_STATE_ROOT"),
+            state_root={
+                "variable": "FOAMPILOT_TEST_STATE_ROOT",
+            },
+        )
+    )
+
+    health = backend.probe(timeout_seconds=1)
+
+    assert health.state == "available"
+    assert observed[0]["FOAMPILOT_TEST_STATE_ROOT"] == str(state_root)
+    assert list(state_root.iterdir()) == [opaque_member]
+    assert opaque_member.read_text(encoding="utf-8") == "unchanged"
 
 
 def test_command_backend_redacts_error_and_preserves_terminal_cause(
@@ -239,6 +377,69 @@ raise SystemExit(1)
 
     assert captured.value.kind == BackendFailureKind.SCHEMA_INVALID
     assert captured.value.retryable is False
+
+
+@pytest.mark.parametrize(
+    ("detail", "expected_kind", "expected_retryable"),
+    (
+        (
+            "failed to initialize in-process app-server client: "
+            "Read-only file system (os error 30)",
+            BackendFailureKind.BACKEND_MISCONFIGURED,
+            False,
+        ),
+        (
+            "Not logged in",
+            BackendFailureKind.AUTH_FAILED,
+            False,
+        ),
+        (
+            "HTTP 429 rate limit exceeded",
+            BackendFailureKind.RATE_LIMITED,
+            True,
+        ),
+        (
+            "HTTP 503 service overloaded",
+            BackendFailureKind.OVERLOADED,
+            True,
+        ),
+        (
+            "failed to connect to websocket; "
+            "stream disconnected before completion: Operation not permitted",
+            BackendFailureKind.NETWORK_UNAVAILABLE,
+            True,
+        ),
+    ),
+)
+def test_command_backend_classifies_known_process_failures(
+    tmp_path: Path,
+    detail: str,
+    expected_kind: BackendFailureKind,
+    expected_retryable: bool,
+) -> None:
+    executable = tmp_path / "classified-failure-model"
+    executable.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        f"sys.stderr.write({detail + chr(10)!r})\n"
+        "raise SystemExit(1)\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    backend = CommandBackend(
+        CommandBackendConfig(
+            backend_id="classified-failure-command",
+            model="test",
+            argv_template=(str(executable),),
+            probe_argv=((str(executable),),),
+        )
+    )
+
+    with pytest.raises(BackendError) as captured:
+        backend.exchange(_request(), timeout_seconds=2)
+
+    assert captured.value.kind == expected_kind
+    assert captured.value.retryable is expected_retryable
 
 
 def test_command_backend_timeout_kills_descendants_holding_output_pipes(

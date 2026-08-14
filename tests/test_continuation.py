@@ -9,6 +9,7 @@ import shutil
 import pytest
 
 from foampilot.agent import NativeAgent
+from foampilot.agent.model_policy import NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT
 from foampilot.repair import RepairProposal
 from foampilot.artifacts import ArtifactStore
 from foampilot.environment import CommandFact
@@ -603,7 +604,7 @@ def test_lineage_transport_limit_rejects_resume(
     parent = _deferred_parent(root)
     model_path = parent.run_dir / "model-configuration.json"
     payload = json.loads(model_path.read_text(encoding="utf-8"))
-    payload["transport_attempts"] = 7
+    payload["transport_attempts"] = NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT
     model_path.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -621,6 +622,30 @@ def test_lineage_transport_limit_rejects_resume(
             replies=[_repair()],
             runner=SequencePlanRunner([]),
         ).resume(parent.run_dir)
+
+
+def test_penultimate_transport_attempt_still_allows_one_resume(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "runs"
+    parent = _deferred_parent(root)
+    model_path = parent.run_dir / "model-configuration.json"
+    payload = json.loads(model_path.read_text(encoding="utf-8"))
+    payload["transport_attempts"] = NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT - 1
+    model_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (parent.run_dir / "artifact-manifest.json").unlink()
+    ArtifactStore(root).finalize(parent.run_dir)
+
+    child = _agent(
+        root=root,
+        replies=[_transport_failure()],
+        runner=SequencePlanRunner([]),
+    ).resume(parent.run_dir)
+
+    assert child.summary.resume.allowed
 
 
 def test_resume_rejects_broken_parent_hash_link(tmp_path: Path) -> None:

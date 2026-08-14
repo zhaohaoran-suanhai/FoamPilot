@@ -435,6 +435,24 @@ class OpenFOAM10EvidenceExtractor:
                 "CASE_ROOT_MISMATCH", "run result and extraction root differ"
             )
         commands = {item.step_id: item for item in plan.commands}
+        result_step_ids = {item.step_id for item in run_result.steps}
+        reused_step_ids = {item.step_id for item in run_result.reused_steps}
+        accounted_step_ids = result_step_ids | reused_step_ids
+        unknown_step_ids = accounted_step_ids - commands.keys()
+        if unknown_step_ids:
+            raise EvidenceExtractionError(
+                "PLAN_STEP_MISSING",
+                "result steps are absent from plan: "
+                + ", ".join(sorted(unknown_step_ids)),
+            )
+        if run_result.passed and not run_result.timed_out:
+            missing_step_ids = commands.keys() - accounted_step_ids
+            if missing_step_ids:
+                raise EvidenceExtractionError(
+                    "RUN_RESULT_INCOMPLETE",
+                    "successful run result omits planned steps: "
+                    + ", ".join(sorted(missing_step_ids)),
+                )
         raw_steps: list[RawCommandEvidence] = []
         mesh_checks: list[MeshCheckFact] = []
         progress: list[SolverProgressFact] = []
@@ -474,10 +492,11 @@ class OpenFOAM10EvidenceExtractor:
                     stderr_hash=stderr_hash,
                 )
             )
-            progress.extend(accumulator.finalized_progress())
-            residuals.extend(accumulator.residuals)
-            continuity.extend(accumulator.continuity)
-            courant.extend(accumulator.courant)
+            if str(command.stage) == "solve":
+                progress.extend(accumulator.finalized_progress())
+                residuals.extend(accumulator.residuals)
+                continuity.extend(accumulator.continuity)
+                courant.extend(accumulator.courant)
             errors.extend(accumulator.errors)
             field_operations.extend(accumulator.field_operations)
             if str(command.stage) == "check":
@@ -512,7 +531,13 @@ class OpenFOAM10EvidenceExtractor:
                 )
 
         run_id, attempt = self._attempt_identity(case)
-        written_times, output_files = self._outputs(case)
+        if any(
+            step_id in accounted_step_ids and str(command.stage) == "solve"
+            for step_id, command in commands.items()
+        ):
+            written_times, output_files = self._outputs(case)
+        else:
+            written_times, output_files = (), ()
         return RunFacts(
             run_id=run_id,
             attempt=attempt,

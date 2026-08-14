@@ -223,6 +223,36 @@ def test_model_doctor_is_chinese_first_json(
     assert payload["backends"][0]["message"] == "模型后端可用。"
 
 
+def test_model_doctor_preserves_precise_misconfigured_backend_code(
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        "foampilot.cli.main.load_backend_registry",
+        lambda path: object(),
+    )
+    monkeypatch.setattr(
+        "foampilot.cli.main.doctor_backends",
+        lambda registry: [
+            BackendHealth(
+                backend_id="codex-cli",
+                model="test-model",
+                state="misconfigured",
+                code="BACKEND_MISCONFIGURED",
+                message="模型后端配置错误。",
+                recovery="请配置可写状态目录。",
+                elapsed_seconds=0,
+            )
+        ],
+    )
+
+    assert main(["model", "doctor", "--json"]) == 3
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "BACKEND_UNAVAILABLE"
+    assert payload["backends"][0]["code"] == "BACKEND_MISCONFIGURED"
+    assert "可写状态目录" in payload["backends"][0]["recovery"]
+
+
 def test_cli_validates_minimal_task_as_json(
     tmp_path: Path,
     capsys,

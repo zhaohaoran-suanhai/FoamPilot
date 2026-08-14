@@ -5,8 +5,10 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from foampilot.artifacts import ArtifactStore
+from foampilot.agent.model_policy import NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT
 from foampilot.cli.main import main
 from foampilot.simulation import (
     DesignCandidate,
@@ -22,10 +24,12 @@ from foampilot.simulation.risk_gate import RiskDecision, evaluate_design_risk
 from foampilot.workflow.confirmation import (
     ConfirmationError,
     apply_confirmation_records,
+    load_confirmation_resume,
     load_confirmation_parent,
     parse_answers,
     persist_confirmation_continuation,
 )
+from tests.support.tasks import canonical_task_payload
 
 
 def _evidence(detail: str = "model candidate") -> tuple[FactEvidence, ...]:
@@ -120,6 +124,33 @@ def _parent(tmp_path: Path, *, information: bool = False) -> Path:
     )
     proposal = _proposal(include_information_gap=information)
     decision = _risk(proposal)
+    task = canonical_task_payload(
+        {
+            "schema_version": 2,
+            "task_id": "confirmation-test",
+            "title": "Confirmation test",
+            "prompt": "Solve transient laminar flow using pisoFoam.",
+            "openfoam_target": {
+                "distribution": "foundation",
+                "version": "10",
+            },
+            "resource_budget": {
+                "max_attempts": 1,
+                "max_wall_seconds": 60,
+                "max_mpi_ranks": 1,
+                "memory_mib": 512,
+            },
+            "required_outputs": ["velocity"],
+            "acceptance_requirements": ["normal completion"],
+            "public_checks": [],
+            "public_assets": [],
+            "protected_paths": [],
+        }
+    )
+    (run_dir / "task.yaml").write_text(
+        yaml.safe_dump(task, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
     write_json_exclusive(run_dir / "simulation-intent.json", intent)
     write_json_exclusive(run_dir / "resolved-requirements.json", requirements)
     write_json_exclusive(run_dir / "case-design-proposal.json", proposal)
@@ -231,6 +262,42 @@ def test_one_record_per_field_and_child_freezes_ready_design(tmp_path: Path) -> 
         continuation.confirmation_record_hashes
     )
     assert (child / "case-design.json").is_file()
+    assert (child / "task.yaml").is_file()
+    assert (child / "summary.json").is_file()
+
+
+def test_confirmation_checkpoint_does_not_offer_exhausted_model_resume(
+    tmp_path: Path,
+) -> None:
+    run_dir = _parent(tmp_path)
+    (run_dir / "model-configuration.json").write_text(
+        json.dumps(
+            {
+                "transport_attempts": NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT,
+                "logical_model_requests": 1,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "artifact-manifest.json").unlink()
+    ArtifactStore(run_dir.parent).finalize(run_dir)
+    parent = load_confirmation_parent(run_dir)
+    continuation = apply_confirmation_records(
+        parent,
+        parse_answers(_answers(parent)),
+    )
+
+    child = persist_confirmation_continuation(
+        continuation,
+        run_root=tmp_path / "children",
+    )
+    summary = json.loads((child / "summary.json").read_text(encoding="utf-8"))
+
+    assert summary["resume"]["allowed"] is False
+    assert "resume authoring" not in summary["message"].casefold()
+    with pytest.raises(ConfirmationError, match="MODEL_BUDGET_EXHAUSTED"):
+        load_confirmation_resume(child)
 
 
 def test_questions_and_confirm_cli_round_trip(tmp_path: Path, capsys) -> None:

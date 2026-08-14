@@ -23,7 +23,7 @@ from .provenance import (
 class RequirementGap(StrictModel):
     field_path: str
     impact: Literal["low", "medium", "high"]
-    kind: Literal["confirmable", "information_required"]
+    kind: Literal["confirmable", "information_required", "design_required"]
     code: str = Field(pattern=r"^[A-Z][A-Z0-9_]*$")
     description: str
     candidates: tuple[DesignCandidate, ...] = ()
@@ -32,9 +32,9 @@ class RequirementGap(StrictModel):
     def validate_candidates(self) -> Self:
         if self.kind == "confirmable" and not self.candidates:
             raise ValueError("confirmable requirement gap needs a candidate")
-        if self.kind == "information_required" and self.candidates:
+        if self.kind in {"information_required", "design_required"} and self.candidates:
             raise ValueError(
-                "information-required requirement gap forbids candidates"
+                "candidate-free requirement gap forbids candidates"
             )
         return self
 
@@ -326,6 +326,7 @@ def resolve_requirements(
         if (
             selected.source == "model_inference"
             and effective_impact in {"medium", "high"}
+            and path in required
         ):
             gaps.append(
                 RequirementGap(
@@ -350,7 +351,11 @@ def resolve_requirements(
             RequirementGap(
                 field_path=path,
                 impact=requirement.impact,
-                kind="information_required",
+                kind=(
+                    "design_required"
+                    if requirement.resolution == "designer_candidate"
+                    else "information_required"
+                ),
                 code="REQUIRED_FACT_MISSING",
                 description=requirement.description,
             )

@@ -118,6 +118,19 @@ def test_extractor_normalizes_absolute_check_mesh_command(
     assert facts.raw_steps[0].argv[0].startswith("/opt/OpenFOAM/")
 
 
+def test_check_mesh_time_and_end_are_not_solver_evidence(
+    tmp_path: Path,
+) -> None:
+    facts = _extract(tmp_path, "checkmesh-time-end.log", check=True)
+
+    assert facts.solver_progress == ()
+    assert facts.residuals == ()
+    assert facts.continuity == ()
+    assert facts.courant == ()
+    assert facts.written_times == ()
+    assert facts.output_files == ()
+
+
 def test_extractor_reports_residual_continuity_and_failure_once(
     tmp_path: Path,
 ) -> None:
@@ -259,3 +272,101 @@ def test_extractor_rejects_compressed_or_external_logs(tmp_path: Path) -> None:
     result.steps[0].stdout_path = outside
     with pytest.raises(EvidenceExtractionError, match="LOG_OUTSIDE_CASE"):
         OpenFOAM10EvidenceExtractor().extract(result, _plan(), case)
+
+
+def test_extractor_rejects_success_that_omits_a_planned_solve_step(
+    tmp_path: Path,
+) -> None:
+    case = tmp_path / "run-evidence/attempt-01/case"
+    logs = case / ".foampilot/logs"
+    logs.mkdir(parents=True)
+    stdout = logs / "check.stdout.log"
+    stderr = logs / "check.stderr.log"
+    stdout.write_text("Time = 0\nMesh OK.\nEnd\n", encoding="utf-8")
+    stderr.write_text("", encoding="utf-8")
+    check_plan = _plan(check=True)
+    plan = check_plan.model_copy(
+        update={
+            "commands": [
+                *check_plan.commands,
+                NativeCommand(
+                    step_id="solve",
+                    stage="solve",
+                    executable="pisoFoam",
+                    timeout_seconds=60,
+                ),
+            ]
+        }
+    )
+    result = PlanRunResult(
+        case_dir=case,
+        steps=[
+            PlanStepResult(
+                step_id="check",
+                command=["checkMesh"],
+                return_code=0,
+                started_at=_START,
+                finished_at=_START + timedelta(seconds=1),
+                elapsed_seconds=1,
+                timed_out=False,
+                stdout_path=stdout,
+                stderr_path=stderr,
+                execution_backend="host",
+            )
+        ],
+    )
+
+    with pytest.raises(EvidenceExtractionError, match="RUN_RESULT_INCOMPLETE"):
+        OpenFOAM10EvidenceExtractor().extract(result, plan, case)
+
+
+def test_extractor_does_not_attribute_outputs_before_planned_solve_runs(
+    tmp_path: Path,
+) -> None:
+    case = tmp_path / "run-evidence/attempt-01/case"
+    logs = case / ".foampilot/logs"
+    logs.mkdir(parents=True)
+    stdout = logs / "check.stdout.log"
+    stderr = logs / "check.stderr.log"
+    stdout.write_text("Time = 0\nFailed 1 mesh checks\nEnd\n", encoding="utf-8")
+    stderr.write_text("", encoding="utf-8")
+    old_field = case / "0/U"
+    old_field.parent.mkdir(parents=True)
+    old_field.write_text("old field\n", encoding="utf-8")
+    check_plan = _plan(check=True)
+    plan = check_plan.model_copy(
+        update={
+            "commands": [
+                *check_plan.commands,
+                NativeCommand(
+                    step_id="solve",
+                    stage="solve",
+                    executable="pisoFoam",
+                    timeout_seconds=60,
+                ),
+            ]
+        }
+    )
+    result = PlanRunResult(
+        case_dir=case,
+        steps=[
+            PlanStepResult(
+                step_id="check",
+                command=["checkMesh"],
+                return_code=1,
+                started_at=_START,
+                finished_at=_START + timedelta(seconds=1),
+                elapsed_seconds=1,
+                timed_out=False,
+                stdout_path=stdout,
+                stderr_path=stderr,
+                execution_backend="host",
+            )
+        ],
+        failed_step_id="check",
+    )
+
+    facts = OpenFOAM10EvidenceExtractor().extract(result, plan, case)
+
+    assert facts.written_times == ()
+    assert facts.output_files == ()

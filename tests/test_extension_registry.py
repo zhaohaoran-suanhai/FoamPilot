@@ -110,3 +110,27 @@ def test_descriptor_rejects_conflicting_and_unsafe_declarations() -> None:
             ),
             required_executables=("/tmp/checkMesh",),
         )
+
+    with pytest.raises(ValidationError, match="safe and relative"):
+        CapabilityDescriptor(
+            extension_id="foampilot.asset.bad-author-path",
+            extension_version="1.0.0",
+            protocol_version=1,
+            capability_kinds=("asset:file",),
+            supported_targets=(
+                SupportedTarget(distribution="foundation", versions=("10",)),
+            ),
+            required_authored_paths=("../constant/secret",),
+        )
+
+    with pytest.raises(ValidationError, match="authoring rules"):
+        CapabilityDescriptor(
+            extension_id="foampilot.asset.bad-authoring-rule",
+            extension_version="1.0.0",
+            protocol_version=1,
+            capability_kinds=("asset:file",),
+            supported_targets=(
+                SupportedTarget(distribution="foundation", versions=("10",)),
+            ),
+            authoring_rules=("   ",),
+        )

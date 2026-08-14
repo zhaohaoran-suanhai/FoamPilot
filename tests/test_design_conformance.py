@@ -63,6 +63,20 @@ def _codes(report) -> set[str]:
     return {item.code for item in report.issues}
 
 
+def _with_momentum_transport(bundle: CaseBundle, content: str) -> CaseBundle:
+    return bundle.model_copy(
+        update={
+            "files": [
+                *bundle.files,
+                GeneratedFile(
+                    path="constant/momentumTransport",
+                    content=content,
+                ),
+            ]
+        }
+    )
+
+
 def test_matching_bundle_conforms_to_frozen_design() -> None:
     report = _verify(_context().design, _bundle())
 
@@ -147,6 +161,76 @@ def test_extra_active_turbulence_model_contradicts_laminar_design() -> None:
     report = _verify(design, bundle.model_copy(update={"manifest": manifest}))
 
     assert "DESIGN_CONFORMANCE_EXTRA_PHYSICAL_MODEL" in _codes(report)
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["Stokes", "laminar/Stokes", "laminar Stokes"],
+)
+def test_foundation_stokes_model_conforms_to_laminar_design(model: str) -> None:
+    design = _design(
+        physical_models=(_fact("physics.turbulence", "laminar"),)
+    )
+    bundle = _bundle()
+    manifest = bundle.manifest.model_copy(
+        update={
+            "models": bundle.manifest.models.model_copy(
+                update={"turbulence": model}
+            )
+        }
+    )
+
+    authored = _with_momentum_transport(
+        bundle.model_copy(update={"manifest": manifest}),
+        "simulationType laminar; laminar { model Stokes; }\n",
+    )
+    report = _verify(design, authored)
+
+    assert "DESIGN_CONFORMANCE_EXTRA_PHYSICAL_MODEL" not in _codes(report)
+    assert "DESIGN_CONFORMANCE_PHYSICAL_MODEL_MISMATCH" not in _codes(report)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "simulationType RAS; RAS { model kEpsilon; }\n",
+        "simulationType laminar; laminar { model Newtonian; }\n",
+        "laminar { model Stokes; }\n",
+        "simulationType laminar; model Stokes; laminar { }\n",
+        (
+            "simulationType laminar; simulationType RAS; "
+            "laminar { model Stokes; }\n"
+        ),
+        (
+            "simulationType laminar; "
+            "laminar { model Stokes; model Newtonian; }\n"
+        ),
+    ],
+)
+def test_laminar_design_requires_structurally_valid_stokes_dictionary(
+    content: str,
+) -> None:
+    design = _design(
+        physical_models=(_fact("physics.turbulence", "laminar"),)
+    )
+    bundle = _bundle()
+    manifest = bundle.manifest.model_copy(
+        update={
+            "models": bundle.manifest.models.model_copy(
+                update={"turbulence": "Stokes"}
+            )
+        }
+    )
+
+    report = _verify(
+        design,
+        _with_momentum_transport(
+            bundle.model_copy(update={"manifest": manifest}),
+            content,
+        ),
+    )
+
+    assert "DESIGN_CONFORMANCE_PHYSICAL_MODEL_MISMATCH" in _codes(report)
 
 
 def test_provided_mesh_bundle_cannot_be_authored_over() -> None:

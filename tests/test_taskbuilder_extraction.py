@@ -39,6 +39,9 @@ def test_extractor_uses_structured_stage_for_chinese_request() -> None:
     assert 'dimensionality="two_d"' in gateway.requests[0].system_prompt
     assert "target_cell_count" in gateway.requests[0].system_prompt
     assert '{"name":"top","role":"wall"}' in gateway.requests[0].system_prompt
+    assert "必须完整写入 geometry 的 patch_roles/region_roles" in (
+        gateway.requests[0].system_prompt
+    )
     assert "patch name 不得使用中文" in gateway.requests[0].system_prompt
     assert "require_check_mesh_pass" in gateway.requests[0].system_prompt
     assert "layer_count=null" in gateway.requests[0].system_prompt

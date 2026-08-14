@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .models import EvidenceStrategyKind, ObservationKind
 
@@ -17,11 +17,39 @@ class UnsupportedObservationError(LookupError):
     pass
 
 
-class QuantityContract(BaseModel):
+class ObservationRequestContract(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    quantity: str
-    dimension: str
+    quantity: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    dimension: str = Field(min_length=1)
+    quantity_aliases: tuple[str, ...] = ()
+    dimension_aliases: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_aliases(self) -> Self:
+        for canonical, aliases, label in (
+            (self.quantity, self.quantity_aliases, "quantity"),
+            (self.dimension, self.dimension_aliases, "dimension"),
+        ):
+            if any(not alias.strip() for alias in aliases):
+                raise ValueError(f"{label} aliases must not be blank")
+            if len(aliases) != len(set(aliases)):
+                raise ValueError(f"{label} aliases must be unique")
+            if canonical in aliases:
+                raise ValueError(
+                    f"canonical {label} must not be repeated as an alias"
+                )
+        return self
+
+    def accepts(self, quantity: str, dimension: str) -> bool:
+        return (
+            quantity == self.quantity or quantity in self.quantity_aliases
+        ) and (
+            dimension == self.dimension or dimension in self.dimension_aliases
+        )
+
+
+class QuantityContract(ObservationRequestContract):
     field: str
     unit: str
     value_shape: Literal["scalar", "vector"] = "scalar"
@@ -43,7 +71,30 @@ class ObservationExtensionDescriptor(BaseModel):
     supported_targets: tuple[tuple[str, str], ...] = (("foundation", "10"),)
     required_fields: tuple[str, ...] = ()
     runtime_configuration_supported: bool = False
+    request_contracts: tuple[ObservationRequestContract, ...] = ()
     quantity_contracts: tuple[QuantityContract, ...] = ()
+
+    def available_request_contracts(
+        self,
+    ) -> tuple[ObservationRequestContract, ...]:
+        return (*self.request_contracts, *self.quantity_contracts)
+
+    def resolve_request_contract(
+        self,
+        quantity: str,
+        dimension: str,
+    ) -> ObservationRequestContract | None:
+        matches = tuple(
+            contract
+            for contract in self.available_request_contracts()
+            if contract.accepts(quantity, dimension)
+        )
+        if len(matches) > 1:
+            raise ObservationRegistryError(
+                "OBSERVATION_REQUEST_ALIAS_AMBIGUOUS: "
+                f"{self.kind}:{quantity}:{dimension}"
+            )
+        return matches[0] if matches else None
 
     def resolve_quantity_contract(
         self,
@@ -75,6 +126,22 @@ class ObservationExtensionRegistry:
             raise ObservationRegistryError(
                 f"OBSERVATION_DUPLICATE: {descriptor.kind}"
             )
+        bindings: dict[tuple[str, str], tuple[str, str]] = {}
+        for contract in descriptor.available_request_contracts():
+            canonical = (contract.quantity, contract.dimension)
+            for quantity in (contract.quantity, *contract.quantity_aliases):
+                for dimension in (
+                    contract.dimension,
+                    *contract.dimension_aliases,
+                ):
+                    key = (quantity, dimension)
+                    previous = bindings.get(key)
+                    if previous is not None and previous != canonical:
+                        raise ObservationRegistryError(
+                            "OBSERVATION_REQUEST_ALIAS_AMBIGUOUS: "
+                            f"{descriptor.kind}:{quantity}:{dimension}"
+                        )
+                    bindings[key] = canonical
         self._descriptors[descriptor.kind] = descriptor
 
     def ids(self) -> tuple[str, ...]:
@@ -87,6 +154,18 @@ class ObservationExtensionRegistry:
             raise UnsupportedObservationError(
                 f"OBSERVATION_UNSUPPORTED: {kind}"
             ) from error
+
+    def request_contracts(
+        self,
+    ) -> tuple[tuple[str, ObservationRequestContract], ...]:
+        return tuple(
+            (kind, contract)
+            for kind in self.ids()
+            for contract in sorted(
+                self._descriptors[kind].available_request_contracts(),
+                key=lambda item: (item.quantity, item.dimension),
+            )
+        )
 
 
 def first_party_observation_registry() -> ObservationExtensionRegistry:
@@ -125,12 +204,42 @@ def first_party_observation_registry() -> ObservationExtensionRegistry:
             ("T",),
         ),
     )
+    request_contracts_by_kind = {
+        "residual": (
+            ObservationRequestContract(
+                quantity="solver_residual",
+                dimension="1",
+                dimension_aliases=("dimensionless",),
+            ),
+        ),
+        "continuity": (
+            ObservationRequestContract(
+                quantity="continuity_error",
+                dimension="1",
+                dimension_aliases=("dimensionless",),
+            ),
+        ),
+        "force": (
+            ObservationRequestContract(
+                quantity="force",
+                dimension="1 1 -2 0 0 0 0",
+            ),
+        ),
+        "heat_flux": (
+            ObservationRequestContract(
+                quantity="heat_flux",
+                dimension="1 0 -3 0 0 0 0",
+            ),
+        ),
+    }
     for kind, scopes, strategies, fields in definitions:
         quantity_contracts = {
             "flow_rate": (
                 QuantityContract(
                     quantity="volumetric_flow_rate",
+                    quantity_aliases=("Q",),
                     dimension="0 3 -1 0 0 0 0",
+                    dimension_aliases=("L^3/T",),
                     field="phi",
                     unit="m3/s",
                     reduction="magnitude",
@@ -140,6 +249,7 @@ def first_party_observation_registry() -> ObservationExtensionRegistry:
                 QuantityContract(
                     quantity="flow_rate",
                     dimension="0 3 -1 0 0 0 0",
+                    dimension_aliases=("L^3/T",),
                     field="phi",
                     unit="m3/s",
                     reduction="magnitude",
@@ -149,6 +259,7 @@ def first_party_observation_registry() -> ObservationExtensionRegistry:
                 QuantityContract(
                     quantity="signed_volumetric_flow_rate",
                     dimension="0 3 -1 0 0 0 0",
+                    dimension_aliases=("L^3/T",),
                     field="phi",
                     solver_compressibility="incompressible",
                     unit="m3/s",
@@ -157,6 +268,7 @@ def first_party_observation_registry() -> ObservationExtensionRegistry:
                 QuantityContract(
                     quantity="mass_flow_rate",
                     dimension="1 0 -1 0 0 0 0",
+                    dimension_aliases=("M/T",),
                     field="phi",
                     unit="kg/s",
                     reduction="magnitude",
@@ -166,6 +278,7 @@ def first_party_observation_registry() -> ObservationExtensionRegistry:
                 QuantityContract(
                     quantity="signed_mass_flow_rate",
                     dimension="1 0 -1 0 0 0 0",
+                    dimension_aliases=("M/T",),
                     field="phi",
                     solver_compressibility="compressible",
                     unit="kg/s",
@@ -175,7 +288,9 @@ def first_party_observation_registry() -> ObservationExtensionRegistry:
             "pressure_difference": (
                 QuantityContract(
                     quantity="pressure_difference",
+                    quantity_aliases=("kinematic_pressure",),
                     dimension="0 2 -2 0 0 0 0",
+                    dimension_aliases=("L^2/T^2",),
                     field="p",
                     unit="m2/s2",
                     solver_compressibility="incompressible",
@@ -184,6 +299,7 @@ def first_party_observation_registry() -> ObservationExtensionRegistry:
                 QuantityContract(
                     quantity="pressure_difference",
                     dimension="1 -1 -2 0 0 0 0",
+                    dimension_aliases=("M/(L*T^2)",),
                     field="p",
                     unit="Pa",
                     solver_compressibility="compressible",
@@ -193,7 +309,9 @@ def first_party_observation_registry() -> ObservationExtensionRegistry:
             "region_average": (
                 QuantityContract(
                     quantity="velocity",
+                    quantity_aliases=("U",),
                     dimension="0 1 -1 0 0 0 0",
+                    dimension_aliases=("L/T",),
                     field="U",
                     unit="m/s",
                     value_shape="vector",
@@ -202,6 +320,7 @@ def first_party_observation_registry() -> ObservationExtensionRegistry:
                 QuantityContract(
                     quantity="region_average",
                     dimension="0 1 -1 0 0 0 0",
+                    dimension_aliases=("L/T",),
                     field="U",
                     unit="m/s",
                     value_shape="vector",
@@ -210,6 +329,7 @@ def first_party_observation_registry() -> ObservationExtensionRegistry:
                 QuantityContract(
                     quantity="velocity_magnitude",
                     dimension="0 1 -1 0 0 0 0",
+                    dimension_aliases=("L/T",),
                     field="U",
                     unit="m/s",
                     value_shape="vector",
@@ -218,6 +338,7 @@ def first_party_observation_registry() -> ObservationExtensionRegistry:
                 ),
                 QuantityContract(
                     quantity="temperature",
+                    quantity_aliases=("T",),
                     dimension="0 0 0 1 0 0 0",
                     field="T",
                     unit="K",
@@ -225,7 +346,9 @@ def first_party_observation_registry() -> ObservationExtensionRegistry:
                 ),
                 QuantityContract(
                     quantity="kinematic_pressure",
+                    quantity_aliases=("p",),
                     dimension="0 2 -2 0 0 0 0",
+                    dimension_aliases=("L^2/T^2",),
                     field="p",
                     unit="m2/s2",
                     solver_compressibility="incompressible",
@@ -233,7 +356,9 @@ def first_party_observation_registry() -> ObservationExtensionRegistry:
                 ),
                 QuantityContract(
                     quantity="pressure",
+                    quantity_aliases=("p",),
                     dimension="1 -1 -2 0 0 0 0",
+                    dimension_aliases=("M/(L*T^2)",),
                     field="p",
                     unit="Pa",
                     solver_compressibility="compressible",
@@ -241,7 +366,9 @@ def first_party_observation_registry() -> ObservationExtensionRegistry:
                 ),
                 QuantityContract(
                     quantity="density",
+                    quantity_aliases=("rho",),
                     dimension="1 -3 0 0 0 0 0",
+                    dimension_aliases=("M/L^3",),
                     field="rho",
                     unit="kg/m3",
                     solver_compressibility="compressible",
@@ -258,6 +385,7 @@ def first_party_observation_registry() -> ObservationExtensionRegistry:
                 runtime_configuration_supported=(
                     "runtime_configuration" in strategies
                 ),
+                request_contracts=request_contracts_by_kind.get(kind, ()),
                 quantity_contracts=quantity_contracts,
             )
         )
@@ -268,6 +396,7 @@ __all__ = [
     "ObservationExtensionDescriptor",
     "ObservationExtensionRegistry",
     "ObservationRegistryError",
+    "ObservationRequestContract",
     "QuantityContract",
     "UnsupportedObservationError",
     "first_party_observation_registry",

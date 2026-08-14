@@ -22,6 +22,10 @@ ObservationKind = Literal[
     "heat_flux",
 ]
 _OPENFOAM_WORD = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+_QUANTITY_DESCRIPTION = (
+    "Machine identifier in lower_snake_case; use the exact canonical quantity "
+    "for this observation kind from AvailableObservationContracts."
+)
 EvidenceStrategyKind = Literal[
     "run_facts",
     "written_field",
@@ -108,7 +112,10 @@ class EvidenceStrategy(_StrictFrozenModel):
 class ObservationItem(_StrictFrozenModel):
     observation_id: str = Field(pattern=r"^[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*$")
     kind: ObservationKind
-    quantity: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    quantity: str = Field(
+        pattern=r"^[a-z][a-z0-9_]*$",
+        description=_QUANTITY_DESCRIPTION,
+    )
     dimension: str = Field(min_length=1)
     scope: ObservationScope
     time_selection: TimeSelection
@@ -132,11 +139,65 @@ class ObservationRequest(_StrictFrozenModel):
 
     observation_id: str = Field(pattern=r"^[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*$")
     kind: ObservationKind
-    quantity: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    quantity: str = Field(
+        pattern=r"^[a-z][a-z0-9_]*$",
+        description=_QUANTITY_DESCRIPTION,
+    )
     dimension: str = Field(min_length=1)
     scope: ObservationScope
     time_selection: TimeSelection
     provenance: tuple[FactEvidence, ...] = Field(min_length=1)
+
+    def has_same_semantics_as(self, other: Self) -> bool:
+        """Compare executable meaning while excluding audit provenance."""
+
+        return self.model_dump(exclude={"provenance"}) == other.model_dump(
+            exclude={"provenance"}
+        )
+
+    def merge_equivalent_provenance(self, other: Self) -> Self:
+        """Preserve all evidence for two semantically identical requests."""
+
+        if not self.has_same_semantics_as(other):
+            raise ValueError("observation requests have different semantics")
+        provenance = list(self.provenance)
+        provenance.extend(
+            item for item in other.provenance if item not in provenance
+        )
+        return self.model_copy(update={"provenance": tuple(provenance)})
+
+
+def merge_compatible_observation_requests(
+    previous: ObservationRequest,
+    requested: ObservationRequest,
+) -> ObservationRequest | None:
+    """Merge identical requests or let history cover the same timed request."""
+
+    if previous.has_same_semantics_as(requested):
+        return previous.merge_equivalent_provenance(requested)
+    previous_core = previous.model_dump(
+        exclude={"provenance", "time_selection"}
+    )
+    requested_core = requested.model_dump(
+        exclude={"provenance", "time_selection"}
+    )
+    if previous_core != requested_core:
+        return None
+    if "history" not in {
+        previous.time_selection.kind,
+        requested.time_selection.kind,
+    }:
+        return None
+    broader = (
+        previous
+        if previous.time_selection.kind == "history"
+        else requested
+    )
+    provenance = list(previous.provenance)
+    provenance.extend(
+        item for item in requested.provenance if item not in provenance
+    )
+    return broader.model_copy(update={"provenance": tuple(provenance)})
 
 
 class ObservationWarning(_StrictFrozenModel):
@@ -179,4 +240,5 @@ __all__ = [
     "ObservationScope",
     "ObservationWarning",
     "TimeSelection",
+    "merge_compatible_observation_requests",
 ]

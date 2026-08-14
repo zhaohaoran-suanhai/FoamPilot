@@ -6,7 +6,13 @@ from foampilot.preprocessing import InputMeshFacts
 from foampilot.simulation import SimulationIntent
 from foampilot.routing.registry import capability_for_solver
 
-from .models import EvidenceStrategy, ObservationItem, ObservationPlan, ObservationRequest
+from .models import (
+    EvidenceStrategy,
+    ObservationItem,
+    ObservationPlan,
+    ObservationRequest,
+    merge_compatible_observation_requests,
+)
 from .registry import ObservationExtensionRegistry
 
 if False:  # pragma: no cover - import-only type boundary
@@ -15,6 +21,21 @@ if False:  # pragma: no cover - import-only type boundary
 
 class ObservationPlanningError(ValueError):
     pass
+
+
+def _merge_request(
+    unique: dict[str, ObservationRequest],
+    request: ObservationRequest,
+) -> None:
+    previous = unique.get(request.observation_id)
+    if previous is not None:
+        merged = merge_compatible_observation_requests(previous, request)
+        if merged is None:
+            raise ObservationPlanningError(
+                f"OBSERVATION_ID_CONFLICT: {request.observation_id}"
+            )
+        request = merged
+    unique[request.observation_id] = request
 
 
 def _design_scope_names(design: object, prefix: str) -> set[str]:
@@ -104,6 +125,24 @@ def _strategy(
         raise ObservationPlanningError(
             f"OBSERVATION_SCOPE_UNSUPPORTED: {request.kind}:{request.scope.kind}"
         )
+    request_contracts = descriptor.available_request_contracts()
+    request_contract = descriptor.resolve_request_contract(
+        request.quantity,
+        request.dimension,
+    )
+    if request_contracts and (
+        request_contract is None
+        or request.quantity != request_contract.quantity
+        or request.dimension != request_contract.dimension
+    ):
+        return EvidenceStrategy(
+            kind="unavailable",
+            reason=(
+                "no registered Foundation OpenFOAM 10 canonical "
+                "quantity/dimension contract for "
+                f"{request.quantity}:{request.dimension}"
+            ),
+        )
     if descriptor.strategies == ("unavailable",):
         return EvidenceStrategy(
             kind="unavailable",
@@ -183,21 +222,11 @@ class ObservationPlanner:
     ) -> ObservationPlan:
         unique: dict[str, ObservationRequest] = {}
         for request in intent.observation_requests:
-            previous = unique.get(request.observation_id)
-            if previous is not None and previous != request:
-                raise ObservationPlanningError(
-                    f"OBSERVATION_ID_CONFLICT: {request.observation_id}"
-                )
-            unique[request.observation_id] = request
+            _merge_request(unique, request)
         condition_ids: dict[str, list[str]] = {}
         if acceptance_plan is not None:
             for request in acceptance_plan.observation_requests:
-                previous = unique.get(request.observation_id)
-                if previous is not None and previous != request:
-                    raise ObservationPlanningError(
-                        f"OBSERVATION_ID_CONFLICT: {request.observation_id}"
-                    )
-                unique[request.observation_id] = request
+                _merge_request(unique, request)
             for condition in acceptance_plan.conditions:
                 condition_ids.setdefault(condition.observation_id, []).append(
                     condition.condition_id

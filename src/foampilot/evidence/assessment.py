@@ -97,8 +97,28 @@ def assess_native_run(
             reason_codes=("MESH_INTENT_NOT_SATISFIED",),
             detail="deterministic mesh facts do not satisfy MeshIntent",
         )
+    solve_steps = tuple(
+        step for step in facts.raw_steps if step.stage == "solve"
+    )
+    if not solve_steps:
+        if not facts.mesh_checks or any(
+            check.mesh_ok is not True for check in facts.mesh_checks
+        ):
+            return RunAssessment(
+                ok=False,
+                failure_layer="MESH_FAILED",
+                reason_codes=("MESH_CHECK_NOT_PASSED",),
+                detail="case-only execution requires a successful mesh check",
+            )
+        return RunAssessment(
+            ok=True,
+            reason_codes=("CASE_AUTHORING_CHECKS_PASSED",),
+            detail="case files were authored and deterministic checks passed",
+        )
     if not any(
-        item.completed_normally is True for item in facts.solver_progress
+        item.step_id in {step.step_id for step in solve_steps}
+        and item.completed_normally is True
+        for item in facts.solver_progress
     ):
         return RunAssessment(
             ok=False,

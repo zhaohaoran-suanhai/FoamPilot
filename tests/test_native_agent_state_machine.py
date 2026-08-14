@@ -33,6 +33,12 @@ from foampilot.workflow import (
     WorkflowStage,
     WorkflowStore,
 )
+from foampilot.workflow.confirmation import (
+    apply_confirmation_records,
+    load_confirmation_parent,
+    parse_answers,
+    persist_confirmation_continuation,
+)
 
 from tests.test_native_case_generation import (
     RecordingModel,
@@ -99,31 +105,45 @@ class SequencePlanRunner:
         self.execution_seconds_used_values.append(execution_seconds_used)
         return_code, stdout_text, stderr_text = self.outcomes[self.calls]
         self.calls += 1
-        command = commands[-1]
         log_dir = Path(case_dir) / ".foampilot/logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        stdout = log_dir / "solve.stdout.log"
-        stderr = log_dir / "solve.stderr.log"
-        stdout.write_text(stdout_text, encoding="utf-8")
-        stderr.write_text(stderr_text, encoding="utf-8")
         now = datetime.now(timezone.utc)
-        step = PlanStepResult(
-            step_id=command.step_id,
-            command=[command.executable],
-            return_code=return_code,
-            started_at=now,
-            finished_at=now,
-            elapsed_seconds=0.0,
-            timed_out=False,
-            stdout_path=stdout,
-            stderr_path=stderr,
-        )
+        steps = []
+        for index, command in enumerate(commands):
+            is_final = index == len(commands) - 1
+            step_return_code = return_code if is_final else 0
+            step_stdout = (
+                stdout_text
+                if is_final
+                else (
+                    "Mesh OK.\nEnd\n"
+                    if str(command.stage) == "check"
+                    else "End\n"
+                )
+            )
+            step_stderr = stderr_text if is_final else ""
+            stdout = log_dir / f"{index:02d}-{command.step_id}.stdout.log"
+            stderr = log_dir / f"{index:02d}-{command.step_id}.stderr.log"
+            stdout.write_text(step_stdout, encoding="utf-8")
+            stderr.write_text(step_stderr, encoding="utf-8")
+            steps.append(
+                PlanStepResult(
+                    step_id=command.step_id,
+                    command=[command.executable],
+                    return_code=step_return_code,
+                    started_at=now,
+                    finished_at=now,
+                    elapsed_seconds=0.0,
+                    timed_out=False,
+                    stdout_path=stdout,
+                    stderr_path=stderr,
+                )
+            )
+        failed_step_id = commands[-1].step_id if return_code != 0 else None
         return PlanRunResult(
             case_dir=Path(case_dir),
-            steps=[step],
-            failed_step_id=(
-                None if return_code == 0 else command.step_id
-            ),
+            steps=steps,
+            failed_step_id=failed_step_id,
             sandbox_probe=SandboxProbe(
                 status="passed",
                 ok=True,
@@ -554,6 +574,7 @@ def test_native_agent_reaches_run_completed(
         )
     )
     assert result["verdict"] == "NOT_REQUESTED"
+    assert "acceptance conditions passed" not in outcome.summary.message
     trace = run_dir / "attempt-01/generation-trace.json"
     assert trace.is_file()
     assert "deterministic_renderer" not in trace.read_text(encoding="utf-8")
@@ -566,7 +587,7 @@ def test_native_agent_reaches_run_completed(
     generation_deadline_remaining = (
         model.budgets[0].stage_deadline_monotonic - time.monotonic()
     )
-    assert 479 <= generation_deadline_remaining <= 480
+    assert 854 <= generation_deadline_remaining <= 855
     assert not (run_dir / "draft-plan.json").exists()
     assert not (run_dir / "plan-review.json").exists()
     assert not (run_dir / "reviewed-plan.json").exists()
@@ -595,7 +616,7 @@ def test_native_agent_reaches_run_completed(
     assert stage_names.index("POSTPROCESSED") < stage_names.index(
         "ACCEPTANCE_EVALUATED"
     )
-    assert '"observation_plan"' in model.requests[0].user_prompt
+    assert '"observation_plan"' not in model.requests[0].user_prompt
 
 
 def test_ready_design_is_frozen_before_case_author_call(
@@ -670,7 +691,13 @@ def test_non_empty_acceptance_contract_is_evaluated_from_run_facts(
     assert metrics["series"][0]["observation_id"] == "continuity"
     assert metrics["series"][0]["samples"][0]["value"] == pytest.approx(3e-8)
     author_payload = json.loads(model.requests[0].user_prompt)
-    assert author_payload["observation_plan"]["items"][0][
+    assert "observation_plan" not in author_payload
+    observation_plan = json.loads(
+        (outcome.run_dir / "observation-plan.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert observation_plan["items"][0][
         "required_for_condition_ids"
     ] == ["continuity-limit"]
 
@@ -826,6 +853,68 @@ def test_confirmation_required_makes_zero_author_calls(
     assert (outcome.run_dir / "questions.json").is_file()
     assert not (outcome.run_dir / "case-design.json").exists()
     assert not list(outcome.run_dir.glob("attempt-*"))
+
+
+def test_confirmation_child_resumes_from_frozen_design_without_redesign(
+    tmp_path: Path,
+) -> None:
+    parent = _agent(
+        tmp_path=tmp_path,
+        model=ConfirmationDesignModel([_plan()]),
+        runner=SequencePlanRunner([]),
+    ).solve(_task())
+    confirmation_parent = load_confirmation_parent(parent.run_dir)
+    continuation = apply_confirmation_records(
+        confirmation_parent,
+        parse_answers(
+            {
+                "schema_version": 1,
+                "answers": [
+                    {
+                        "question_id": question.question_id,
+                        "candidate_id": question.candidates[0].candidate_id,
+                        "confirmed_value": question.candidates[0].value,
+                    }
+                    for question in confirmation_parent.decision.questions
+                ],
+            }
+        ),
+    )
+    confirmed = persist_confirmation_continuation(
+        continuation,
+        run_root=tmp_path / "confirmed-runs",
+    )
+    model = RecordingModel(
+        [
+            _plan(
+                files=[
+                    GeneratedFile(
+                        path="constant/physicalProperties",
+                        content=(
+                            "FoamFile { class dictionary; "
+                            "object physicalProperties; }\n"
+                            "nu [0 2 -1 0 0 0 0] 1e-6;\n"
+                        ),
+                    )
+                ]
+            )
+        ]
+    )
+    runner = SequencePlanRunner([(0, "Time = 1\nEnd\n", "")])
+    resumed = NativeAgent(
+        gateway=model,
+        runtime_config=_runtime_config(),
+        artifact_store=ArtifactStore(tmp_path / "resumed-runs"),
+        environment_snapshot=_environment("blockMesh", "checkMesh", "icoFoam"),
+        runner=runner,
+    ).resume(confirmed)
+
+    assert resumed.status == "RUN_COMPLETED"
+    purposes = [item.purpose for item in model.all_requests]
+    assert "interpret-simulation-intent" not in purposes
+    assert "design-openfoam-case" not in purposes
+    assert len(model.requests) == 1
+    assert runner.calls == 1
 
 
 def test_native_agent_uses_live_runner_events_without_replaying(
@@ -1454,25 +1543,16 @@ functions
         runner=runner,
     ).solve(_task())
 
-    assert outcome.status == "STATIC_INSPECTION_FAILED"
-    assert len(outcome.summary.attempts) == 1
-    assert outcome.summary.attempts[0].status == "STATIC_INSPECTION_FAILED"
-    assert outcome.summary.terminal_blocker is not None
+    assert outcome.status == "CASE_DESIGN_CONTRADICTED"
+    assert outcome.summary.attempts == []
+    assert outcome.summary.primary_failure is not None
     assert (
-        outcome.summary.terminal_blocker.code
-        == "AUTOMATIC_REPAIR_NOT_AUTHORIZED"
+        "OBSERVATION_FUNCTIONS_OWNERSHIP_COLLISION"
+        in outcome.summary.primary_failure.detail
     )
     assert runner.calls == 0
-    assert (
-        outcome.run_dir / "attempt-01/run-assessment.json"
-    ).is_file()
-    assert not (
-        outcome.run_dir / "attempt-01/public-validation.json"
-    ).exists()
-    assert not (
-        outcome.run_dir / "repair-proposal-attempt-01.json"
-    ).exists()
-    assert not (outcome.run_dir / "attempt-02").exists()
+    assert (outcome.run_dir / "authoring-error.json").is_file()
+    assert not (outcome.run_dir / "attempt-01").exists()
 
 
 def test_native_agent_repair_cannot_invent_missing_physics_dictionary(

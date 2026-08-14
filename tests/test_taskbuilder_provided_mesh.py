@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from foampilot.models import InMemoryModelTraceSink
 from foampilot.taskbuilder import extract_task_draft
 from tests.support.taskbuilder import (
@@ -101,6 +103,221 @@ def test_provided_mesh_reconciliation_removes_design_and_topology_questions() ->
         "geometry.length_unit"
     ]
     assert draft.status == "incomplete"
+
+
+@pytest.mark.parametrize("unit", ["m", "cm", "mm", "um", "in"])
+def test_provided_mesh_accepts_standalone_user_length_unit(unit: str) -> None:
+    payload = {
+        "schema_version": 1,
+        "facts": [
+            {
+                "path": "geometry",
+                "value": (
+                    '{"mode":"openfoam_mesh","dimensionality":"two_d",'
+                    '"description":"supplied mesh","length_unit":null,'
+                    '"assets":[]}'
+                ),
+                "source": "public_asset",
+                "evidence": "declared native mesh metadata",
+                "impact": "high",
+                "confirmed": True,
+            },
+            {
+                "path": "geometry.length_unit",
+                "value": f'"{unit}"',
+                "source": "user_text",
+                "evidence": f"length unit is {unit}",
+                "impact": "high",
+                "confirmed": False,
+            },
+        ],
+        "assumptions": [],
+        "unresolved_questions": [],
+    }
+    gateway = RecordingExtractionGateway(payload)
+    asset = provided_mesh_asset()
+    context = provided_mesh_ingress_context(
+        poly_mesh_topology_payload(
+            patches=[
+                {
+                    "name": "frontAndBack",
+                    "patch_type": "empty",
+                    "start_face": 3,
+                    "face_count": 4,
+                }
+            ]
+        )
+    )
+
+    draft = extract_task_draft(
+        f"Use the supplied native mesh; its length unit is {unit}.",
+        [asset],
+        gateway,
+        budget=_budget(),
+        trace=InMemoryModelTraceSink(),
+        ingress_context=context,
+    )
+
+    assert draft.fact_map()["geometry"].value["length_unit"] is None
+    unit_fact = draft.fact_map()["geometry.length_unit"]
+    assert unit_fact.value == unit
+    assert unit_fact.source == "user_text"
+    assert unit_fact.confirmed is True
+    assert draft.unresolved_questions == []
+
+
+def test_provided_mesh_rejects_unsupported_standalone_length_unit() -> None:
+    payload = {
+        "schema_version": 1,
+        "facts": [
+            {
+                "path": "geometry.length_unit",
+                "value": '"yard"',
+                "source": "user_text",
+                "evidence": "length unit is yard",
+                "impact": "high",
+                "confirmed": False,
+            }
+        ],
+        "assumptions": [],
+        "unresolved_questions": [],
+    }
+    gateway = RecordingExtractionGateway(payload)
+    asset = provided_mesh_asset()
+    context = provided_mesh_ingress_context(
+        poly_mesh_topology_payload(
+            patches=[
+                {
+                    "name": "frontAndBack",
+                    "patch_type": "empty",
+                    "start_face": 3,
+                    "face_count": 4,
+                }
+            ]
+        )
+    )
+
+    draft = extract_task_draft(
+        "Use the supplied native mesh; its length unit is yard.",
+        [asset],
+        gateway,
+        budget=_budget(),
+        trace=InMemoryModelTraceSink(),
+        ingress_context=context,
+    )
+
+    assert "geometry.length_unit" not in draft.fact_map()
+    assert [item.question_id for item in draft.unresolved_questions] == [
+        "q_geometry_length_unit"
+    ]
+
+
+def test_provided_mesh_blocks_conflicting_trusted_length_units() -> None:
+    payload = {
+        "schema_version": 1,
+        "facts": [
+            {
+                "path": "geometry",
+                "value": (
+                    '{"mode":"openfoam_mesh","dimensionality":"two_d",'
+                    '"description":"supplied mesh","length_unit":"mm",'
+                    '"assets":[]}'
+                ),
+                "source": "user_text",
+                "evidence": "two_d mesh length unit is mm",
+                "impact": "high",
+                "confirmed": False,
+            },
+            {
+                "path": "geometry.length_unit",
+                "value": '"m"',
+                "source": "user_text",
+                "evidence": "separate length unit is m",
+                "impact": "high",
+                "confirmed": False,
+            },
+        ],
+        "assumptions": [],
+        "unresolved_questions": [],
+    }
+    gateway = RecordingExtractionGateway(payload)
+    asset = provided_mesh_asset()
+    context = provided_mesh_ingress_context(
+        poly_mesh_topology_payload(
+            patches=[
+                {
+                    "name": "frontAndBack",
+                    "patch_type": "empty",
+                    "start_face": 3,
+                    "face_count": 4,
+                }
+            ]
+        )
+    )
+
+    draft = extract_task_draft(
+        "Use the supplied two_d mesh length unit is mm; "
+        "separate length unit is m.",
+        [asset],
+        gateway,
+        budget=_budget(),
+        trace=InMemoryModelTraceSink(),
+        ingress_context=context,
+    )
+
+    assert "geometry.length_unit" not in draft.fact_map()
+    assert [item.question_id for item in draft.unresolved_questions] == [
+        "q_geometry_length_unit_conflict"
+    ]
+
+
+@pytest.mark.parametrize("source", ["model_inference", "public_asset"])
+def test_provided_mesh_rejects_non_user_standalone_length_unit(
+    source: str,
+) -> None:
+    payload = {
+        "schema_version": 1,
+        "facts": [
+            {
+                "path": "geometry.length_unit",
+                "value": '"m"',
+                "source": source,
+                "evidence": "length unit is m",
+                "impact": "high",
+                "confirmed": True,
+            }
+        ],
+        "assumptions": [],
+        "unresolved_questions": [],
+    }
+    gateway = RecordingExtractionGateway(payload)
+    asset = provided_mesh_asset()
+    context = provided_mesh_ingress_context(
+        poly_mesh_topology_payload(
+            patches=[
+                {
+                    "name": "frontAndBack",
+                    "patch_type": "empty",
+                    "start_face": 3,
+                    "face_count": 4,
+                }
+            ]
+        )
+    )
+
+    draft = extract_task_draft(
+        "Use the supplied native mesh; length unit is m.",
+        [asset],
+        gateway,
+        budget=_budget(),
+        trace=InMemoryModelTraceSink(),
+        ingress_context=context,
+    )
+
+    assert "geometry.length_unit" not in draft.fact_map()
+    assert [item.path for item in draft.unresolved_questions] == [
+        "geometry.length_unit"
+    ]
 
 
 def test_provided_mesh_keeps_user_unit_separate_from_asset_geometry() -> None:

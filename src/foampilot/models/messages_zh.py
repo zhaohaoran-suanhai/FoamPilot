@@ -15,7 +15,7 @@ BACKEND_MESSAGES_ZH: dict[
     ),
     BackendFailureKind.BACKEND_MISCONFIGURED: (
         "模型后端配置错误。",
-        "请检查 backend 配置中的命令、地址、模型名称和环境变量名称。",
+        "请检查 backend 配置中的命令、地址、模型名称、环境变量和可写状态目录。",
     ),
     BackendFailureKind.AUTH_FAILED: (
         "模型后端认证失败。",

@@ -163,7 +163,13 @@ def _author(response=None, *, target=None):
 
 
 def test_case_author_binds_frozen_design_and_calls_model_once() -> None:
-    bundle, gateway, design = _author()
+    rule = (
+        "Foundation v10 explicitPorositySource selection belongs in "
+        "explicitPorositySourceCoeffs."
+    )
+    bundle, gateway, design = _author(
+        target=_target(extension_authoring_rules=(rule,))
+    )
 
     assert bundle.manifest.solver_executable == "pisoFoam"
     assert len(gateway.requests) == 1
@@ -172,8 +178,30 @@ def test_case_author_binds_frozen_design_and_calls_model_once() -> None:
     assert payload["frozen_case_design"]["design_sha256"] == design.design_sha256
     assert payload["target_facts"]["version"] == "10"
     assert payload["target_facts"]["distribution"] == "foundation"
+    assert payload["target_facts"]["extension_authoring_rules"] == [rule]
+    assert "observation_plan" not in payload
     assert "commands" not in request.system_prompt.lower()
     assert "execution steps" in request.system_prompt.lower()
+    assert "do not author functions" in request.system_prompt.lower()
+
+
+def test_case_author_binds_manifest_family_metadata_to_frozen_facts() -> None:
+    response = _bundle()
+    response = response.model_copy(
+        update={
+            "manifest": response.manifest.model_copy(
+                update={
+                    "physics_family": "single-phase incompressible flow",
+                    "mesh_family": "provided-openfoam-polyMesh",
+                }
+            )
+        }
+    )
+
+    bundle, _, _ = _author(response)
+
+    assert bundle.manifest.physics_family == "fluid"
+    assert bundle.manifest.mesh_family == "provided"
 
 
 def test_case_author_never_exposes_protected_paths_to_model() -> None:

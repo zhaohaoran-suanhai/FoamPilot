@@ -15,6 +15,7 @@ import yaml
 from foampilot import __version__
 from foampilot.artifacts import ArtifactStore, RunSummary
 from foampilot.environment import EnvironmentSnapshot
+from foampilot.models import NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT
 from foampilot.plans import ExecutionPlan
 from foampilot.runtime.models import RuntimeConfig
 from foampilot.tasks import TaskSpec
@@ -293,7 +294,10 @@ class ContinuationInput(StrictModel):
     active_plan_path: Path | None = None
     run_assessment_path: Path | None = None
     run_facts_path: Path | None = None
-    transport_attempts_used: int = Field(ge=0, le=7)
+    transport_attempts_used: int = Field(
+        ge=0,
+        le=NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT,
+    )
     continuation_index_for_stage: int = Field(ge=1, le=2)
     continuation_counts: dict[str, int] = Field(default_factory=dict)
     logical_requests_used_before_child: int = Field(ge=0)
@@ -413,7 +417,7 @@ def _lineage_usage(
     transport_attempts = int(
         continuation.get("transport_attempts_used_before_child", 0)
     ) + _model_transport_attempts(parent_run)
-    if transport_attempts >= 7:
+    if transport_attempts >= NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT:
         raise ResumeCompatibilityError("lineage_transport_attempt_limit")
     return transport_attempts, next_index, counts
 

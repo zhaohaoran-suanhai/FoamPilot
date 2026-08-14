@@ -9,6 +9,9 @@ import threading
 import time
 
 
+NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT = 9
+
+
 class ModelStage(StrEnum):
     TASK_EXTRACTION = "task_extraction"
     INTENT_INTERPRETATION = "intent_interpretation"
@@ -64,7 +67,9 @@ class ModelBudgetLedger:
         cls,
         *,
         total_model_deadline_seconds: float = 600,
-        lineage_transport_attempt_limit: int = 7,
+        lineage_transport_attempt_limit: int = (
+            NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT
+        ),
         transport_attempts_used: int = 0,
         now: Callable[[], float] = time.monotonic,
     ) -> "ModelBudgetLedger":

@@ -9,7 +9,7 @@ from foampilot.extensions import CapabilityRegistry, PlanContext
 from foampilot.simulation import CaseDesign
 from foampilot.tasks import TaskSpec
 
-from .models import ExecutionPlan
+from .models import CommandStage, ExecutionPlan
 from .validation import validate_execution_plan
 
 if TYPE_CHECKING:
@@ -23,6 +23,25 @@ class PlanCompilationError(ValueError):
 
 def _raise(code: str, detail: str) -> None:
     raise PlanCompilationError(f"{code}: {detail}")
+
+
+def _confirmed_task_solver_run(task: TaskSpec) -> bool:
+    fact = next(
+        (
+            item
+            for item in task.explicit_facts
+            if item.field_path == "execution.run_solver" and item.confirmed
+        ),
+        None,
+    )
+    if fact is None:
+        return True
+    if not isinstance(fact.value, bool):
+        _raise(
+            "PLAN_RUN_SOLVER_VALUE_INVALID",
+            "confirmed task execution.run_solver must be boolean",
+        )
+    return fact.value
 
 
 def compile_execution_plan(
@@ -52,16 +71,24 @@ def compile_execution_plan(
             f"solver {bundle.manifest.solver_executable} != {solver}",
         )
 
+    context = PlanContext(
+        design=design,
+        manifest=bundle.manifest,
+        target=target,
+        resource_budget=task.resource_budget,
+        command_facts=tuple(environment.commands),
+        mpi_available=environment.mpi_launcher is not None,
+    )
     try:
-        fragments = registry.plan_for(
-            PlanContext(
-                design=design,
-                manifest=bundle.manifest,
-                target=target,
-                resource_budget=task.resource_budget,
-                command_facts=tuple(environment.commands),
-                mpi_available=environment.mpi_launcher is not None,
+        run_solver = context.solver_run_enabled
+        task_run_solver = _confirmed_task_solver_run(task)
+        if task_run_solver is not run_solver:
+            _raise(
+                "PLAN_RUN_SOLVER_TASK_DESIGN_MISMATCH",
+                "confirmed task and frozen design execution controls differ",
             )
+        fragments = registry.plan_for(
+            context
         )
     except (LookupError, ValueError) as error:
         raise PlanCompilationError(str(error)) from error
@@ -76,8 +103,20 @@ def compile_execution_plan(
             ", ".join(missing_paths),
         )
 
+    execution_stages = {
+        CommandStage.DECOMPOSE,
+        CommandStage.SOLVE,
+        CommandStage.RECONSTRUCT,
+        CommandStage.POSTPROCESS,
+    }
+    commands = tuple(
+        item
+        for item in fragments.commands
+        if run_solver or item.stage not in execution_stages
+    )
+
     observation_commands = ()
-    if observation_plan is not None:
+    if observation_plan is not None and run_solver:
         from foampilot.observations import compile_foundation10_observations
 
         postprocess_count = sum(
@@ -85,7 +124,7 @@ def compile_execution_plan(
             for item in observation_plan.items
         )
         remaining_timeout = task.resource_budget.max_wall_seconds - sum(
-            item.timeout_seconds for item in fragments.commands
+            item.timeout_seconds for item in commands
         )
         if postprocess_count > remaining_timeout:
             _raise(
@@ -115,7 +154,7 @@ def compile_execution_plan(
         compiler_identities=fragments.contributor_identities,
         manifest=bundle.manifest,
         files=bundle.files,
-        commands=[*fragments.commands, *observation_commands],
+        commands=[*commands, *observation_commands],
     )
     issues = validate_execution_plan(
         plan,

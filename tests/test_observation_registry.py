@@ -3,8 +3,10 @@ from __future__ import annotations
 import pytest
 
 from foampilot.observations import (
+    ObservationExtensionDescriptor,
     ObservationExtensionRegistry,
     ObservationRegistryError,
+    ObservationRequestContract,
     UnsupportedObservationError,
     first_party_observation_registry,
 )
@@ -57,3 +59,39 @@ def test_unknown_observation_kind_is_rejected() -> None:
 def test_entry_point_discovery_is_disabled() -> None:
     with pytest.raises(ObservationRegistryError, match="ENTRY_POINTS_DISABLED"):
         ObservationExtensionRegistry(entry_points_enabled=True)
+
+
+def test_request_alias_is_bound_to_its_registered_kind_and_dimension() -> None:
+    registry = first_party_observation_registry()
+
+    assert registry.resolve("flow_rate").resolve_request_contract("U", "L/T") is None
+    assert (
+        registry.resolve("flow_rate").resolve_request_contract("Q", "L/T") is None
+    )
+
+
+def test_registry_rejects_ambiguous_request_alias_bindings() -> None:
+    registry = ObservationExtensionRegistry()
+    descriptor = ObservationExtensionDescriptor(
+        kind="residual",
+        supported_scope_kinds=("global",),
+        strategies=("run_facts",),
+        request_contracts=(
+            ObservationRequestContract(
+                quantity="solver_residual",
+                dimension="1",
+                quantity_aliases=("shared_alias",),
+            ),
+            ObservationRequestContract(
+                quantity="normalized_residual",
+                dimension="1",
+                quantity_aliases=("shared_alias",),
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        ObservationRegistryError,
+        match="OBSERVATION_REQUEST_ALIAS_AMBIGUOUS",
+    ):
+        registry.register(descriptor)

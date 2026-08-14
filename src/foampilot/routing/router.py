@@ -31,6 +31,34 @@ from .models import (
 from .registry import SOLVER_CAPABILITIES, capability_for_solver
 
 
+_EXPLICIT_ROUTE_FACTS = {
+    "physics.regime": (
+        "regime",
+        frozenset({"steady", "transient"}),
+    ),
+    "physics.compressibility": (
+        "compressibility",
+        frozenset({"incompressible", "compressible"}),
+    ),
+    "physics.phase_family": (
+        "phase_family",
+        frozenset({"single_phase", "vof", "multiphase"}),
+    ),
+    "physics.energy": (
+        "energy",
+        frozenset({"enabled", "disabled"}),
+    ),
+    "physics.turbulence": (
+        "turbulence",
+        frozenset({"laminar", "rans", "les"}),
+    ),
+    "physics.family": (
+        "physics_family",
+        frozenset({"fluid", "solid"}),
+    ),
+}
+
+
 def _public_text(task: TaskSpec) -> str:
     return " ".join(
         (
@@ -56,6 +84,19 @@ def _fact_value(
         if _contains(text, *patterns):
             return value
     return "unknown"
+
+
+def _confirmed_explicit_route_facts(task: TaskSpec) -> dict[str, str]:
+    facts: dict[str, str] = {}
+    for fact in task.explicit_facts:
+        contract = _EXPLICIT_ROUTE_FACTS.get(fact.field_path)
+        if contract is None or not fact.confirmed:
+            continue
+        target, allowed = contract
+        value = fact.value
+        if isinstance(value, str) and value in allowed:
+            facts[target] = value
+    return facts
 
 
 def _task_facts(task: TaskSpec) -> dict[str, str | bool]:
@@ -150,13 +191,7 @@ def _task_facts(task: TaskSpec) -> dict[str, str | bool]:
             ("fluid", (r"\bflow\b", r"\bfluid\b", r"\bpressure\b")),
         ),
     )
-    if (
-        phase_family == "unknown"
-        and physics_family == "fluid"
-        and compressibility != "unknown"
-    ):
-        phase_family = "single_phase"
-    return {
+    facts: dict[str, str | bool] = {
         "regime": regime,
         "compressibility": compressibility,
         "phase_family": phase_family,
@@ -166,6 +201,14 @@ def _task_facts(task: TaskSpec) -> dict[str, str | bool]:
         "physics_family": physics_family,
         "parallel_expected": _contains(text, r"\bparallel\b", r"\bmpi\b"),
     }
+    facts.update(_confirmed_explicit_route_facts(task))
+    if (
+        facts["phase_family"] == "unknown"
+        and facts["physics_family"] == "fluid"
+        and facts["compressibility"] != "unknown"
+    ):
+        facts["phase_family"] = "single_phase"
+    return facts
 
 
 def _mesh_fact(task: TaskSpec, lexical_value: str) -> tuple[str, RouteEvidence | None]:
@@ -224,6 +267,24 @@ def _explicit_solver(
     if len(matches) == 1:
         return matches[0]
     return None
+
+
+def _confirmed_explicit_solver(
+    task: TaskSpec,
+    corpus: Sequence[KnowledgeEntry],
+) -> str | None:
+    known = _known_solvers(corpus)
+    return next(
+        (
+            str(fact.value)
+            for fact in task.explicit_facts
+            if fact.field_path == "physics.solver"
+            and fact.confirmed
+            and isinstance(fact.value, str)
+            and fact.value in known
+        ),
+        None,
+    )
 
 
 def _knowledge_candidates(
@@ -358,7 +419,8 @@ def route_capability(
 
     text = _public_text(task)
     installed = environment.executable_names
-    explicit = _explicit_solver(text, corpus)
+    explicit_from_fact = _confirmed_explicit_solver(task, corpus)
+    explicit = explicit_from_fact or _explicit_solver(text, corpus)
     candidates = (
         [explicit]
         if explicit is not None
@@ -368,7 +430,11 @@ def route_capability(
     if explicit is not None:
         evidence.append(
             RouteEvidence(
-                source="task.prompt",
+                source=(
+                    "task.explicit_facts"
+                    if explicit_from_fact is not None
+                    else "task.prompt"
+                ),
                 fact=f"explicit solver {explicit}",
             )
         )

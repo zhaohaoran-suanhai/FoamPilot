@@ -15,13 +15,24 @@ from foampilot.models import (
     ModelGateway,
     ModelRequest,
     ModelTraceSink,
+    StructuredOutputNormalization,
 )
-from foampilot.preprocessing import InputMeshFacts
-from foampilot.observations.models import ObservationRequest
+from foampilot.preprocessing import ExecutedMeshFacts, InputMeshFacts
+from foampilot.observations.models import ObservationRequest, ObservationScope
+from foampilot.observations.registry import (
+    UnsupportedObservationError,
+    first_party_observation_registry,
+)
 from foampilot.acceptance.models import AcceptanceRequest
 from foampilot.tasks import TaskSpec
 
-from .provenance import FactEvidence, ResolvedValue, StrictModel, Uncertainty
+from .provenance import (
+    FactEvidence,
+    ImpactLevel,
+    JsonValue,
+    ResolvedValue,
+    StrictModel,
+)
 
 
 _FORBIDDEN_INFERRED_PREFIXES = (
@@ -36,17 +47,50 @@ _EXPLICIT_DECISION_PREFIXES = (
     "commands.",
     "files.",
 )
+_REPORTING_LIMIT_PREFIXES = ("acceptance.", "observations.")
+_FOUNDATION10_MESH_COMPATIBILITY_PATHS = {
+    "mesh.foundation_openfoam_10_compatibility",
+    "mesh.openfoam10_compatibility",
+}
+
+
+class IntentUncertainty(StrictModel):
+    """Candidate-free ambiguity emitted before engineering design exists."""
+
+    question_id: str = Field(
+        pattern=r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+    )
+    field_path: str = Field(
+        pattern=r"^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z0-9][A-Za-z0-9_-]*)*$"
+    )
+    impact: ImpactLevel
+    kind: Literal["design_required", "information_required", "conflict"]
+    prompt_zh: str = Field(min_length=1)
+    reason_zh: str = Field(min_length=1)
+    conflicting_evidence: tuple[FactEvidence, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> Self:
+        if self.kind == "conflict" and len(self.conflicting_evidence) < 2:
+            raise ValueError(
+                "conflict uncertainty requires conflicting evidence"
+            )
+        if self.kind != "conflict" and self.conflicting_evidence:
+            raise ValueError(
+                "only conflict uncertainty may contain conflicting evidence"
+            )
+        return self
 
 
 class SimulationIntent(StrictModel):
     schema_version: Literal[1] = 1
-    facts: tuple[ResolvedValue, ...] = ()
+    facts: tuple[ResolvedValue[JsonValue], ...] = ()
     constraints: tuple[str, ...] = ()
     requested_observables: tuple[str, ...] = ()
     observation_requests: tuple[ObservationRequest, ...] = ()
     acceptance_requests: tuple[AcceptanceRequest, ...] = ()
     acceptance_intent: tuple[str, ...] = ()
-    uncertainties: tuple[Uncertainty, ...] = ()
+    uncertainties: tuple[IntentUncertainty, ...] = ()
     audit_warnings: tuple[str, ...] = ()
 
     @field_validator(
@@ -79,6 +123,117 @@ class SimulationIntent(StrictModel):
             if item.field_path == field_path:
                 return item
         raise KeyError(field_path)
+
+
+def _intent_observation_nodes(
+    payload: dict[str, object],
+) -> tuple[tuple[str, dict[str, object]], ...]:
+    nodes: list[tuple[str, dict[str, object]]] = []
+    observations = payload.get("observation_requests")
+    if isinstance(observations, list):
+        for index, observation in enumerate(observations):
+            if not isinstance(observation, dict):
+                continue
+            nodes.append((f"observation_requests.{index}", observation))
+    acceptance = payload.get("acceptance_requests")
+    if isinstance(acceptance, list):
+        for index, request in enumerate(acceptance):
+            if not isinstance(request, dict):
+                continue
+            observation = request.get("observation")
+            if not isinstance(observation, dict):
+                continue
+            nodes.append(
+                (f"acceptance_requests.{index}.observation", observation)
+            )
+    return tuple(nodes)
+
+
+def _intent_scope_nodes(
+    payload: dict[str, object],
+) -> tuple[tuple[str, dict[str, object]], ...]:
+    return tuple(
+        (location + ".scope", scope)
+        for location, observation in _intent_observation_nodes(payload)
+        if isinstance((scope := observation.get("scope")), dict)
+    )
+
+
+def normalize_simulation_intent_input(
+    output_text: str,
+) -> tuple[SimulationIntent, tuple[StructuredOutputNormalization, ...]]:
+    """Apply only registry-proven aliases and unambiguous scope repairs."""
+
+    payload = json.loads(output_text)
+    if not isinstance(payload, dict):
+        return SimulationIntent.model_validate(payload), ()
+    records: list[StructuredOutputNormalization] = []
+    registry = first_party_observation_registry()
+    for location, observation in _intent_observation_nodes(payload):
+        kind = observation.get("kind")
+        quantity = observation.get("quantity")
+        dimension = observation.get("dimension")
+        if not all(isinstance(item, str) for item in (kind, quantity, dimension)):
+            continue
+        try:
+            descriptor = registry.resolve(kind)
+        except UnsupportedObservationError:
+            continue
+        contract = descriptor.resolve_request_contract(quantity, dimension)
+        if contract is None:
+            continue
+        if quantity != contract.quantity:
+            observation["quantity"] = contract.quantity
+            records.append(
+                StructuredOutputNormalization(
+                    code="INTENT_QUANTITY_ALIAS_BOUND",
+                    location=location + ".quantity",
+                    original=quantity,
+                    normalized=contract.quantity,
+                )
+            )
+        if dimension != contract.dimension:
+            observation["dimension"] = contract.dimension
+            records.append(
+                StructuredOutputNormalization(
+                    code="INTENT_DIMENSION_ALIAS_BOUND",
+                    location=location + ".dimension",
+                    original=dimension,
+                    normalized=contract.dimension,
+                )
+            )
+    for location, scope in _intent_scope_nodes(payload):
+        kind = scope.get("kind")
+        names = scope.get("names")
+        region = scope.get("region")
+        if kind == "region":
+            if isinstance(names, list) and len(names) == 1 and region is None:
+                scope["region"] = names[0]
+                records.append(
+                    StructuredOutputNormalization(
+                        code="INTENT_REGION_SCOPE_BOUND",
+                        location=location + ".region",
+                        original=None,
+                        normalized=str(names[0]),
+                    )
+                )
+            elif (
+                names is None or (isinstance(names, list) and len(names) == 0)
+            ) and isinstance(region, str):
+                scope["names"] = [region]
+                records.append(
+                    StructuredOutputNormalization(
+                        code="INTENT_REGION_SCOPE_BOUND",
+                        location=location + ".names",
+                        original=(
+                            None
+                            if names is None
+                            else "[]"
+                        ),
+                        normalized=json.dumps([region], ensure_ascii=False),
+                    )
+                )
+    return SimulationIntent.model_validate(payload), tuple(records)
 
 
 def _asset_summary(bundle: AssetBundle) -> dict[str, object]:
@@ -385,17 +540,91 @@ def _downgrade(
     )
 
 
+def _reconcile_region_scope_with_mesh(
+    scope: ObservationScope,
+    mesh_facts: tuple[InputMeshFacts, ...],
+) -> tuple[ObservationScope, bool]:
+    """Reclassify an unambiguous cellZone mislabeled as a mesh region."""
+
+    if scope.kind != "region" or scope.region is None:
+        return scope, False
+    if any(mesh.region == scope.region for mesh in mesh_facts):
+        return scope, False
+    matching_meshes = tuple(
+        mesh
+        for mesh in mesh_facts
+        if any(zone.name == scope.region for zone in mesh.cell_zones)
+    )
+    if len(matching_meshes) != 1:
+        return scope, False
+    return (
+        scope.model_copy(
+            update={
+                "kind": "cell_zone",
+                "region": matching_meshes[0].region,
+            }
+        ),
+        True,
+    )
+
+
+def _redundant_patch_pair_flow_balance(
+    request: ObservationRequest,
+    observations: tuple[ObservationRequest, ...],
+    acceptance_observation_ids: set[str],
+) -> bool:
+    if (
+        request.kind != "flow_rate"
+        or request.scope.kind != "patch_pair"
+        or request.observation_id in acceptance_observation_ids
+    ):
+        return False
+    return all(
+        any(
+            candidate.kind == "flow_rate"
+            and candidate.scope.kind == "patch"
+            and candidate.scope.names == (patch,)
+            and candidate.scope.region == request.scope.region
+            and candidate.dimension == request.dimension
+            and candidate.time_selection == request.time_selection
+            for candidate in observations
+        )
+        for patch in request.scope.names
+    )
+
+
 def _reconcile_intent(
     response: SimulationIntent,
     *,
     task: TaskSpec,
     fact_ids: set[str],
+    mesh_facts: tuple[InputMeshFacts, ...],
+    executed_mesh_facts: tuple[ExecutedMeshFacts, ...],
 ) -> SimulationIntent:
     explicit = {item.field_path: item for item in task.explicit_facts}
+    task_contract = {
+        "execution.required_outputs": ResolvedValue(
+            field_path="execution.required_outputs",
+            value=list(task.required_outputs),
+            source="deterministic_rule",
+            impact="high",
+            evidence=(
+                FactEvidence(
+                    kind="task_contract",
+                    detail=(
+                        "TaskSpec.required_outputs is the authoritative output "
+                        "contract"
+                    ),
+                    reference=f"task:{task.task_id}",
+                ),
+            ),
+            confirmed=True,
+        )
+    }
     facts: dict[str, ResolvedValue] = {}
     warnings = list(response.audit_warnings)
     for fact in response.facts:
-        if fact.field_path in explicit:
+        if fact.field_path in explicit or fact.field_path in task_contract:
             continue
         candidate = fact
         if candidate.source in {"user_confirmation", "system_default"}:
@@ -448,11 +677,128 @@ def _reconcile_intent(
     for fact in task.explicit_facts:
         if fact.field_path.startswith("acceptance.legacy_checks."):
             continue
+        if fact.field_path in task_contract:
+            continue
+        if fact.field_path == "physics.solver":
+            facts["solver.family"] = fact.model_copy(
+                update={"field_path": "solver.family"}
+            )
+            continue
+        if fact.field_path == "geometry.input":
+            geometry = task.geometry
+            if geometry is not None:
+                facts["geometry.length_unit"] = fact.model_copy(
+                    update={
+                        "field_path": "geometry.length_unit",
+                        "value": geometry.length_unit,
+                    }
+                )
+                for role in geometry.patch_roles:
+                    path = f"boundaries.{role.name}.role"
+                    facts[path] = fact.model_copy(
+                        update={"field_path": path, "value": role.role}
+                    )
+                for role in geometry.region_roles:
+                    path = f"regions.{role.name}.role"
+                    facts[path] = fact.model_copy(
+                        update={"field_path": path, "value": role.role}
+                    )
         facts[fact.field_path] = fact
+    facts.update(task_contract)
 
     ordered = tuple(facts[path] for path in sorted(facts))
+    target_mesh_probe_succeeded = (
+        task.openfoam_target.distribution == "foundation"
+        and task.openfoam_target.version == "10"
+        and bool(executed_mesh_facts)
+        and all(
+            item.mesh_check.executed
+            and item.mesh_check.return_code == 0
+            and not item.mesh_check.timed_out
+            and item.mesh_check.mesh_ok is True
+            for item in executed_mesh_facts
+        )
+    )
+    uncertainties: list[IntentUncertainty] = []
+    for uncertainty in response.uncertainties:
+        if (
+            uncertainty.kind == "information_required"
+            and uncertainty.field_path
+            in _FOUNDATION10_MESH_COMPATIBILITY_PATHS
+            and target_mesh_probe_succeeded
+        ):
+            warnings.append(
+                "INTENT_UNCERTAINTY_RESOLVED_BY_MESH_PROBE:"
+                + uncertainty.field_path
+            )
+            continue
+        if (
+            uncertainty.kind == "information_required"
+            and uncertainty.field_path.startswith(_REPORTING_LIMIT_PREFIXES)
+        ):
+            warnings.append(
+                "INTENT_REPORTING_LIMITATION:" + uncertainty.field_path
+            )
+            continue
+        uncertainties.append(uncertainty)
+    observation_requests: list[ObservationRequest] = []
+    for request in response.observation_requests:
+        scope, reconciled = _reconcile_region_scope_with_mesh(
+            request.scope,
+            mesh_facts,
+        )
+        observation_requests.append(
+            request.model_copy(update={"scope": scope})
+            if reconciled
+            else request
+        )
+        if reconciled:
+            warnings.append(
+                "INTENT_REGION_SCOPE_RECONCILED_TO_CELL_ZONE:"
+                + request.observation_id
+            )
+
+    reconciled_observations = tuple(observation_requests)
+    acceptance_observation_ids = {
+        request.observation.observation_id
+        for request in response.acceptance_requests
+    }
+    observation_requests = []
+    for request in reconciled_observations:
+        if _redundant_patch_pair_flow_balance(
+            request,
+            reconciled_observations,
+            acceptance_observation_ids,
+        ):
+            warnings.append(
+                "INTENT_REDUNDANT_FLOW_BALANCE_REPRESENTED_BY_PATCH_FLOWS:"
+                + request.observation_id
+            )
+            continue
+        observation_requests.append(request)
+
     acceptance_requests: list[AcceptanceRequest] = []
-    for request in response.acceptance_requests:
+    for original_request in response.acceptance_requests:
+        scope, reconciled = _reconcile_region_scope_with_mesh(
+            original_request.observation.scope,
+            mesh_facts,
+        )
+        request = (
+            original_request.model_copy(
+                update={
+                    "observation": original_request.observation.model_copy(
+                        update={"scope": scope}
+                    )
+                }
+            )
+            if reconciled
+            else original_request
+        )
+        if reconciled:
+            warnings.append(
+                "INTENT_ACCEPTANCE_REGION_SCOPE_RECONCILED_TO_CELL_ZONE:"
+                + request.condition_id
+            )
         if (
             request.source == "user_text"
             and request.confirmed
@@ -487,6 +833,8 @@ def _reconcile_intent(
     return response.model_copy(
         update={
             "facts": ordered,
+            "uncertainties": tuple(uncertainties),
+            "observation_requests": tuple(observation_requests),
             "acceptance_requests": tuple(acceptance_requests),
             "acceptance_intent": tuple(task.acceptance_intent),
             "audit_warnings": tuple(dict.fromkeys(warnings)),
@@ -499,6 +847,7 @@ def interpret_intent(
     *,
     asset_facts: tuple[AssetBundle, ...],
     mesh_facts: tuple[InputMeshFacts, ...],
+    executed_mesh_facts: tuple[ExecutedMeshFacts, ...] = (),
     capability_kinds: tuple[str, ...],
     gateway: ModelGateway,
     budget: ModelBudgetWindow,
@@ -508,12 +857,48 @@ def interpret_intent(
 
     assets = tuple(_asset_summary(item) for item in asset_facts)
     meshes = tuple(_mesh_summary(item) for item in mesh_facts)
+    observation_registry = first_party_observation_registry()
+    available_observation_contracts = tuple(
+        {
+            "kind": kind,
+            "quantity": contract.quantity,
+            "dimension": contract.dimension,
+            "supported_scope_kinds": list(
+                observation_registry.resolve(kind).supported_scope_kinds
+            ),
+        }
+        for kind, contract in observation_registry.request_contracts()
+    )
     request = ModelRequest(
         purpose="interpret-simulation-intent",
         system_prompt=(
             "You interpret simulation intent only. Do not write OpenFOAM files, "
             "choose numerical schemes, create commands, or assign confidence. "
-            "Report ambiguity as structured uncertainties. A model response may "
+            "Report ambiguity as candidate-free structured uncertainties. Use "
+            "design_required for solver, material, boundary, time, numerical, "
+            "or region-model values that Case Designer can propose. Use "
+            "information_required only for facts that must come from the user "
+            "or an asset and without which a safe case cannot be authored. Missing "
+            "Foundation OpenFOAM 10 mesh compatibility must use the field path "
+            "mesh.foundation_openfoam_10_compatibility; the system may resolve it "
+            "from an executed target-version mesh probe. Missing "
+            "acceptance thresholds or optional observation sampling scopes are "
+            "reporting limitations, not pre-design information blockers; record "
+            "them as audit warnings. The Intent stage must never emit confirmable "
+            "candidates. Use scope kind cell_zone for an OpenFOAM cellZone. "
+            "Reserve scope kind region for a named OpenFOAM mesh region; do not "
+            "use it for a cellZone. For a region scope, emit both region and a "
+            "one-item names array containing the identical mesh-region name. "
+            "Flow-rate observations support one patch per request. To compare "
+            "inlet and outlet flow, emit one patch-scoped flow-rate request for "
+            "each patch; do not emit a patch_pair flow-rate request. "
+            "Observation IDs and quantities are machine identifiers; emit them "
+            "in lower_snake_case. Every observation request, including an "
+            "observation nested in an acceptance request, must use the exact "
+            "canonical quantity and dimension listed for its kind in "
+            "AvailableObservationContracts. Do not emit aliases or invent "
+            "quantity/dimension combinations. "
+            "A model response may "
             "not self-assert user_confirmation, public_asset_fact, "
             "system_default, or deterministic_rule authority."
         ),
@@ -532,6 +917,9 @@ def interpret_intent(
                 "AssetFacts": assets,
                 "InputMeshFacts": meshes,
                 "available_capability_kinds": capability_kinds,
+                "AvailableObservationContracts": (
+                    available_observation_contracts
+                ),
             },
             ensure_ascii=False,
             indent=2,
@@ -543,12 +931,24 @@ def interpret_intent(
         SimulationIntent,
         budget=budget,
         trace=trace,
+        output_normalizer=normalize_simulation_intent_input,
     ).value
     fact_ids = {
         str(item["fact_id"])
         for item in (*assets, *meshes)
     }
-    return _reconcile_intent(response, task=task, fact_ids=fact_ids)
+    return _reconcile_intent(
+        response,
+        task=task,
+        fact_ids=fact_ids,
+        mesh_facts=mesh_facts,
+        executed_mesh_facts=executed_mesh_facts,
+    )
 
 
-__all__ = ["SimulationIntent", "interpret_intent"]
+__all__ = [
+    "IntentUncertainty",
+    "SimulationIntent",
+    "interpret_intent",
+    "normalize_simulation_intent_input",
+]

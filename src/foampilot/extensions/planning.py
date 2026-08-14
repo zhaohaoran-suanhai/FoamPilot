@@ -38,6 +38,26 @@ class PlanContext(StrictFrozenModel):
         return default
 
     @property
+    def solver_run_enabled(self) -> bool:
+        """Return the authoritative solver-execution decision, fail closed."""
+
+        facts = tuple(
+            fact
+            for fact in self.design.proposal.iter_values()
+            if fact.field_path == "execution.run_solver"
+        )
+        if not facts:
+            return True
+        fact = facts[0]
+        if not fact.confirmed:
+            raise PlanContributionError(
+                "PLAN_RUN_SOLVER_AUTHORITY_UNRESOLVED"
+            )
+        if not isinstance(fact.value, bool):
+            raise PlanContributionError("PLAN_RUN_SOLVER_VALUE_INVALID")
+        return fact.value
+
+    @property
     def available_executables(self) -> frozenset[str]:
         return frozenset(item.name for item in self.command_facts)
 

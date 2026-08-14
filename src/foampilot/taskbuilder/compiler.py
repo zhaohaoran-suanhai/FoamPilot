@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 import json
+import math
 
 from foampilot.tasks import TaskSpec
 from foampilot.simulation import FactEvidence, ResolvedValue
@@ -185,7 +186,14 @@ def compile_task_draft(review: DraftReview) -> TaskCompilation:
             if isinstance(end_time_fact, dict)
             else end_time_fact
         )
-        acceptance.append(f"solver reaches the declared end time {end_time}")
+        if (
+            isinstance(end_time, (int, float))
+            and not isinstance(end_time, bool)
+            and math.isfinite(float(end_time))
+        ):
+            acceptance.append(
+                f"solver reaches the declared end time {end_time}"
+            )
     explicit_acceptance = _fact_value(facts, "acceptance.requirements", [])
     if isinstance(explicit_acceptance, list):
         acceptance.extend(

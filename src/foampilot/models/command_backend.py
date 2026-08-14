@@ -43,6 +43,35 @@ _SECRET_PATTERNS = (
 )
 
 
+class CommandStateRoot(StrictModel):
+    """外部命令运行前必须可写的状态根声明。"""
+
+    variable: str
+    default_home_relative: str | None = None
+
+    @field_validator("variable")
+    @classmethod
+    def validate_variable(cls, value: str) -> str:
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value) is None:
+            raise ValueError("variable must be an environment variable name")
+        return value
+
+    @field_validator("default_home_relative")
+    @classmethod
+    def validate_default_home_relative(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        if value is None:
+            return None
+        path = Path(value)
+        if not path.parts or path.is_absolute() or ".." in path.parts:
+            raise ValueError(
+                "default_home_relative must be a safe relative path"
+            )
+        return value
+
+
 class CommandBackendConfig(StrictModel):
     schema_version: Literal[1] = 1
     backend_id: str
@@ -57,6 +86,7 @@ class CommandBackendConfig(StrictModel):
         "HTTPS_PROXY",
         "NO_PROXY",
     )
+    state_root: CommandStateRoot | None = None
 
     @field_validator("argv_template")
     @classmethod
@@ -123,6 +153,54 @@ def _command_failure_kind(detail: str) -> tuple[BackendFailureKind, bool]:
         or "invalid json schema" in normalized
     ):
         return BackendFailureKind.SCHEMA_INVALID, False
+    if "read-only file system" in normalized and (
+        "app-server" in normalized
+        or "codex_home" in normalized
+        or "codex home" in normalized
+    ):
+        return BackendFailureKind.BACKEND_MISCONFIGURED, False
+    if any(
+        marker in normalized
+        for marker in (
+            "not logged in",
+            "authentication required",
+            "unauthorized",
+            "http 401",
+            "invalid access token",
+        )
+    ):
+        return BackendFailureKind.AUTH_FAILED, False
+    if any(
+        marker in normalized
+        for marker in (
+            "http 429",
+            "rate limit",
+            "too many requests",
+        )
+    ):
+        return BackendFailureKind.RATE_LIMITED, True
+    if any(
+        marker in normalized
+        for marker in (
+            "http 503",
+            "overloaded",
+            "service unavailable",
+        )
+    ):
+        return BackendFailureKind.OVERLOADED, True
+    if any(
+        marker in normalized
+        for marker in (
+            "failed to connect to websocket",
+            "stream disconnected before completion",
+            "connection refused",
+            "could not resolve host",
+            "dns error",
+            "proxy error",
+            "tls handshake",
+        )
+    ):
+        return BackendFailureKind.NETWORK_UNAVAILABLE, True
     return BackendFailureKind.PROCESS_INTERRUPTED, True
 
 
@@ -155,8 +233,65 @@ class CommandBackend:
             request_timed_out=request_timed_out,
         )
 
+    def _state_root_failure(
+        self,
+        environment: dict[str, str],
+        *,
+        purpose: str,
+    ) -> BackendError | None:
+        requirement = self.config.state_root
+        if requirement is None:
+            return None
+        raw_root = environment.get(requirement.variable)
+        if raw_root is None and requirement.default_home_relative is not None:
+            home = environment.get("HOME")
+            if home is not None:
+                raw_root = str(Path(home) / requirement.default_home_relative)
+        if raw_root is None:
+            return self._error(
+                kind=BackendFailureKind.BACKEND_MISCONFIGURED,
+                purpose=purpose,
+                detail=(
+                    f"state root is not configured: {requirement.variable}"
+                ),
+                retryable=False,
+            )
+        root = Path(raw_root)
+        if not root.is_absolute() or not root.is_dir():
+            return self._error(
+                kind=BackendFailureKind.BACKEND_MISCONFIGURED,
+                purpose=purpose,
+                detail=(
+                    "state root must be an existing absolute directory: "
+                    f"{root}"
+                ),
+                retryable=False,
+            )
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                prefix=".foampilot-state-probe-",
+                dir=root,
+            ) as probe:
+                probe.flush()
+        except OSError as error:
+            return self._error(
+                kind=BackendFailureKind.BACKEND_MISCONFIGURED,
+                purpose=purpose,
+                detail=f"state root is not writable: {root}: {error}",
+                retryable=False,
+            )
+        return None
+
     def probe(self, *, timeout_seconds: float) -> BackendHealth:
         started = time.monotonic()
+        environment = _child_environment(self.config.pass_env)
+        state_failure = self._state_root_failure(
+            environment,
+            purpose="probe",
+        )
+        if state_failure is not None:
+            return self._health(state_failure, started)
         for index, command in enumerate(self.config.probe_argv):
             try:
                 completed = subprocess.run(
@@ -164,7 +299,7 @@ class CommandBackend:
                     shell=False,
                     text=True,
                     capture_output=True,
-                    env=_child_environment(self.config.pass_env),
+                    env=environment,
                     timeout=timeout_seconds,
                     check=False,
                 )
@@ -240,6 +375,13 @@ class CommandBackend:
         timeout_seconds: float,
         activity: ActivityReporter | None = None,
     ) -> BackendResponse:
+        environment = _child_environment(self.config.pass_env)
+        state_failure = self._state_root_failure(
+            environment,
+            purpose=request.purpose,
+        )
+        if state_failure is not None:
+            raise state_failure
         with tempfile.TemporaryDirectory(
             prefix="foampilot-model-"
         ) as raw_work_dir:
@@ -272,7 +414,7 @@ class CommandBackend:
                     source="model",
                     stdin_text=_prompt(request),
                     cwd=work_dir,
-                    env=_child_environment(self.config.pass_env),
+                    env=environment,
                     reporter=activity,
                 )
             except FileNotFoundError as error:
@@ -348,5 +490,9 @@ def codex_exec_config(*, model: str) -> CommandBackendConfig:
         probe_argv=(
             ("codex", "--version"),
             ("codex", "login", "status"),
+        ),
+        state_root=CommandStateRoot(
+            variable="CODEX_HOME",
+            default_home_relative=".codex",
         ),
     )

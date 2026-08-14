@@ -19,7 +19,11 @@ from foampilot.routing import (
     route_capability,
 )
 from foampilot.tasks import TaskSpec
-from tests.support.tasks import canonical_task_payload, replace_explicit_fact
+from tests.support.tasks import (
+    canonical_task_payload,
+    replace_explicit_fact,
+    resolved_fact,
+)
 
 
 def _task(prompt: str) -> TaskSpec:
@@ -51,6 +55,47 @@ def _task(prompt: str) -> TaskSpec:
             "protected_paths": ["/private/route-target"],
         })
     )
+
+
+def _task_with_explicit_physics(
+    prompt: str,
+    *,
+    confirmed: bool = True,
+    regime: str = "transient",
+    compressibility: str = "incompressible",
+    phase_family: str = "single_phase",
+) -> TaskSpec:
+    payload = _task(prompt).model_dump(mode="json")
+    payload["explicit_facts"].extend(
+        [
+            resolved_fact(
+                "physics.regime",
+                regime,
+                confirmed=confirmed,
+            ),
+            resolved_fact(
+                "physics.compressibility",
+                compressibility,
+                confirmed=confirmed,
+            ),
+            resolved_fact(
+                "physics.phase_family",
+                phase_family,
+                confirmed=confirmed,
+            ),
+            resolved_fact(
+                "physics.turbulence",
+                "laminar",
+                confirmed=confirmed,
+            ),
+            resolved_fact(
+                "physics.family",
+                "fluid",
+                confirmed=confirmed,
+            ),
+        ]
+    )
+    return TaskSpec.model_validate(payload)
 
 
 def _geometry_task(prompt: str, *, mode: str, strategy: str) -> TaskSpec:
@@ -427,6 +472,131 @@ def test_ordinary_incompressible_fluid_defaults_to_single_phase_when_no_phase_is
 
     assert profile.phase_family == "single_phase"
     assert profile.confidence == CapabilityConfidence.MEDIUM
+
+
+def test_confirmed_explicit_physics_routes_non_english_public_task() -> None:
+    profile = route_capability(
+        _task_with_explicit_physics(
+            "多孔通道启动问题 porous benchmark marker。"
+        ),
+        _environment("icoFoam"),
+        (
+            _solver_guide(
+                "icoFoam",
+                entry_id="of10.solver.explicit-facts-icofoam",
+                title="Porous benchmark marker solver",
+            ),
+        ),
+    )
+
+    assert profile.solver_executable == "icoFoam"
+    assert profile.regime == "transient"
+    assert profile.compressibility == "incompressible"
+    assert profile.phase_family == "single_phase"
+    assert profile.turbulence == "laminar"
+    assert profile.physics_family == "fluid"
+    assert profile.confidence == CapabilityConfidence.MEDIUM
+
+
+def test_unconfirmed_explicit_physics_does_not_complete_route() -> None:
+    with pytest.raises(RoutingError) as caught:
+        route_capability(
+            _task_with_explicit_physics(
+                "Porous benchmark marker.",
+                confirmed=False,
+            ),
+            _environment("icoFoam"),
+            (
+                _solver_guide(
+                    "icoFoam",
+                    entry_id="of10.solver.unconfirmed-facts-icofoam",
+                    title="Porous benchmark marker solver",
+                ),
+            ),
+        )
+
+    assert caught.value.code == "REQUEST_INCOMPLETE"
+
+
+def test_invalid_confirmed_explicit_physics_does_not_complete_route() -> None:
+    with pytest.raises(RoutingError) as caught:
+        route_capability(
+            _task_with_explicit_physics(
+                "Porous benchmark marker.",
+                regime="periodic_burst",
+            ),
+            _environment("icoFoam"),
+            (
+                _solver_guide(
+                    "icoFoam",
+                    entry_id="of10.solver.invalid-facts-icofoam",
+                    title="Porous benchmark marker solver",
+                ),
+            ),
+        )
+
+    assert caught.value.code == "REQUEST_INCOMPLETE"
+    assert any(
+        "public task does not resolve regime" in item
+        for item in caught.value.profile.unresolved_questions
+    )
+
+
+def test_confirmed_explicit_physics_overrides_conflicting_lexical_fallback() -> None:
+    profile = route_capability(
+        _task_with_explicit_physics(
+            "Porous benchmark marker: steady compressible multiphase RANS flow."
+        ),
+        _environment("icoFoam"),
+        (
+            _solver_guide(
+                "icoFoam",
+                entry_id="of10.solver.precedence-facts-icofoam",
+                title="Porous benchmark marker solver",
+            ),
+        ),
+    )
+
+    assert profile.solver_executable == "icoFoam"
+    assert profile.regime == "transient"
+    assert profile.compressibility == "incompressible"
+    assert profile.phase_family == "single_phase"
+    assert profile.turbulence == "laminar"
+    assert profile.unresolved_questions == []
+
+
+def test_confirmed_explicit_solver_overrides_other_solver_names_in_prompt() -> None:
+    task = _task_with_explicit_physics(
+        "Use pisoFoam; do not use pimpleFoam for this transient case."
+    )
+    payload = task.model_dump(mode="json")
+    payload["explicit_facts"].append(
+        resolved_fact("physics.solver", "pisoFoam")
+    )
+
+    profile = route_capability(
+        TaskSpec.model_validate(payload),
+        _environment("pisoFoam", "pimpleFoam"),
+        (
+            _solver_guide(
+                "pisoFoam",
+                entry_id="of10.solver.explicit-pisofoam",
+                title="pisoFoam transient flow",
+            ),
+            _solver_guide(
+                "pimpleFoam",
+                entry_id="of10.solver.negated-pimplefoam",
+                title="pimpleFoam transient flow",
+            ),
+        ),
+    )
+
+    assert profile.solver_executable == "pisoFoam"
+    assert any(
+        item.source == "task.explicit_facts"
+        and item.fact == "explicit solver pisoFoam"
+        for item in profile.evidence
+    )
 
 
 def test_missing_critical_physics_is_request_incomplete():

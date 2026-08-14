@@ -24,14 +24,20 @@ def _request(
     time: str = "latest",
 ) -> ObservationRequest:
     quantity = {
+        "continuity": "continuity_error",
         "flow_rate": "volumetric_flow_rate",
+        "residual": "solver_residual",
         "pressure_difference": "pressure_difference",
         "region_average": "velocity",
     }.get(kind, kind)
     dimension = {
+        "continuity": "1",
         "flow_rate": "0 3 -1 0 0 0 0",
+        "force": "1 1 -2 0 0 0 0",
+        "heat_flux": "1 0 -3 0 0 0 0",
         "pressure_difference": "0 2 -2 0 0 0 0",
         "region_average": "0 1 -1 0 0 0 0",
+        "residual": "1",
     }.get(kind, "1")
     return ObservationRequest(
         observation_id=(kind + ("-" + "-".join(names) if names else "")),
@@ -135,6 +141,98 @@ def test_unknown_quantity_dimension_contract_is_unavailable_before_authoring() -
 
     assert strategy.kind == "unavailable"
     assert "quantity/dimension" in strategy.reason
+
+
+@pytest.mark.parametrize("kind", ["residual", "continuity"])
+def test_run_fact_observations_reject_unknown_request_contracts(kind: str) -> None:
+    request = _request(kind).model_copy(
+        update={"quantity": "arbitrary_metric", "dimension": "9 9 9 9 9 9 9"}
+    )
+
+    strategy = _compile(request).items[0].evidence_strategy
+
+    assert strategy.kind == "unavailable"
+    assert "quantity/dimension" in strategy.reason
+
+
+def test_planner_requires_canonical_contract_after_intent_normalization() -> None:
+    request = _request("flow_rate", names=("inlet",), scope="patch").model_copy(
+        update={"dimension": "L^3/T"}
+    )
+
+    strategy = _compile(request).items[0].evidence_strategy
+
+    assert strategy.kind == "unavailable"
+    assert "quantity/dimension" in strategy.reason
+
+
+@pytest.mark.parametrize(
+    ("kind", "quantity", "dimension", "canonical_quantity", "canonical_dimension"),
+    [
+        (
+            "flow_rate",
+            "Q",
+            "L^3/T",
+            "volumetric_flow_rate",
+            "0 3 -1 0 0 0 0",
+        ),
+        (
+            "pressure_difference",
+            "kinematic_pressure",
+            "L^2/T^2",
+            "pressure_difference",
+            "0 2 -2 0 0 0 0",
+        ),
+        ("region_average", "U", "L/T", "velocity", "0 1 -1 0 0 0 0"),
+        (
+            "region_average",
+            "p",
+            "L^2/T^2",
+            "kinematic_pressure",
+            "0 2 -2 0 0 0 0",
+        ),
+        ("residual", "solver_residual", "dimensionless", "solver_residual", "1"),
+        ("continuity", "continuity_error", "dimensionless", "continuity_error", "1"),
+    ],
+)
+def test_first_party_request_contracts_resolve_only_registered_exact_aliases(
+    kind: str,
+    quantity: str,
+    dimension: str,
+    canonical_quantity: str,
+    canonical_dimension: str,
+) -> None:
+    descriptor = first_party_observation_registry().resolve(kind)
+
+    contract = descriptor.resolve_request_contract(quantity, dimension)
+
+    assert contract is not None
+    assert contract.quantity == canonical_quantity
+    assert contract.dimension == canonical_dimension
+
+
+def test_first_party_request_contracts_do_not_guess_unknown_aliases() -> None:
+    descriptor = first_party_observation_registry().resolve("region_average")
+
+    assert descriptor.resolve_request_contract("Velocity Magnitude", "m/s") is None
+
+
+def test_first_party_request_contract_projection_is_unique_and_canonical() -> None:
+    contracts = first_party_observation_registry().request_contracts()
+    keys = [
+        (kind, contract.quantity, contract.dimension)
+        for kind, contract in contracts
+    ]
+
+    assert len(keys) == len(set(keys))
+    assert (
+        "flow_rate",
+        "volumetric_flow_rate",
+        "0 3 -1 0 0 0 0",
+    ) in keys
+    assert ("residual", "solver_residual", "1") in keys
+    assert ("force", "force", "1 1 -2 0 0 0 0") in keys
+    assert ("heat_flux", "heat_flux", "1 0 -3 0 0 0 0") in keys
 
 
 def test_named_region_is_validated_against_authoritative_mesh_facts() -> None:
@@ -287,6 +385,126 @@ def test_duplicate_requests_are_deduplicated_by_identity() -> None:
     request = _request("continuity")
     plan = _compile(request, request)
     assert len(plan.items) == 1
+
+
+def test_acceptance_observation_with_added_provenance_is_merged() -> None:
+    request = _request("residual").model_copy(
+        update={"time_selection": TimeSelection(kind="history")}
+    )
+    acceptance_observation = request.model_copy(
+        update={
+            "provenance": (
+                FactEvidence(
+                    kind="user_quote",
+                    detail="residuals must remain finite",
+                ),
+            )
+        }
+    )
+    acceptance = AcceptanceCompiler().compile(
+        observation_requests=(request,),
+        condition_requests=(
+            AcceptanceRequest(
+                condition_id="residuals-finite",
+                observation=acceptance_observation,
+                operator="finite",
+                unit="1",
+                scope=AcceptanceScope(time="all"),
+                source="model_inference",
+                confirmed=False,
+                provenance=acceptance_observation.provenance,
+            ),
+        ),
+    )
+
+    plan = ObservationPlanner().compile(
+        intent=SimulationIntent(observation_requests=(request,)),
+        design=None,
+        mesh_facts=(_mesh(),),
+        registry=first_party_observation_registry(),
+        acceptance_plan=acceptance,
+    )
+
+    assert plan.items[0].provenance == (
+        *request.provenance,
+        *acceptance_observation.provenance,
+    )
+
+
+def test_history_acceptance_observation_covers_final_intent_request() -> None:
+    request = _request("continuity").model_copy(
+        update={"time_selection": TimeSelection(kind="final")}
+    )
+    acceptance_observation = request.model_copy(
+        update={
+            "time_selection": TimeSelection(kind="history"),
+            "provenance": (
+                FactEvidence(
+                    kind="user_quote",
+                    detail="continuity must remain finite for all times",
+                ),
+            ),
+        }
+    )
+    acceptance = AcceptanceCompiler().compile(
+        observation_requests=(request,),
+        condition_requests=(
+            AcceptanceRequest(
+                condition_id="continuity-finite",
+                observation=acceptance_observation,
+                operator="finite",
+                unit="1",
+                scope=AcceptanceScope(time="all"),
+                source="user_text",
+                confirmed=True,
+                provenance=acceptance_observation.provenance,
+            ),
+        ),
+    )
+
+    plan = ObservationPlanner().compile(
+        intent=SimulationIntent(observation_requests=(request,)),
+        design=None,
+        mesh_facts=(_mesh(),),
+        registry=first_party_observation_registry(),
+        acceptance_plan=acceptance,
+    )
+
+    assert plan.items[0].time_selection.kind == "history"
+
+
+def test_acceptance_observation_with_distinct_semantics_still_conflicts() -> None:
+    request = _request("continuity")
+    conflicting = request.model_copy(
+        update={"quantity": "distinct_quantity"}
+    )
+    acceptance = AcceptanceCompiler().compile(
+        observation_requests=(),
+        condition_requests=(
+            AcceptanceRequest(
+                condition_id="continuity-finite",
+                observation=conflicting,
+                operator="finite",
+                unit="1",
+                scope=AcceptanceScope(time="all"),
+                source="model_inference",
+                confirmed=False,
+                provenance=conflicting.provenance,
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        ObservationPlanningError,
+        match="OBSERVATION_ID_CONFLICT: continuity",
+    ):
+        ObservationPlanner().compile(
+            intent=SimulationIntent(observation_requests=(request,)),
+            design=None,
+            mesh_facts=(_mesh(),),
+            registry=first_party_observation_registry(),
+            acceptance_plan=acceptance,
+        )
 
 
 def test_acceptance_condition_forces_observable_into_plan() -> None:

@@ -8,6 +8,7 @@ from .backend import BackendHealth, BackendResponse, ModelBackend
 from .command_backend import (
     CommandBackend,
     CommandBackendConfig,
+    CommandStateRoot,
     codex_exec_config,
 )
 from .config import load_backend_registry
@@ -16,6 +17,7 @@ from .budgets import (
     ModelBudgetLedger,
     ModelBudgetWindow,
     ModelStage,
+    NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT,
 )
 from .circuit_breaker import (
     CircuitBreakerKey,
@@ -50,6 +52,7 @@ __all__ = [
     "BackendResponse",
     "CommandBackend",
     "CommandBackendConfig",
+    "CommandStateRoot",
     "CircuitBreakerKey",
     "CircuitDeferredError",
     "CircuitState",
@@ -66,6 +69,7 @@ __all__ = [
     "ModelRequest",
     "ModelResult",
     "ModelStage",
+    "NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT",
     "ModelTraceSink",
     "StructuredOutputNormalization",
     "OpenAICompatibleBackend",

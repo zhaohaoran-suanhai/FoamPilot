@@ -26,6 +26,16 @@ class Foundation10SerialSolverPlanContributor:
     )
 
     def contribute(self, context: PlanContext) -> PlanFragment:
+        if not context.solver_run_enabled:
+            descriptor = self.descriptor.model_copy(
+                update={"required_executables": ()}
+            )
+            require_context(context, descriptor)
+            return PlanFragment(
+                contributor_id=self.descriptor.extension_id,
+                contributor_identity=descriptor_identity(self.descriptor),
+                commands=(),
+            )
         solver = str(context.design.proposal.solver_family.value)
         descriptor = self.descriptor.model_copy(
             update={"required_executables": (solver,)}
@@ -69,6 +79,16 @@ class Foundation10ParallelSolverPlanContributor:
     )
 
     def contribute(self, context: PlanContext) -> PlanFragment:
+        if not context.solver_run_enabled:
+            descriptor = self.descriptor.model_copy(
+                update={"required_executables": ()}
+            )
+            require_context(context, descriptor)
+            return PlanFragment(
+                contributor_id=self.descriptor.extension_id,
+                contributor_identity=descriptor_identity(self.descriptor),
+                commands=(),
+            )
         solver = str(context.design.proposal.solver_family.value)
         descriptor = self.descriptor.model_copy(
             update={

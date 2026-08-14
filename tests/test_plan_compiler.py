@@ -10,14 +10,17 @@ from foampilot.extensions import CapabilityRegistry
 from foampilot.plans import GeneratedFile, compile_execution_plan
 from foampilot.plans.compiler import PlanCompilationError
 from foampilot.tasks import TaskSpec
-from tests.support.tasks import canonical_task_payload
+from tests.support.tasks import canonical_task_payload, resolved_fact
 from tests.test_plan_extensions import _context
 
 
-def _task(*, max_wall_seconds: int = 120) -> TaskSpec:
-    return TaskSpec.model_validate(
-        canonical_task_payload(
-            {
+def _task(
+    *,
+    max_wall_seconds: int = 120,
+    run_solver: bool | None = None,
+) -> TaskSpec:
+    payload = canonical_task_payload(
+        {
                 "schema_version": 3,
                 "task_id": "compile-plan-test",
                 "title": "Compile plan test",
@@ -35,9 +38,13 @@ def _task(*, max_wall_seconds: int = 120) -> TaskSpec:
                 "required_outputs": ["velocity"],
                 "acceptance_intent": ["normal completion"],
                 "protected_paths": [],
-            }
-        )
+        }
     )
+    if run_solver is not None:
+        payload.setdefault("explicit_facts", []).append(
+            resolved_fact("execution.run_solver", run_solver)
+        )
+    return TaskSpec.model_validate(payload)
 
 
 def _environment(*, missing: tuple[str, ...] = ()) -> EnvironmentSnapshot:
@@ -109,13 +116,19 @@ def _bundle(
     return CaseBundle(manifest=manifest, files=files)
 
 
-def _compile(*, mesh: str = "provided", ranks: int = 1):
-    context = _context(mesh=mesh, ranks=ranks)
+def _compile(
+    *,
+    mesh: str = "provided",
+    ranks: int = 1,
+    run_solver: bool = True,
+    missing: tuple[str, ...] = (),
+):
+    context = _context(mesh=mesh, ranks=ranks, run_solver=run_solver)
     return compile_execution_plan(
         design=context.design,
         bundle=_bundle(mesh=mesh, ranks=ranks),
-        environment=_environment(),
-        task=_task(),
+        environment=_environment(missing=missing),
+        task=_task(run_solver=run_solver),
         registry=CapabilityRegistry.planning_first_party(),
     )
 
@@ -132,6 +145,58 @@ def test_compiler_uses_registered_contributors_only() -> None:
         "checkMesh",
         "pisoFoam",
     ]
+
+
+def test_compiler_omits_execution_stages_when_solver_run_is_disabled() -> None:
+    plan = _compile(mesh="provided", run_solver=False)
+
+    assert [(item.stage.value, item.executable) for item in plan.commands] == [
+        ("check", "checkMesh"),
+    ]
+
+
+def test_case_only_compilation_does_not_require_solver_executable() -> None:
+    plan = _compile(
+        mesh="provided",
+        run_solver=False,
+        missing=("pisoFoam",),
+    )
+
+    assert [(item.stage.value, item.executable) for item in plan.commands] == [
+        ("check", "checkMesh"),
+    ]
+
+
+def test_compiler_rejects_task_design_solver_execution_mismatch() -> None:
+    context = _context(run_solver=True)
+
+    with pytest.raises(
+        PlanCompilationError,
+        match="PLAN_RUN_SOLVER_TASK_DESIGN_MISMATCH",
+    ):
+        compile_execution_plan(
+            design=context.design,
+            bundle=_bundle(),
+            environment=_environment(),
+            task=_task(run_solver=False),
+            registry=CapabilityRegistry.planning_first_party(),
+        )
+
+
+def test_compiler_treats_missing_task_execution_control_as_run_enabled() -> None:
+    context = _context(run_solver=False)
+
+    with pytest.raises(
+        PlanCompilationError,
+        match="PLAN_RUN_SOLVER_TASK_DESIGN_MISMATCH",
+    ):
+        compile_execution_plan(
+            design=context.design,
+            bundle=_bundle(),
+            environment=_environment(),
+            task=_task(),
+            registry=CapabilityRegistry.planning_first_party(),
+        )
 
 
 def test_compiler_rejects_manifest_solver_mismatch() -> None:

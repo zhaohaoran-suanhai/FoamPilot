@@ -149,7 +149,31 @@ FAMILY_CONTRACTS: dict[str, FamilyContract] = {
                 "tests/test_real_native_vertical_slice.py",
             ),
         ),
-    )
+    ),
+    "pisoFoam": FamilyContract(
+        solver_executable="pisoFoam",
+        required_files=(
+            "system/controlDict",
+            "system/fvSchemes",
+            "system/fvSolution",
+            "constant/physicalProperties",
+            "constant/momentumTransport",
+        ),
+        required_field_names=("U", "p"),
+        required_stages=("solve",),
+        rule=SemanticRuleProvenance(
+            rule_id="of10.family.pisofoam.required-case",
+            source=(
+                "Foundation OpenFOAM v10 applications/solvers/"
+                "incompressible/pisoFoam/createFields.H and pisoFoam.C"
+            ),
+            severity="error",
+            tested_by=(
+                "tests/test_foundation10_porous_extension.py::"
+                "test_pisofoam_has_a_blocking_family_contract",
+            ),
+        ),
+    ),
 }
 
 

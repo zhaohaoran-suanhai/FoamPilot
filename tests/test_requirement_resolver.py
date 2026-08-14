@@ -127,6 +127,28 @@ def test_missing_geometry_unit_is_an_information_gap() -> None:
     assert gap.candidates == ()
 
 
+def test_missing_designer_fact_is_deferred_to_case_design() -> None:
+    resolved = resolve_requirements(
+        intent=_intent(),
+        mesh_facts=(),
+        capabilities=(
+            _capability(
+                RequiredFact(
+                    field_path="time.end",
+                    impact="high",
+                    description="Transient end time",
+                    resolution="designer_candidate",
+                )
+            ),
+        ),
+    )
+
+    gap = resolved.gaps[0]
+    assert gap.field_path == "time.end"
+    assert gap.kind == "design_required"
+    assert gap.candidates == ()
+
+
 def test_nonexistent_zone_reference_is_a_referential_gap() -> None:
     resolved = resolve_requirements(
         intent=_intent(_fact("regions.missing.role", "porous_fluid")),
@@ -210,6 +232,24 @@ def test_unconfirmed_high_impact_model_inference_remains_a_gap() -> None:
     assert resolved.gaps[0].code == "HIGH_IMPACT_AUTHORITY_MISSING"
     assert resolved.gaps[0].kind == "confirmable"
     assert resolved.gaps[0].candidates[0].value == 1e-6
+
+
+def test_nonrequired_model_inference_does_not_create_a_requirement_gap() -> None:
+    resolved = resolve_requirements(
+        intent=_intent(
+            _fact(
+                "physics.model",
+                {"family": "fluid", "turbulence": "laminar"},
+                source="model_inference",
+                confirmed=False,
+            )
+        ),
+        mesh_facts=(),
+        capabilities=(_capability(),),
+    )
+
+    assert resolved.gaps == ()
+    assert resolved.require("physics.model").source == "model_inference"
 
 
 def test_low_impact_system_default_cannot_fill_high_impact_requirement() -> None:

@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from foampilot.evidence import (
+    MeshCheckFact,
     RawCommandEvidence,
     RunAssessment,
     RunFacts,
@@ -98,6 +99,48 @@ def test_missing_normal_solver_end_is_a_solver_failure() -> None:
     assert not assessment.ok
     assert assessment.failure_layer == "SOLVER_FAILED"
     assert assessment.reason_codes == ("NORMAL_SOLVER_END_MISSING",)
+
+
+def test_case_only_check_is_not_reported_as_solver_completion() -> None:
+    step = _step(stage="check")
+    facts = _facts(step).model_copy(
+        update={
+            "mesh_checks": (
+                MeshCheckFact(
+                    step_id=step.step_id,
+                    executed=True,
+                    mesh_ok=True,
+                ),
+            )
+        }
+    )
+
+    assessment = assess_native_run(facts)
+
+    assert assessment.ok
+    assert assessment.reason_codes == ("CASE_AUTHORING_CHECKS_PASSED",)
+    assert "solver" not in assessment.detail.casefold()
+
+
+def test_case_only_requires_a_successful_mesh_check() -> None:
+    step = _step(stage="check")
+    facts = _facts(step).model_copy(
+        update={
+            "mesh_checks": (
+                MeshCheckFact(
+                    step_id=step.step_id,
+                    executed=True,
+                    mesh_ok=False,
+                ),
+            )
+        }
+    )
+
+    assessment = assess_native_run(facts)
+
+    assert not assessment.ok
+    assert assessment.failure_layer == "MESH_FAILED"
+    assert assessment.reason_codes == ("MESH_CHECK_NOT_PASSED",)
 
 
 def test_mesh_quality_failure_is_assessed_without_user_acceptance() -> None:

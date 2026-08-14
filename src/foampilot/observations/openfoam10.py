@@ -261,10 +261,76 @@ def compile_foundation10_observations(
     )
 
 
+def _dictionary_tokens(text: str):
+    """Yield identifiers and braces outside comments and quoted strings."""
+
+    index = 0
+    while index < len(text):
+        if text.startswith("//", index):
+            newline = text.find("\n", index + 2)
+            index = len(text) if newline < 0 else newline + 1
+            continue
+        if text.startswith("/*", index):
+            closing = text.find("*/", index + 2)
+            index = len(text) if closing < 0 else closing + 2
+            continue
+        character = text[index]
+        if character in {'"', "'"}:
+            quote = character
+            index += 1
+            while index < len(text):
+                if text[index] == "\\":
+                    index += 2
+                    continue
+                if text[index] == quote:
+                    index += 1
+                    break
+                index += 1
+            continue
+        if character in "{}":
+            yield character
+            index += 1
+            continue
+        identifier = re.match(r"[A-Za-z_][A-Za-z0-9_]*", text[index:])
+        if identifier is not None:
+            yield identifier.group(0)
+            index += len(identifier.group(0))
+            continue
+        index += 1
+
+
+def _has_top_level_functions_dictionary(text: str) -> bool:
+    tokens = tuple(_dictionary_tokens(text))
+    depth = 0
+    for index, token in enumerate(tokens):
+        if (
+            depth == 0
+            and token == "functions"
+            and index + 1 < len(tokens)
+            and tokens[index + 1] == "{"
+        ):
+            return True
+        if token == "{":
+            depth += 1
+        elif token == "}" and depth > 0:
+            depth -= 1
+    return False
+
+
 def inject_observation_fragments(
     bundle: CaseBundle,
     plan: ObservationPlan,
 ) -> tuple[CaseBundle, CompiledObservationFragments]:
+    authored_function_files = sorted(
+        item.path
+        for item in bundle.files
+        if _has_top_level_functions_dictionary(item.content)
+    )
+    if authored_function_files:
+        raise CaseAuthoringError(
+            "OBSERVATION_FUNCTIONS_OWNERSHIP_COLLISION: "
+            + ", ".join(authored_function_files)
+        )
     fragments = compile_foundation10_observations(plan)
     existing = {item.path for item in bundle.files}
     collisions = sorted(existing & set(fragments.system_owned_paths))

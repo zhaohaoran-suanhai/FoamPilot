@@ -129,7 +129,8 @@ def _candidate_id(fact: ResolvedValue) -> str:
 def _question_id(prefix: str, field_path: str) -> str:
     normalized = field_path.replace(".", "-").replace("_", "-").lower()
     digest = sha256(field_path.encode("utf-8")).hexdigest()[:8]
-    return f"{prefix}-{normalized[:32]}-{digest}"
+    stem = normalized[:32].strip("-_")
+    return f"{prefix}-{stem}-{digest}"
 
 
 def _question_from_fact(fact: ResolvedValue) -> Uncertainty:
@@ -162,12 +163,17 @@ def _question_from_gap(gap: RequirementGap) -> Uncertainty:
             reason_zh=gap.description,
             candidates=gap.candidates,
         )
+    prompt = (
+        f"Case Designer 未能给出 {gap.field_path} 的具体候选，请补充该值。"
+        if gap.kind == "design_required"
+        else f"请补充 {gap.field_path}。"
+    )
     return Uncertainty(
         question_id=_question_id("provide", gap.field_path),
         field_path=gap.field_path,
         impact=gap.impact,
         kind="information_required",
-        prompt_zh=f"请补充 {gap.field_path}。",
+        prompt_zh=prompt,
         reason_zh=gap.description,
     )
 
@@ -236,8 +242,16 @@ def evaluate_design_risk(
                 f"{descriptor.extension_version}/protocol-{descriptor.protocol_version}"
             )
 
+    proposal_paths = {item.field_path for item in proposal.iter_values()}
+    proposal_paths.update(
+        item.field_path
+        for item in proposal.uncertainties
+        if item.kind == "confirmable" and item.candidates
+    )
     requirement_questions = tuple(
-        _question_from_gap(item) for item in requirements.gaps
+        _question_from_gap(item)
+        for item in requirements.gaps
+        if item.kind != "design_required" or item.field_path not in proposal_paths
     )
     conflict_questions = tuple(_conflict_questions(requirements))
     proposal_questions = proposal.uncertainties

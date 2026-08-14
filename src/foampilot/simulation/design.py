@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 import json
 from pathlib import Path
 from typing import Literal, Self
@@ -15,12 +16,19 @@ from foampilot.models import (
     ModelGateway,
     ModelRequest,
     ModelTraceSink,
+    StructuredOutputNormalization,
 )
 from foampilot.preprocessing.models import InputMeshFacts
 from foampilot.tasks import TaskSpec
 
 from .intent import SimulationIntent
-from .provenance import FactEvidence, ResolvedValue, StrictModel, Uncertainty
+from .provenance import (
+    FactEvidence,
+    JsonValue,
+    ResolvedValue,
+    StrictModel,
+    Uncertainty,
+)
 from .requirements import ResolvedRequirements
 
 
@@ -41,7 +49,7 @@ class ExtensionDecision(StrictModel):
         pattern=r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
     )
     schema_version: int = Field(ge=1)
-    values: tuple[ResolvedValue, ...]
+    values: tuple[ResolvedValue[JsonValue], ...]
     provenance: tuple[FactEvidence, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -55,13 +63,13 @@ class ExtensionDecision(StrictModel):
 class CaseDesignProposal(StrictModel):
     schema_version: Literal[1] = 1
     solver_family: ResolvedValue[str]
-    physical_models: tuple[ResolvedValue, ...]
-    materials: tuple[ResolvedValue, ...]
-    boundary_designs: tuple[ResolvedValue, ...]
-    initial_conditions: tuple[ResolvedValue, ...]
-    time_design: tuple[ResolvedValue, ...]
-    numerical_design: tuple[ResolvedValue, ...]
-    region_models: tuple[ResolvedValue, ...]
+    physical_models: tuple[ResolvedValue[JsonValue], ...]
+    materials: tuple[ResolvedValue[JsonValue], ...]
+    boundary_designs: tuple[ResolvedValue[JsonValue], ...]
+    initial_conditions: tuple[ResolvedValue[JsonValue], ...]
+    time_design: tuple[ResolvedValue[JsonValue], ...]
+    numerical_design: tuple[ResolvedValue[JsonValue], ...]
+    region_models: tuple[ResolvedValue[JsonValue], ...]
     extension_decisions: tuple[ExtensionDecision, ...]
     uncertainties: tuple[Uncertainty, ...]
     alternatives: tuple[str, ...]
@@ -88,7 +96,13 @@ class CaseDesignProposal(StrictModel):
         facts = list(self.iter_values())
         paths = [item.field_path for item in facts]
         if len(paths) != len(set(paths)):
-            raise ValueError("duplicate case design field paths are not allowed")
+            duplicates = sorted(
+                path for path, count in Counter(paths).items() if count > 1
+            )
+            raise ValueError(
+                "duplicate case design field paths are not allowed: "
+                + ", ".join(duplicates)
+            )
         return self
 
     def iter_values(self) -> tuple[ResolvedValue, ...]:
@@ -98,6 +112,14 @@ class CaseDesignProposal(StrictModel):
         for decision in self.extension_decisions:
             values.extend(decision.values)
         return tuple(values)
+
+
+def normalize_case_design_input(
+    output_text: str,
+) -> tuple[CaseDesignProposal, tuple[StructuredOutputNormalization, ...]]:
+    """Parse one Case Designer response without semantic repair."""
+
+    return CaseDesignProposal.model_validate(json.loads(output_text)), ()
 
 
 def _mesh_summary(facts: InputMeshFacts) -> dict[str, object]:
@@ -185,6 +207,46 @@ def _section_for(path: str) -> str | None:
     }.get(prefix)
 
 
+def _confirm_authoritative_composition(
+    fact: ResolvedValue,
+    authoritative: dict[str, ResolvedValue],
+) -> ResolvedValue:
+    """Confirm an aggregate only when all direct child facts exactly compose it."""
+
+    if not isinstance(fact.value, dict) or not fact.value:
+        return fact
+    prefix = fact.field_path + "."
+    children = {
+        path.removeprefix(prefix): child
+        for path, child in authoritative.items()
+        if path.startswith(prefix) and "." not in path.removeprefix(prefix)
+    }
+    if set(children) != set(fact.value):
+        return fact
+    if any(fact.value[key] != children[key].value for key in children):
+        return fact
+    evidence: list[FactEvidence] = []
+    for key in sorted(children):
+        evidence.extend(
+            item for item in children[key].evidence if item not in evidence
+        )
+    evidence.append(
+        FactEvidence(
+            kind="deterministic_composition",
+            detail=(
+                f"{fact.field_path} exactly composes all confirmed direct child facts"
+            ),
+        )
+    )
+    return fact.model_copy(
+        update={
+            "source": "deterministic_rule",
+            "confirmed": True,
+            "evidence": tuple(evidence),
+        }
+    )
+
+
 def _replace_facts(
     proposal: CaseDesignProposal,
     requirements: ResolvedRequirements,
@@ -212,7 +274,11 @@ def _replace_facts(
         reconciled: list[ResolvedValue] = []
         for proposed in getattr(proposal, section):
             model_fact = _model_fact(proposed)
-            selected = authoritative.get(model_fact.field_path, model_fact)
+            supported = _confirm_authoritative_composition(
+                model_fact,
+                authoritative,
+            )
+            selected = authoritative.get(model_fact.field_path, supported)
             if (
                 model_fact.field_path in authoritative
                 and model_fact.value != selected.value
@@ -225,21 +291,16 @@ def _replace_facts(
             seen.add(selected.field_path)
         updates[section] = reconciled
 
-    for path, fact in sorted(authoritative.items()):
-        if path in seen:
-            continue
-        section = _section_for(path)
-        if section is not None:
-            assert isinstance(updates[section], list)
-            updates[section].append(fact)
-            seen.add(path)
-
     decisions: list[ExtensionDecision] = []
     for decision in proposal.extension_decisions:
         values: list[ResolvedValue] = []
         for proposed in decision.values:
             model_fact = _model_fact(proposed)
-            selected = authoritative.get(model_fact.field_path, model_fact)
+            supported = _confirm_authoritative_composition(
+                model_fact,
+                authoritative,
+            )
+            selected = authoritative.get(model_fact.field_path, supported)
             if (
                 model_fact.field_path in authoritative
                 and model_fact.value != selected.value
@@ -249,8 +310,19 @@ def _replace_facts(
                     + model_fact.field_path
                 )
             values.append(selected)
+            seen.add(selected.field_path)
         decisions.append(decision.model_copy(update={"values": tuple(values)}))
     updates["extension_decisions"] = tuple(decisions)
+
+    for path, fact in sorted(authoritative.items()):
+        if path in seen:
+            continue
+        section = _section_for(path)
+        if section is not None:
+            assert isinstance(updates[section], list)
+            updates[section].append(fact)
+            seen.add(path)
+
     updates["capability_conflicts"] = ()
     for section in _SECTIONS:
         updates[section] = tuple(
@@ -340,7 +412,7 @@ def design_case(
 
     intent_payload = intent.model_dump(
         mode="json",
-        exclude={"requested_observables", "acceptance_intent"},
+        include={"constraints", "uncertainties"},
     )
     payload = {
         "target": task.openfoam_target.model_dump(mode="json"),
@@ -356,8 +428,8 @@ def design_case(
     user_prompt = json.dumps(
         payload,
         ensure_ascii=False,
-        indent=2,
         sort_keys=True,
+        separators=(",", ":"),
     )
     if len(user_prompt.encode("utf-8")) > _DESIGN_REQUEST_LIMIT_BYTES:
         raise ValueError("design context exceeds the model request budget")
@@ -368,7 +440,15 @@ def design_case(
             "CaseDesignProposal. Do not write native OpenFOAM file content, "
             "commands, scripts, paths, evaluator data, or confidence scores. "
             "All model-originated decisions use model_inference authority and "
-            "remain unconfirmed. Express missing facts as uncertainties."
+            "remain unconfirmed. Express missing facts as uncertainties. "
+            "Each field_path must occur exactly once globally across "
+            "solver_family, all section arrays, and extension_decisions.values. "
+            "Put an extension-owned fact only in that extension's "
+            "extension_decisions.values; do not repeat it in a section array. "
+            "Use the exact required fact field_paths from capability_registry; "
+            "do not invent aliases for those paths. "
+            "Never emit an empty evidence or provenance array; every candidate "
+            "must include truthful provenance for why it was proposed."
         ),
         user_prompt=user_prompt,
     )
@@ -377,6 +457,7 @@ def design_case(
         CaseDesignProposal,
         budget=budget,
         trace=trace,
+        output_normalizer=normalize_case_design_input,
     ).value
     reconciled, fact_conflicts = _replace_facts(response, requirements)
     capability_conflicts = _capability_conflicts(
@@ -392,4 +473,9 @@ def design_case(
     return CaseDesignProposal.model_validate(payload)
 
 
-__all__ = ["CaseDesignProposal", "ExtensionDecision", "design_case"]
+__all__ = [
+    "CaseDesignProposal",
+    "ExtensionDecision",
+    "design_case",
+    "normalize_case_design_input",
+]

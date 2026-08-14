@@ -58,6 +58,102 @@ def test_model_collision_with_system_owned_fragment_is_rejected() -> None:
         inject_observation_fragments(bundle, _history_plan())
 
 
+def test_model_authored_runtime_functions_are_rejected_before_injection() -> None:
+    authored = _bundle().model_copy(
+        update={
+            "files": [
+                item.model_copy(
+                    update={
+                        "content": item.content
+                        + "\nfunctions\n{\n    modelOwned { type probes; }\n}\n"
+                    }
+                )
+                if item.path == "system/controlDict"
+                else item
+                for item in _bundle().files
+            ]
+        }
+    )
+
+    with pytest.raises(
+        CaseAuthoringError,
+        match="OBSERVATION_FUNCTIONS_OWNERSHIP_COLLISION",
+    ):
+        inject_observation_fragments(authored, _history_plan())
+
+
+def test_model_authored_runtime_functions_are_rejected_with_empty_plan() -> None:
+    authored = _bundle().model_copy(
+        update={
+            "files": [
+                item.model_copy(
+                    update={
+                        "content": item.content
+                        + "\nfunctions\n{\n    modelOwned { type probes; }\n}\n"
+                    }
+                )
+                if item.path == "system/controlDict"
+                else item
+                for item in _bundle().files
+            ]
+        }
+    )
+
+    with pytest.raises(
+        CaseAuthoringError,
+        match="OBSERVATION_FUNCTIONS_OWNERSHIP_COLLISION",
+    ):
+        inject_observation_fragments(authored, ObservationPlan(items=()))
+
+
+def test_model_authored_functions_in_included_file_are_rejected() -> None:
+    base = _bundle()
+    authored = base.model_copy(
+        update={
+            "files": [
+                *base.files,
+                GeneratedFile(
+                    path="system/model-functions",
+                    content="functions\n{\n    modelOwned { type probes; }\n}\n",
+                ),
+            ]
+        }
+    )
+
+    with pytest.raises(
+        CaseAuthoringError,
+        match="OBSERVATION_FUNCTIONS_OWNERSHIP_COLLISION",
+    ):
+        inject_observation_fragments(authored, ObservationPlan(items=()))
+
+
+def test_functions_text_in_comment_is_not_an_ownership_collision() -> None:
+    authored = _bundle().model_copy(
+        update={
+            "files": [
+                item.model_copy(
+                    update={
+                        "content": item.content
+                        + "\n// functions { documentation only }\n"
+                    }
+                )
+                if item.path == "system/controlDict"
+                else item
+                for item in _bundle().files
+            ]
+        }
+    )
+
+    injected, _ = inject_observation_fragments(authored, _history_plan())
+
+    control = next(
+        item.content
+        for item in injected.files
+        if item.path == "system/controlDict"
+    )
+    assert '#include "foampilot-observations"' in control
+
+
 def test_final_only_observation_does_not_add_missing_runtime_include() -> None:
     plan = _history_plan().model_copy(
         update={

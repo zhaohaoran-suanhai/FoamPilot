@@ -208,6 +208,12 @@ prompt 关键词；Gmsh 只有被环境发现后才能进入 typed plan。
 `SimulationIntent` 和不含文件/命令的 `CaseDesignProposal`。确定性 Requirement Resolver
 将网格事实、用户事实和 capability requirement 合并；RiskGate 再产生四种状态：
 
+Intent 的观测输出不是自由字符串：关闭的第一方 Observation registry 会向模型投影当前
+Foundation v10 支持的 canonical `kind + quantity + dimension + scope kind` 组合，Schema 描述
+和 system prompt 同时要求 machine identifier 使用 lower_snake_case。模型若返回注册且由
+kind/dimension 唯一确定的 `Q`、`U`、`p` 或 `L/T` 一类别名，Intent 输入边界会规范化并记录
+normalization；未知、跨 kind 或有歧义的值不会被 slugify 或猜测，仍由本地契约 fail closed。
+
 - `READY_TO_AUTHOR`：冻结 `case-design.json`；
 - `CONFIRMATION_REQUIRED`：用 `CONCRETE_CONFIRMATION_REQUIRED` 要求逐字段候选确认；
 - `INFORMATION_REQUIRED`：缺少无安全默认值的信息，或权威事实冲突；
@@ -216,14 +222,18 @@ prompt 关键词；Gmsh 只有被环境发现后才能进入 typed plan。
 后三种会以 `workflow_state=DEFERRED`、`native_status=null` 固化，因此不是 CFD 求解失败。
 模型不能自报 confidence；系统禁止 accept-all、continue-anyway 和高影响风险 override。
 `foampilot questions` 展示字段、理由和候选，`foampilot confirm` 只接受 exact candidate/value，
-为每个字段写独立记录并创建不可变 child。确认动作本身不执行 OpenFOAM。
+为每个字段写独立记录并创建自包含、不可变的 confirmation child。确认动作本身不执行
+OpenFOAM；对该 child 执行 `foampilot resume` 才会从冻结设计后的 authoring 继续，且不会重跑
+Intent Interpreter 或 CaseDesigner。
 
 只有冻结 CaseDesign 才会传给 Case Author。ModelGateway 发起一次逻辑生成请求，要求模型同时
 返回所有 case 文件和 CaseManifest，形成不含命令的 CaseBundle。底层传输在阶段 deadline 和
 次数预算内可以对网络中断、服务过载或限流进行重试，但不会无限等待。
 
 CaseVerifier 校验 authored manifest/files 的 solver、物理族、稳/瞬态、region role、字段和
-网格 patch 不得与冻结设计及权威网格事实矛盾。PlanCompiler 只从 CaseDesign 冻结的第一方
+网格 patch 不得与冻结设计及权威网格事实矛盾。受限的 Foundation v10 多孔路径还会阻断缺失
+`constant/fvModels`/`coordinateSystems`、错误 cellZone、未启用
+`explicitPorositySource`/`DarcyForchheimer` 或与冻结设计不一致的 `d`/`f`。PlanCompiler 只从 CaseDesign 冻结的第一方
 mesh/solver contributor 生成 ExecutionPlan v4 命令，并记录设计 hash 与 contributor 版本。
 `foampilot plan` 使用相同链路，但在 case 物化与 Runner 前以 `PLAN_READY` 结束。
 
@@ -248,6 +258,8 @@ Model backend 只负责一次交换；Gateway 负责错误分类、重试、dead
 5. case 文件物化，并执行原生文件检查和高置信度语义检查。
 
 Case Author 不生成命令，因此不存在模型 MPI wrapper、stage 或 step_id 的兼容性规范化。
+已冻结的第一方扩展可以通过 capability descriptor 向 Case Author 提供有限、可审计的领域字典
+写法约束；这些规则不创建命令、不改变冻结设计，也不替代 CaseVerifier 的确定性语义检查。
 PlanCompiler 不猜测求解器、主机、核数或未知参数；这些值必须来自冻结设计、任务预算和注册
 贡献器。贡献器输出冲突、缺失命令或未安装 executable 会在 Runner 前失败。
 
@@ -347,7 +359,7 @@ foampilot resume PARENT_RUN --run-root NEW_RUN_ROOT --json
 续跑具有以下约束：
 
 - parent run 必须已经完成 manifest 固化且哈希验证通过；
-- 只支持从被中断的生成或修复模型阶段继续；
+- 支持从自包含 confirmation checkpoint 的 authoring，或被中断的生成/修复模型阶段继续；
 - 新运行是独立 child run，不重新打开或修改 parent；
 - TaskSpec、公开资产、模型/backend 策略、包内容、知识、Skill、OpenFOAM 目标和
   可执行能力必须满足严格兼容性；

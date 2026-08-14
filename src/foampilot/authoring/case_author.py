@@ -40,12 +40,14 @@ class AuthorTargetFacts(BaseModel):
     solver_executable: str = Field(pattern=r"^[A-Za-z0-9_.+-]+$")
     required_outputs: tuple[str, ...] = Field(min_length=1)
     required_authored_paths: tuple[str, ...] = Field(min_length=1)
+    extension_authoring_rules: tuple[str, ...] = ()
     public_asset_install_paths: tuple[str, ...] = ()
     protected_paths: tuple[str, ...] = ()
 
     @field_validator(
         "required_outputs",
         "required_authored_paths",
+        "extension_authoring_rules",
         "public_asset_install_paths",
         "protected_paths",
     )
@@ -109,16 +111,6 @@ def _mesh_summary(facts: InputMeshFacts) -> dict[str, object]:
         "warnings": facts.warnings,
         "raw_content_included": False,
     }
-
-
-def _observation_payload(observation_plan: object | None) -> object | None:
-    if observation_plan is None:
-        return None
-    if isinstance(observation_plan, BaseModel):
-        return observation_plan.model_dump(mode="json")
-    if isinstance(observation_plan, (dict, list, tuple, str, int, float, bool)):
-        return observation_plan
-    raise TypeError("observation_plan must be structured and serializable")
 
 
 def _public_context(context: AgentContext) -> dict[str, object]:
@@ -210,6 +202,27 @@ def _validate_bundle(
         )
 
 
+def _bind_manifest_family_metadata(
+    bundle: CaseBundle,
+    design: CaseDesign,
+) -> CaseBundle:
+    facts = {
+        item.field_path: item.value for item in design.proposal.iter_values()
+    }
+    updates: dict[str, str] = {}
+    physics_family = facts.get("physics.family")
+    mesh_family = facts.get("mesh.strategy")
+    if physics_family is not None:
+        updates["physics_family"] = str(physics_family)
+    if mesh_family is not None:
+        updates["mesh_family"] = str(mesh_family)
+    if not updates:
+        return bundle
+    return bundle.model_copy(
+        update={"manifest": bundle.manifest.model_copy(update=updates)}
+    )
+
+
 def author_case(
     *,
     design: CaseDesign,
@@ -220,7 +233,6 @@ def author_case(
     gateway: ModelGateway,
     budget: ModelBudgetWindow,
     trace: ModelTraceSink,
-    observation_plan: object | None = None,
 ) -> CaseBundle:
     """Author every related native case file in one logical model call."""
 
@@ -236,7 +248,6 @@ def author_case(
         ),
         "target_facts": target_facts.agent_payload(),
         "public_context": _public_context(context),
-        "observation_plan": _observation_payload(observation_plan),
     }
     user_prompt = json.dumps(
         payload,
@@ -256,7 +267,11 @@ def author_case(
             "Do not return execution steps, argv, scripts, repair proposals, or "
             "revisions to the design. Do not regenerate or overwrite public "
             "assets. Use only the bounded public context and authoritative mesh "
-            "facts supplied in this request."
+            "facts supplied in this request. Manifest physics_family and "
+            "mesh_family must use the exact frozen physics.family and "
+            "mesh.strategy values. Do not author functions dictionaries, "
+            "function objects, or observation configuration; FoamPilot owns "
+            "and injects all runtime observation configuration after authoring."
         ),
         user_prompt=user_prompt,
     )
@@ -266,6 +281,7 @@ def author_case(
         budget=budget,
         trace=trace,
     ).value
+    response = _bind_manifest_family_metadata(response, design)
     _validate_bundle(response, design=design, target=target_facts)
     return response
 

@@ -7,6 +7,7 @@ import shutil
 
 from foampilot.agent import NativeAgent
 from foampilot.artifacts import ArtifactStore
+from foampilot.manifests import CasePatch
 from foampilot.plans import NativeCommand
 from foampilot.runtime import PlanRunResult, PlanStepResult
 
@@ -183,13 +184,34 @@ def test_verified_plan_reuse_accepts_provided_mesh_without_mesh_command(
     plan = original.model_copy(
         update={
             "manifest": original.manifest.model_copy(
-                update={"mesh_family": "provided"}
+                update={
+                    "mesh_family": "provided",
+                    "patches": [
+                        CasePatch(
+                            name=name,
+                            region="default",
+                            mesh_type=patch_type,
+                        )
+                        for name, patch_type in (
+                            ("inlet", "patch"),
+                            ("outlet", "patch"),
+                            ("top", "symmetryPlane"),
+                            ("bottom", "symmetryPlane"),
+                            ("frontAndBack", "empty"),
+                        )
+                    ],
+                }
             ),
             "commands": [
                 command
                 for command in original.commands
                 if command.stage != "mesh"
-            ]
+            ],
+            "files": [
+                item
+                for item in original.files
+                if item.path != "system/blockMeshDict"
+            ],
         }
     )
     store = ArtifactStore(tmp_path / "runs")

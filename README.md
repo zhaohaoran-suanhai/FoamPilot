@@ -45,7 +45,7 @@ Agent 从空 case 目录开始工作。它可以使用公开 OpenFOAM 文档与�
 - Foundation OpenFOAM v10；
 - bubblewrap（`bwrap`，推荐）；
 - NumPy、Pydantic、PyYAML 与 PyVista；
-- 已登录的 Codex CLI，或由无秘密 YAML 声明的 OpenAI-compatible 模型后端。
+- 使用可写状态根且已登录的 Codex CLI，或由无秘密 YAML 声明的 OpenAI-compatible 模型后端。
 
 FoamPilot 不内置用户目录、Python 虚拟环境或 OpenFOAM 安装路径。运行时按
 CLI > 环境变量 > 显式 TOML > `FOAMPILOT_RUNTIME_CONFIG` >
@@ -56,12 +56,20 @@ CLI > 环境变量 > 显式 TOML > `FOAMPILOT_RUNTIME_CONFIG` >
 
 ```bash
 python -m pip install -e ".[test]"
+mkdir -p /path/to/writable/codex-home
+CODEX_HOME=/path/to/writable/codex-home codex login
+export CODEX_HOME=/path/to/writable/codex-home
 foampilot preflight \
   --openfoam-root /opt/OpenFOAM/OpenFOAM-10 \
   --execution-isolation sandbox_preferred \
   --json
 foampilot model doctor --json
 ```
+
+`CODEX_HOME` 必须是已经存在的绝对目录，并允许 Codex 写入运行状态。FoamPilot 只创建并删除
+自己的空写入探针，不读取、复制或配置 Codex 认证文件。`model doctor` 的 PASS 证明本地状态根、
+executable 和登录状态就绪，不证明稍后的模型请求一定具有可用网络；真实网络阻断会单独报告
+`NETWORK_UNAVAILABLE`。`codex exec --ephemeral` 只避免持久化 session rollout，不等于无状态执行。
 
 可冻结为 `~/.config/foampilot/runtime.toml`（或 `$XDG_CONFIG_HOME` 下同一路径）：
 
@@ -184,10 +192,22 @@ foampilot confirm /tmp/foampilot-runs/PARENT_RUN \
   --json
 ```
 
-该命令验证 parent manifest 和候选值，创建不可变 confirmation child，并逐字段保存确认记录；
-它本身不启动 OpenFOAM，也不表示 CFD 已经成功。正常 live solve 只把已冻结设计交给
-Case Author；模型返回不含命令的 CaseBundle，CaseVerifier 检查设计一致性，PlanCompiler 再
-依据冻结的第一方能力扩展确定性生成 ExecutionPlan v4。
+该命令验证 parent manifest 和候选值，创建包含 `task.yaml`、公开资产快照、冻结设计、确认记录、
+summary 和 lineage 的不可变 confirmation child，并逐字段保存确认记录；它本身不启动
+OpenFOAM，也不表示 CFD 已经成功。随后对该 child 执行 `foampilot resume`，系统会重新验证环境、
+资产和扩展身份，从冻结设计后的 authoring 继续，不会重新运行 Intent Interpreter 或
+CaseDesigner：
+
+```bash
+foampilot resume /tmp/foampilot-runs/CONFIRMATION_CHILD \
+  --run-root /tmp/foampilot-runs \
+  --backend auto \
+  --model-name gpt-5.6-sol \
+  --json
+```
+
+Case Author 返回不含命令的 CaseBundle，CaseVerifier 检查设计一致性，PlanCompiler 再依据冻结的
+第一方能力扩展确定性生成 ExecutionPlan v4。
 
 已有 OpenFOAM 原生网格应作为完整目录资产声明，而不是拆成多个文件：
 
@@ -256,8 +276,8 @@ foampilot resume /tmp/foampilot-runs/PARENT_RUN \
   --json
 ```
 
-这里的 `resume` 只恢复 summary 明确允许的模型生成/修复请求，不是从任意 OpenFOAM 时间目录
-断点续算。若要从一个 manifest 有效的 parent 完整重新执行 preflight、case generation、
+这里的 `resume` 只恢复 summary 明确允许的确认后 authoring、模型生成或修复请求，不是从任意
+OpenFOAM 时间目录断点续算。若要从一个 manifest 有效的 parent 完整重新执行 preflight、case generation、
 OpenFOAM 和结果评估，并保留显式 lineage：
 
 ```bash

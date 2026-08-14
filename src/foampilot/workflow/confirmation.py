@@ -6,11 +6,14 @@ from datetime import datetime, timezone
 from hashlib import sha256
 import json
 from pathlib import Path
+import shutil
 from typing import Literal, Self
 
 from pydantic import Field, model_validator
+import yaml
 
-from foampilot.artifacts import ArtifactStore
+from foampilot.artifacts import ArtifactStore, RunSummary
+from foampilot.models import NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT
 from foampilot.simulation import (
     ConfirmationRecord,
     FactEvidence,
@@ -28,9 +31,16 @@ from foampilot.simulation.risk_gate import (
     evaluate_design_risk,
     freeze_case_design,
 )
+from foampilot.tasks import TaskSpec
 
 from .lineage import LineageRecord
-from .models import StrictModel
+from .models import (
+    ParentRun,
+    ResumeMetadata,
+    StrictModel,
+    WorkflowStage,
+    WorkflowState,
+)
 
 
 class ConfirmationError(ValueError):
@@ -62,9 +72,19 @@ class ConfirmationRecords(StrictModel):
     records: tuple[ConfirmationRecord, ...]
 
 
+class ConfirmationModelUsage(StrictModel):
+    schema_version: Literal[1] = 1
+    transport_attempts_used_before_child: int = Field(
+        ge=0,
+        le=NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT,
+    )
+    logical_requests_used_before_child: int = Field(ge=0)
+
+
 class ConfirmationParent(StrictModel):
     run_dir: Path
     parent_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    task: TaskSpec
     intent: SimulationIntent
     requirements: ResolvedRequirements
     proposal: CaseDesignProposal
@@ -80,6 +100,19 @@ class ConfirmationContinuation(StrictModel):
     proposal: CaseDesignProposal
     decision: RiskDecision
     design: CaseDesign | None
+
+
+class ConfirmationResumeInput(StrictModel):
+    checkpoint_run: Path
+    checkpoint_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    task: TaskSpec
+    intent: SimulationIntent
+    design: CaseDesign
+    transport_attempts_used: int = Field(
+        ge=0,
+        le=NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT,
+    )
+    logical_requests_used_before_child: int = Field(ge=0)
 
 
 def _load_json_model(path: Path, model_type):
@@ -104,6 +137,14 @@ def load_confirmation_parent(run_dir: str | Path) -> ConfirmationParent:
         raise ConfirmationError(
             "PARENT_MANIFEST_INVALID: " + "; ".join(problems)
         )
+    try:
+        task = TaskSpec.model_validate(
+            yaml.safe_load((parent / "task.yaml").read_text(encoding="utf-8"))
+        )
+    except (OSError, ValueError, yaml.YAMLError) as error:
+        raise ConfirmationError(
+            f"CONFIRMATION_PARENT_INVALID: task.yaml: {error}"
+        ) from error
     intent = _load_json_model(parent / "simulation-intent.json", SimulationIntent)
     requirements = _load_json_model(
         parent / "resolved-requirements.json",
@@ -121,10 +162,107 @@ def load_confirmation_parent(run_dir: str | Path) -> ConfirmationParent:
     return ConfirmationParent(
         run_dir=parent,
         parent_manifest_sha256=store.manifest_sha256(parent),
+        task=task,
         intent=intent,
         requirements=requirements,
         proposal=proposal,
         decision=decision,
+    )
+
+
+def _usage_from_parent(parent: Path) -> tuple[int, int]:
+    path = parent / "model-configuration.json"
+    if not path.is_file():
+        return 0, 0
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return (
+            int(payload.get("transport_attempts", 0)),
+            int(payload.get("logical_model_requests", 0)),
+        )
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise ConfirmationError(
+            f"CONFIRMATION_PARENT_INVALID: model-configuration.json: {error}"
+        ) from error
+
+
+def load_confirmation_resume(run_dir: str | Path) -> ConfirmationResumeInput:
+    """Verify a self-contained confirmation checkpoint for authoring resume."""
+
+    checkpoint = Path(run_dir).resolve()
+    store = ArtifactStore(checkpoint.parent)
+    problems = store.verify(checkpoint)
+    if problems:
+        raise ConfirmationError(
+            "CONFIRMATION_CHECKPOINT_INVALID: " + "; ".join(problems)
+        )
+    try:
+        lineage = LineageRecord.model_validate_json(
+            (checkpoint / "lineage.json").read_text(encoding="utf-8")
+        )
+        if lineage.relation != "design_confirmation":
+            raise ValueError("lineage relation is not design_confirmation")
+        task = TaskSpec.model_validate(
+            yaml.safe_load((checkpoint / "task.yaml").read_text(encoding="utf-8"))
+        )
+        intent = _load_json_model(
+            checkpoint / "simulation-intent.json", SimulationIntent
+        )
+        proposal = _load_json_model(
+            checkpoint / "case-design-proposal.json", CaseDesignProposal
+        )
+        decision = _load_json_model(
+            checkpoint / "risk-decision.json", RiskDecision
+        )
+        design = _load_json_model(checkpoint / "case-design.json", CaseDesign)
+        usage = json.loads(
+            (checkpoint / "confirmation-continuation.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    except (OSError, TypeError, ValueError, yaml.YAMLError) as error:
+        raise ConfirmationError(
+            f"CONFIRMATION_CHECKPOINT_INVALID: {error}"
+        ) from error
+    if decision.state != "READY_TO_AUTHOR":
+        raise ConfirmationError(
+            "CONFIRMATION_CHECKPOINT_INVALID: risk gate is not ready"
+        )
+    if canonical_sha256(proposal) != decision.proposal_sha256:
+        raise ConfirmationError(
+            "CONFIRMATION_CHECKPOINT_INVALID: proposal hash mismatch"
+        )
+    if design.proposal_sha256 != decision.proposal_sha256:
+        raise ConfirmationError(
+            "CONFIRMATION_CHECKPOINT_INVALID: frozen design mismatch"
+        )
+    if design.intent_sha256 != canonical_sha256(intent):
+        raise ConfirmationError(
+            "CONFIRMATION_CHECKPOINT_INVALID: frozen intent mismatch"
+        )
+    if task.public_assets and not (checkpoint / "public-assets").is_dir():
+        raise ConfirmationError(
+            "CONFIRMATION_CHECKPOINT_INVALID: public-assets snapshot is missing"
+        )
+    try:
+        transport_attempts = int(usage["transport_attempts_used_before_child"])
+        logical_requests = int(usage["logical_requests_used_before_child"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ConfirmationError(
+            "CONFIRMATION_CHECKPOINT_INVALID: model usage is invalid"
+        ) from error
+    if transport_attempts >= NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT:
+        raise ConfirmationError(
+            "CONFIRMATION_CHECKPOINT_MODEL_BUDGET_EXHAUSTED"
+        )
+    return ConfirmationResumeInput(
+        checkpoint_run=checkpoint,
+        checkpoint_manifest_sha256=store.manifest_sha256(checkpoint),
+        task=task,
+        intent=intent,
+        design=design,
+        transport_attempts_used=transport_attempts,
+        logical_requests_used_before_child=logical_requests,
     )
 
 
@@ -394,8 +532,29 @@ def persist_confirmation_continuation(
 ) -> Path:
     """Write a manifested child without modifying the parent run."""
 
+    parent = continuation.parent.run_dir
+    public_assets = parent / "public-assets"
+    if continuation.parent.task.public_assets and not public_assets.is_dir():
+        raise ConfirmationError(
+            "CONFIRMATION_PARENT_INVALID: public-assets snapshot is missing"
+        )
+    transport_attempts, logical_requests = _usage_from_parent(parent)
+    can_resume = (
+        continuation.design is not None
+        and transport_attempts < NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT
+    )
     store = ArtifactStore(run_root)
     child = store.create_run()
+    (child / "task.yaml").write_text(
+        yaml.safe_dump(
+            continuation.parent.task.model_dump(mode="json"),
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    if public_assets.is_dir():
+        shutil.copytree(public_assets, child / "public-assets", symlinks=True)
     write_json_exclusive(child / "simulation-intent.json", continuation.intent)
     write_json_exclusive(
         child / "resolved-requirements.json",
@@ -435,6 +594,52 @@ def persist_confirmation_continuation(
         ),
     )
     write_json_exclusive(child / "lineage.json", lineage)
+    write_json_exclusive(
+        child / "confirmation-continuation.json",
+        ConfirmationModelUsage(
+            transport_attempts_used_before_child=transport_attempts,
+            logical_requests_used_before_child=logical_requests,
+        ),
+    )
+    write_json_exclusive(
+        child / "summary.json",
+        RunSummary(
+            task_id=continuation.parent.task.task_id,
+            workflow_state=WorkflowState.DEFERRED,
+            last_completed_stage=WorkflowStage.DESIGNING_CASE.value,
+            resume=ResumeMetadata(
+                allowed=can_resume,
+                from_stage=(
+                    WorkflowStage.AUTHORING_CASE
+                    if can_resume
+                    else None
+                ),
+                reason=(
+                    "confirmed frozen design is ready for authoring"
+                    if can_resume
+                    else (
+                        "model transport budget is exhausted"
+                        if continuation.design is not None
+                        else "confirmation did not produce a ready design"
+                    )
+                ),
+            ),
+            parent_run=ParentRun(
+                run_id=continuation.parent.run_dir.name,
+                manifest_sha256=continuation.parent.parent_manifest_sha256,
+            ),
+            message=(
+                "Concrete design confirmations recorded; resume authoring."
+                if can_resume
+                else (
+                    "Concrete design confirmations recorded, but model "
+                    "transport budget is exhausted."
+                    if continuation.design is not None
+                    else "Concrete design confirmations did not produce a ready design."
+                )
+            ),
+        ),
+    )
     store.finalize(child)
     return child
 
@@ -445,8 +650,10 @@ __all__ = [
     "ConfirmationContinuation",
     "ConfirmationError",
     "ConfirmationParent",
+    "ConfirmationResumeInput",
     "apply_confirmation_records",
     "load_confirmation_parent",
+    "load_confirmation_resume",
     "parse_answers",
     "persist_confirmation_continuation",
 ]

@@ -3,12 +3,45 @@
 from __future__ import annotations
 
 from collections import Counter
+from typing import get_args
 
 from foampilot.tasks import PublicAsset
+from foampilot.tasks.geometry import LengthUnit
 
 from .authority import geometry_component_supported, verified_user_evidence
 from .context import TaskIngressContext
 from .models import FactSource, TaskFact, TaskQuestion
+
+
+_SUPPORTED_LENGTH_UNITS = frozenset(get_args(LengthUnit))
+
+
+def _standalone_user_unit(
+    fact: TaskFact | None,
+    request: str,
+) -> tuple[str, TaskFact] | None:
+    if fact is None or fact.source not in {
+        FactSource.USER_TEXT,
+        FactSource.USER_CONFIRMATION,
+    }:
+        return None
+    trusted_confirmation = fact.source == FactSource.USER_CONFIRMATION
+    if (
+        not trusted_confirmation
+        and not verified_user_evidence(fact.evidence, request)
+    ):
+        return None
+    if (
+        not isinstance(fact.value, str)
+        or fact.value not in _SUPPORTED_LENGTH_UNITS
+        or not geometry_component_supported(
+            fact.value,
+            fact.evidence,
+            trusted_confirmation=trusted_confirmation,
+        )
+    ):
+        return None
+    return fact.value, fact
 
 
 def reconcile_provided_mesh(
@@ -44,6 +77,8 @@ def reconcile_provided_mesh(
         ]
 
     by_path = {item.path: item for item in facts}
+    standalone_fact = by_path.pop("geometry.length_unit", None)
+    standalone = _standalone_user_unit(standalone_fact, request)
     previous_geometry = by_path.get("geometry")
     previous_value = (
         previous_geometry.value
@@ -65,7 +100,7 @@ def reconcile_provided_mesh(
     ):
         user_source = FactSource.USER_TEXT
     trusted_confirmation = user_source == FactSource.USER_CONFIRMATION
-    unit = (
+    legacy_candidate = (
         previous_value.get("length_unit")
         if previous_geometry is not None
         and user_source is not None
@@ -76,15 +111,43 @@ def reconcile_provided_mesh(
         )
         else None
     )
-    if unit is not None and previous_geometry is not None:
-        by_path["geometry.length_unit"] = TaskFact(
+    legacy_unit = (
+        legacy_candidate
+        if isinstance(legacy_candidate, str)
+        and legacy_candidate in _SUPPORTED_LENGTH_UNITS
+        else None
+    )
+    unit_conflict = (
+        standalone is not None
+        and legacy_unit is not None
+        and standalone[0] != legacy_unit
+    )
+    unit_fact: TaskFact | None = None
+    if not unit_conflict and standalone is not None:
+        value, source_fact = standalone
+        unit_fact = TaskFact(
             path="geometry.length_unit",
-            value=unit,
+            value=value,
+            source=source_fact.source,
+            evidence=source_fact.evidence,
+            impact="high",
+            confirmed=True,
+        )
+    elif (
+        not unit_conflict
+        and legacy_unit is not None
+        and previous_geometry is not None
+    ):
+        unit_fact = TaskFact(
+            path="geometry.length_unit",
+            value=legacy_unit,
             source=previous_geometry.source,
             evidence=previous_geometry.evidence,
             impact="high",
             confirmed=True,
         )
+    if unit_fact is not None:
+        by_path[unit_fact.path] = unit_fact
 
     selected_topologies = [
         topology_by_manifest[item.bundle_manifest_sha256]
@@ -250,7 +313,17 @@ def reconcile_provided_mesh(
                 ),
             )
         )
-    if unit is None:
+    if unit_conflict:
+        input_questions.append(
+            TaskQuestion(
+                question_id="q_geometry_length_unit_conflict",
+                path="geometry.length_unit",
+                kind="blocking",
+                prompt_zh="用户文本中存在相互冲突的网格坐标长度单位。",
+                reason_zh="长度单位属于用户权威，系统不能静默选择其中一个值。",
+            )
+        )
+    elif unit_fact is None:
         input_questions.append(
             TaskQuestion(
                 question_id="q_geometry_length_unit",

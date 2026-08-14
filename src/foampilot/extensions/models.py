@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import PurePosixPath
 from typing import Literal, Self
 
 from pydantic import (
@@ -47,6 +48,9 @@ class RequiredFact(StrictFrozenModel):
     )
     impact: Literal["low", "medium", "high"]
     description: str = Field(min_length=1)
+    resolution: Literal["user_or_asset", "designer_candidate"] = (
+        "user_or_asset"
+    )
 
     @field_validator("description")
     @classmethod
@@ -67,6 +71,8 @@ class CapabilityDescriptor(StrictFrozenModel):
     input_contracts: tuple[str, ...] = ()
     required_facts: tuple[RequiredFact, ...] = ()
     output_contracts: tuple[str, ...] = ()
+    required_authored_paths: tuple[str, ...] = ()
+    authoring_rules: tuple[str, ...] = ()
     compatible_extensions: tuple[str, ...] = ()
     incompatible_extensions: tuple[str, ...] = ()
     semantic_validators: tuple[str, ...] = ()
@@ -123,6 +129,40 @@ class CapabilityDescriptor(StrictFrozenModel):
             raise ValueError("descriptor entries must not be blank")
         if len(normalized) != len(set(normalized)):
             raise ValueError("duplicate descriptor entries are not allowed")
+        return normalized
+
+    @field_validator("required_authored_paths")
+    @classmethod
+    def validate_required_authored_paths(
+        cls,
+        value: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        normalized = tuple(sorted(value))
+        paths = tuple(PurePosixPath(item) for item in normalized)
+        if any(
+            not item.strip()
+            or path.is_absolute()
+            or ".." in path.parts
+            or not path.parts
+            or path.as_posix() != item
+            for item, path in zip(normalized, paths, strict=True)
+        ):
+            raise ValueError("required authored paths must be safe and relative")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("duplicate required authored paths are not allowed")
+        return normalized
+
+    @field_validator("authoring_rules")
+    @classmethod
+    def validate_authoring_rules(
+        cls,
+        value: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        normalized = tuple(item.strip() for item in value)
+        if any(not item for item in normalized):
+            raise ValueError("authoring rules must not be blank")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("duplicate authoring rules are not allowed")
         return normalized
 
     @model_validator(mode="after")

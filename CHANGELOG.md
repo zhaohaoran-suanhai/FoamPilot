@@ -7,6 +7,11 @@ FoamPilot 的重要变更记录在此文件中。版本号遵循 Semantic Versio
 
 ### Added
 
+- 增加仅由已确认 `GeometryInput.region_roles` 激活的 Foundation v10 `pisoFoam` 多孔介质扩展，
+  对 `explicitPorositySource`、`DarcyForchheimer`、cellZone、`d`/`f`、材料黏度和完整 patch
+  manifest 执行确定性设计一致性检查。
+- confirmation child 现在自包含 TaskSpec、公开资产、冻结设计、确认记录、summary、lineage 和
+  模型使用量；`foampilot resume` 可从该 checkpoint 的 authoring 阶段继续且不重跑 intent/design。
 - 增加 contract-first 求解链：provided polyMesh 权威事实、分阶段 intent/design/authoring、
   求解前 `AcceptancePlan`/`ObservationPlan`、单一 `RunFacts` 证据源以及确定性的
   `DerivedMetrics`/`ResultReport`。
@@ -23,6 +28,17 @@ FoamPilot 的重要变更记录在此文件中。版本号遵循 Semantic Versio
 
 ### Changed
 
+- Intent 观测请求现在从关闭的第一方注册表获得模型可见的 canonical
+  `kind + quantity + dimension` 词表；quantity Schema 描述和 system prompt 明确要求机器标识符，
+  仅对注册且语义唯一的 `Q`/`U`/`p` 与符号量纲别名做可审计归一化。未知值继续 fail closed，
+  ObservationPlanner 对所有观测类型（包括 residual/continuity 的 `run_facts`）只接受正规化后的
+  canonical 契约，通用 ModelGateway 不包含 CFD 词表。
+- Intent uncertainty 改为 candidate-free 的 `design_required`/`information_required`/`conflict`；
+  设计器负责产生工程候选，RiskGate 负责逐字段确认。原生冷路径模型预算集中定义，并保证允许
+  两次传输的阶段确实容纳一次 schema correction。
+- Foundation v10 多孔扩展将模型常见的聚合黏度、入口向量、各向同性阻力向量和结构化
+  DarcyForchheimer 描述投影到唯一细粒度契约；缺少精确最小单元长度、cellZone 几何包络或
+  不可唯一构造的内部采样面只记录为设计/报告限制，不再误阻断安全 authoring。
 - 新运行不再生成 `public-validation.json`；原生日志只由 evidence 层解析一次，观测值与显式
   条件分别由 post-processing 和 acceptance 层处理。历史 public-validation 产物保持只读兼容。
 - 模型返回的 acceptance 阈值只有与 TaskSpec 中同一条显式声明及数值匹配时才保留用户权威；

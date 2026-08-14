@@ -17,7 +17,7 @@ source:
   kind: reviewed_engineering
   title: FoamPilot native run assessment
   locator: src/foampilot/evidence/assessment.py
-  sha256: 5f17b349be394b6066c71ea8641c3182a34cf807c7fd178489a04c2b94d9085c
+  sha256: fce73f48328de74917e09eac62a34004a72cb8033e1d52d5852edf90b5a3033a
   license_spdx: MIT
 leakage:
   visibility: public

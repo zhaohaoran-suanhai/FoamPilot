@@ -37,6 +37,8 @@ def _context(
     *,
     mesh: str = "provided",
     ranks: int = 1,
+    run_solver: object = True,
+    run_solver_confirmed: bool = True,
     max_wall_seconds: int = 120,
     version: str = "10",
     executables: tuple[str, ...] = (
@@ -47,6 +49,7 @@ def _context(
         "reconstructPar",
     ),
     regions: tuple[str, ...] = ("default",),
+    mpi_available: bool = True,
 ) -> PlanContext:
     mesh_extension = (
         "foampilot.mesh.openfoam-provided"
@@ -82,7 +85,26 @@ def _context(
             ExtensionDecision(
                 extension_id=solver_extension,
                 schema_version=1,
-                values=(_fact("execution.mpi_ranks", ranks),),
+                values=(
+                    _fact("execution.mpi_ranks", ranks),
+                    (
+                        _fact("execution.run_solver", run_solver)
+                        if run_solver_confirmed
+                        else ResolvedValue(
+                            field_path="execution.run_solver",
+                            value=run_solver,
+                            source="model_inference",
+                            impact="high",
+                            evidence=(
+                                FactEvidence(
+                                    kind="test_fact",
+                                    detail="unconfirmed execution control",
+                                ),
+                            ),
+                            confirmed=False,
+                        )
+                    ),
+                ),
                 provenance=(
                     FactEvidence(kind="test_fact", detail="selected runner"),
                 ),
@@ -154,7 +176,7 @@ def _context(
             CommandFact(name=name, path=Path("/opt/openfoam/bin") / name)
             for name in executables
         ),
-        mpi_available=True,
+        mpi_available=mpi_available,
     )
 
 
@@ -167,6 +189,60 @@ def test_provided_mesh_contributes_check_but_no_mesh_generator() -> None:
         ("check", "checkMesh"),
         ("solve", "pisoFoam"),
     ]
+
+
+def test_case_only_serial_does_not_require_solver_executable() -> None:
+    plan = CapabilityRegistry.planning_first_party().plan_for(
+        _context(
+            mesh="provided",
+            run_solver=False,
+            executables=("checkMesh",),
+            max_wall_seconds=1,
+        )
+    )
+
+    assert [(item.stage.value, item.executable) for item in plan.commands] == [
+        ("check", "checkMesh"),
+    ]
+    assert plan.required_authored_paths == ()
+
+
+def test_case_only_parallel_does_not_require_solver_mpi_or_parallel_dict() -> None:
+    plan = CapabilityRegistry.planning_first_party().plan_for(
+        _context(
+            mesh="provided",
+            ranks=4,
+            run_solver=False,
+            executables=("checkMesh",),
+            max_wall_seconds=1,
+            mpi_available=False,
+        )
+    )
+
+    assert [(item.stage.value, item.executable) for item in plan.commands] == [
+        ("check", "checkMesh"),
+    ]
+    assert plan.required_authored_paths == ()
+
+
+def test_solver_execution_control_must_be_confirmed_before_planning() -> None:
+    with pytest.raises(
+        PlanContributionError,
+        match="PLAN_RUN_SOLVER_AUTHORITY_UNRESOLVED",
+    ):
+        CapabilityRegistry.planning_first_party().plan_for(
+            _context(run_solver=False, run_solver_confirmed=False)
+        )
+
+
+def test_solver_execution_control_must_be_boolean() -> None:
+    with pytest.raises(
+        PlanContributionError,
+        match="PLAN_RUN_SOLVER_VALUE_INVALID",
+    ):
+        CapabilityRegistry.planning_first_party().plan_for(
+            _context(run_solver="false")
+        )
 
 
 def test_parallel_fragment_never_contains_mpi_launcher() -> None:

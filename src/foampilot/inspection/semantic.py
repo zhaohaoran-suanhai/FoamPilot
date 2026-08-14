@@ -54,6 +54,15 @@ def _requires_reconstruction(task: TaskSpec) -> bool:
     return "reconstruct" in text
 
 
+def _solver_run_enabled(task: TaskSpec) -> bool:
+    return not any(
+        fact.field_path == "execution.run_solver"
+        and fact.confirmed
+        and fact.value is False
+        for fact in task.explicit_facts
+    )
+
+
 def _field_region_matches(
     path: str,
     *,
@@ -81,13 +90,23 @@ def inspect_semantics(
     advisories: list[InspectionIssue] = []
     manifest = plan.manifest
     regions = {region.name: region for region in manifest.regions}
+    run_solver = _solver_run_enabled(task)
 
     solve_commands = [
         command
         for command in plan.commands
         if command.stage == CommandStage.SOLVE
     ]
-    if (
+    if not run_solver and solve_commands:
+        issues.append(
+            _semantic_issue(
+                code="SEMANTIC_SOLVER_EXECUTION_FORBIDDEN",
+                detail="case-only task must not contain a solve-stage command",
+                path="commands",
+                rule=GENERIC_RULES["solver_command"],
+            )
+        )
+    elif run_solver and (
         not solve_commands
         or any(
             command.executable != manifest.solver_executable
@@ -339,6 +358,8 @@ def inspect_semantics(
                 )
         stages = {_stage_value(command.stage) for command in plan.commands}
         for required in contract.required_stages:
+            if required == "solve" and not run_solver:
+                continue
             if required not in stages:
                 issues.append(
                     _semantic_issue(

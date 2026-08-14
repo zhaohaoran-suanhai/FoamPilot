@@ -195,7 +195,7 @@ Strict resume 只恢复可重试的 generation/repair 中断并创建 child；�
 | `ResolvedRequirements` | deterministic resolver | design、RiskGate | 缺口、冲突和候选的结构化事实 |
 | `CaseDesignProposal` | design model stage | RiskGate | 不含文件正文和命令 |
 | `RiskDecision` / `CaseDesign` | deterministic RiskGate | confirmation、authoring | 唯一设计放行；CaseDesign 冻结后不可静默改变 |
-| `AcceptancePlan` / `ObservationPlan` | acceptance/observation planner | authoring、postprocess | 用户条件与证据采集分离 |
+| `AcceptancePlan` / `ObservationPlan` | acceptance/observation planner | system observation compiler、postprocess | 用户条件与证据采集分离；CaseAuthor 不可见 |
 | `CaseBundle` / `CaseManifest` | authoring | inspection、plan compiler | 完整文件集合；不含执行命令 |
 | `ExecutionPlan v4` | plans compiler | materializer、Runner | 系统拥有的 typed commands；v3 只读 |
 | `PlanRunResult` | runtime Runner | evidence、agent | 原始进程结果、日志位置和单调 elapsed |
@@ -253,7 +253,7 @@ registry、runner 或 store；不得 import Desktop/CLI 解决领域问题。
 | `agent` | TaskSpec、runtime、gateway、stores | NativeAgentOutcome、run artifacts | 组合规范阶段并处理终结 | 建立另一数据模型或自行解析日志 |
 | `artifacts` | run/attempt payload | manifest、summary、不可变路径 | 独占目录、hash、脱敏 | 解释 CFD 正确性 |
 | `assets` | declared source path + digest | AssetBundle、StagedAsset | 第一方资产验证和原子 staging | 猜测资产语义、任意插件加载 |
-| `authoring` | frozen CaseDesign、上下文、观测契约 | CaseBundle、CaseManifest | 一次模型调用生成完整 case | 生成/执行命令、改变设计 |
+| `authoring` | frozen CaseDesign、上下文、author target | CaseBundle、CaseManifest | 一次模型调用生成完整 case | 生成/执行命令、改变设计、编写观测配置 |
 | `cli` | argv | JSON/人类输出、exit code | 适配公开命令到领域 API | 复制领域状态机和日志解析器 |
 | `context` | TaskSpec、capability、公开 corpus/skills | AgentContext | 有界、槽位化检索 | 读取私有 evaluator 或目标 tutorial |
 | `desktop` | workspace、job/run artifacts | GUI view、固定 CLI job | 调用同一 CLI、显示同一 projection | 内置第二套 solve、事实或日志解释器 |
@@ -333,7 +333,7 @@ registry、runner 或 store；不得 import Desktop/CLI 解决领域问题。
 | `assets/public_file.py` | 单个公开文件的 hash adapter | file PublicAsset、root | AssetBundle、StagedAsset | 不识别领域内容 |
 | `authoring/__init__.py` | authoring 公开导出 | import | CaseBundle/author API | 无模型调用实现 |
 | `authoring/models.py` | command-free case bundle contract | structured model output | CaseBundle | 禁止 command/shell 字段 |
-| `authoring/case_author.py` | 冻结设计的一次完整 case author 调用 | CaseDesign、facts、context、observations | validated CaseBundle | 不改变设计、不执行命令 |
+| `authoring/case_author.py` | 冻结设计的一次完整 case author 调用 | CaseDesign、facts、context、author target | validated CaseBundle | 不改变设计、不执行命令、不接收或编写观测配置 |
 | `cli/__init__.py` | CLI package 标识 | import | entrypoint namespace | 无命令逻辑 |
 | `cli/main.py` | argv 解析、领域 API 适配、输出码 | argv、config/files | JSON/human output、exit code | 不复制 solve/证据/验收逻辑 |
 
@@ -371,9 +371,11 @@ registry、runner 或 store；不得 import Desktop/CLI 解决领域问题。
 | `evidence/metrics.py` | 有界非权威 live metric 存储 | MetricPoint stream | metrics.jsonl/projection | 损坏不改 workflow 终态 |
 | `evidence/telemetry.py` | 增量解析实时残差/Courant | log chunks | ResidualMetric 等 | 仅 telemetry，不替代最终 extractor |
 | `extensions/__init__.py` | 扩展公共导出和 lazy API | import | descriptor/registry/planning | 不发现第三方插件 |
-| `extensions/models.py` | capability descriptor 合同 | metadata | CapabilityDescriptor | 无执行 |
+| `extensions/models.py` | capability descriptor 合同 | metadata | CapabilityDescriptor（含 required paths 和有界 authoring rules） | 无执行、不改冻结设计 |
 | `extensions/registry.py` | 第一方 descriptor/contributor 注册解析 | registrations、target | resolved capability | 拒绝重复/未知，不动态加载 |
 | `extensions/planning.py` | 纯计划 contributor protocol | PlanContext | PlanFragment | 不执行命令 |
+| `extensions/physics/__init__.py` | 第一方 physics 扩展导出 | import | physics descriptor/canonicalizer | 无注册或执行副作用 |
+| `extensions/physics/foundation10_porous.py` | Foundation 10 体积多孔阻力扩展契约 | frozen design、mesh/target facts | descriptor、canonical proposal、validator identity | 不写文件/命令、不执行、不修改冻结设计 |
 | `extensions/mesh/__init__.py` | mesh contributors 导出 | import | block/provided contributors | 无逻辑 |
 | `extensions/mesh/block_mesh.py` | blockMesh 阶段贡献 | parametric mesh context | typed mesh fragment | 不写 case、不执行 |
 | `extensions/mesh/openfoam_mesh.py` | provided mesh 阶段贡献 | staged polyMesh context | checkMesh/solver-ready fragment | 不重生成网格 |
@@ -419,7 +421,7 @@ registry、runner 或 store；不得 import Desktop/CLI 解决领域问题。
 | `models/backend.py` | backend protocol/health/response | ModelRequest | BackendResponse | 不做 retry policy |
 | `models/budgets.py` | 单调时钟 stage/lineage 预算 | limits、usage | budget windows/ledger | 不依赖 UTC duration |
 | `models/circuit_breaker.py` | 共享 backend 熔断状态 | backend key/outcomes | allow/defer/state | 不改变任务结果 |
-| `models/command_backend.py` | 固定 argv 的已认证外部 runner | config、ModelRequest | BackendResponse | 不读 Codex credential 文件、不用 shell |
+| `models/command_backend.py` | 固定 argv 外部 runner、声明状态根就绪检查和有界 transport 错误分类 | config、白名单环境、ModelRequest | BackendHealth、BackendResponse | 不读取/复制认证内容、不配置凭据、不用 shell |
 | `models/config.py` | 严格 YAML backend registry 加载 | config path | BackendRegistry | 拒绝 secret literal |
 | `models/errors.py` | provider-neutral 错误分类 | failure metadata | BackendError/kind | 无 I/O |
 | `models/gateway.py` | retry/failover/budget/schema 协调 | request、schema、registry、ledger | validated ModelResult/trace | 不做 CFD 领域判断 |
@@ -437,7 +439,7 @@ registry、runner 或 store；不得 import Desktop/CLI 解决领域问题。
 | `observations/models.py` | scope/time/evidence plan 冻结合同 | request payload | ObservationPlan | 无 I/O |
 | `observations/registry.py` | quantity/dimension 第一方 registry | quantity/target | descriptor/contract | 不动态加载插件 |
 | `observations/planner.py` | 从 request/design 选择采集策略 | requests、CaseDesign、registry | ObservationPlan/warnings | 不评价条件 |
-| `observations/openfoam10.py` | Foundation 10 系统 function object/postProcess 配置 | ObservationPlan、design | config fragments/typed commands | 模型不拥有采集命令 |
+| `observations/openfoam10.py` | Foundation 10 系统 function object/postProcess 配置 | ObservationPlan、design | config fragments/typed commands | 系统独占 functions；即使计划为空也拒绝模型顶层 functions |
 | `performance/__init__.py` | performance/reuse API 导出 | import | models/cache/reuse/reporting | 无缓存副作用 |
 | `performance/models.py` | timing、model usage、reuse 合同 | measured facts | PerformanceSummary | 无测量实现 |
 | `performance/derived_cache.py` | geometry/mesh 内容寻址缓存 | dependency files/hashes | cache key/lookup/materialized cache | 命中不替代当前 checkMesh |

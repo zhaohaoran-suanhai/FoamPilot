@@ -173,6 +173,17 @@ def test_compiler_builds_provided_route_without_design_values() -> None:
     assert task.explicit_value("operating.end_time") is None
 
 
+def test_transient_task_without_end_time_does_not_emit_none_acceptance() -> None:
+    task = compile_task_draft(
+        validate_task_draft(_provided_mesh_draft())
+    ).task
+
+    assert all("None" not in item for item in task.acceptance_intent)
+    assert all(
+        "declared end time" not in item for item in task.acceptance_intent
+    )
+
+
 def test_compiler_excludes_unconfirmed_model_inference() -> None:
     payload = _provided_mesh_draft().model_dump(mode="json")
     payload["facts"].append(

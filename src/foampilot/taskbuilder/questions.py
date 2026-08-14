@@ -36,6 +36,7 @@ def rebuild_input_questions(
         if item.question_id
         in {
             "q_geometry_dimensionality_conflict",
+            "q_geometry_length_unit_conflict",
             "q_geometry_patch_roles_conflict",
             "q_geometry_region_roles_conflict",
             "q_mesh_conflict",

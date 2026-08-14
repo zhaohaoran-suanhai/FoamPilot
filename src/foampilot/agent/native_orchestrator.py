@@ -41,12 +41,18 @@ from foampilot.extensions import (
     CapabilityRegistry,
     SupportedTarget,
 )
+from foampilot.extensions.physics import (
+    FOUNDATION10_POROUS_EXTENSION_ID,
+    canonicalize_foundation10_porous_proposal,
+    foundation10_porous_descriptor,
+)
 from foampilot.inspection import (
     InspectionReport,
     inspect_native_case,
     verify_design_conformance,
 )
 from foampilot.knowledge import load_knowledge_corpus
+from foampilot.manifests import family_contract
 from foampilot.models import (
     BackendFailureKind,
     GatewayRequestError,
@@ -166,10 +172,23 @@ from foampilot.workflow.lineage import (
     prepare_continuation,
     prepare_rerun,
 )
+from foampilot.workflow.confirmation import (
+    ConfirmationResumeInput,
+    load_confirmation_resume,
+)
 
 from .context import AgentContext, load_agent_context
 from .contract_stages import ContractStageError, ContractStagePipeline
 from .generation import materialize_case
+from .model_policy import (
+    AUTHOR_MODEL_POLICY,
+    DESIGN_MODEL_POLICY,
+    INTENT_MODEL_POLICY,
+    NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT,
+    NATIVE_MODEL_TOTAL_DEADLINE_SECONDS,
+    REPAIR_MODEL_POLICY,
+    ROUTING_MODEL_POLICY,
+)
 from .repair import (
     failure_fingerprint,
     request_repair_proposal,
@@ -185,13 +204,6 @@ from .status import (
     AgentStatusError,
     build_agent_status_snapshot,
 )
-
-
-# Complex native cases can legitimately require more than five minutes of
-# local Codex CLI authoring. Keep a finite bound, but leave enough headroom for
-# one complete response instead of discarding it at the former 300 s limit.
-GENERATION_REQUEST_TIMEOUT_SECONDS = 420
-GENERATION_STAGE_DEADLINE_SECONDS = 480
 
 
 def _python_api_runtime_provenance() -> RuntimeConfigProvenance:
@@ -558,6 +570,50 @@ def _production_capability_registry(
         ),
         capability,
     )
+    geometry_fact = next(
+        (
+            fact
+            for fact in task.explicit_facts
+            if fact.field_path == "geometry.input"
+            and fact.confirmed
+            and fact.source
+            in {"user_text", "user_confirmation", "deterministic_rule"}
+        ),
+        None,
+    )
+    porous_roles = (
+        tuple(
+            item.name
+            for item in task.geometry.region_roles
+            if item.role == "porous"
+        )
+        if geometry_fact is not None and task.geometry is not None
+        else ()
+    )
+    inlet_roles = (
+        tuple(
+            item.name
+            for item in task.geometry.patch_roles
+            if item.role == "inlet"
+        )
+        if geometry_fact is not None and task.geometry is not None
+        else ()
+    )
+    if porous_roles:
+        if capability.solver_executable != "pisoFoam":
+            raise ValueError(
+                "CAPABILITY_UNAVAILABLE: the bounded Foundation v10 porous "
+                "extension requires pisoFoam"
+            )
+        if len(porous_roles) != 1 or len(inlet_roles) != 1:
+            raise ValueError(
+                "CAPABILITY_UNAVAILABLE: porous path requires exactly one "
+                "confirmed porous cellZone and one inlet patch"
+            )
+        descriptor = foundation10_porous_descriptor(
+            porous_roles[0], inlet_roles[0]
+        )
+        registry.register(descriptor, descriptor)
     return registry
 
 
@@ -605,8 +661,25 @@ def _complete_planning_extensions(
     capability: CapabilityProfile,
 ):
     selected = {
-        item.extension_id: item for item in proposal.extension_decisions
+        item.extension_id: item.model_copy(
+            update={
+                "values": tuple(
+                    fact
+                    for fact in item.values
+                    if fact.field_path != "execution.run_solver"
+                )
+            }
+        )
+        for item in proposal.extension_decisions
     }
+    run_solver_fact = next(
+        (
+            fact
+            for fact in task.explicit_facts
+            if fact.field_path == "execution.run_solver" and fact.confirmed
+        ),
+        None,
+    )
     mesh_extension_id = next(
         (
             extension_id
@@ -629,7 +702,7 @@ def _complete_planning_extensions(
         ),
         None,
     )
-    if mesh_extension_id is not None and mesh_extension_id not in selected:
+    if mesh_extension_id is not None:
         mesh_value = (
             "provided"
             if mesh_extension_id.endswith("openfoam-provided")
@@ -640,7 +713,7 @@ def _complete_planning_extensions(
             mesh_extension_id,
             values=(_deterministic_fact("mesh.strategy", mesh_value),),
         )
-    if runner_extension_id is not None and runner_extension_id not in selected:
+    if runner_extension_id is not None:
         ranks = (
             min(2, task.resource_budget.max_mpi_ranks)
             if capability.parallel_expected
@@ -649,11 +722,93 @@ def _complete_planning_extensions(
         selected[runner_extension_id] = _extension_decision(
             registry,
             runner_extension_id,
-            values=(_deterministic_fact("execution.mpi_ranks", ranks),),
+            values=(
+                _deterministic_fact("execution.mpi_ranks", ranks),
+                *((run_solver_fact,) if run_solver_fact is not None else ()),
+            ),
         )
-    return proposal.model_copy(
-        update={"extension_decisions": tuple(selected[key] for key in sorted(selected))}
+    for extension_id in tuple(selected):
+        if extension_id.startswith("foampilot.bridge.solver."):
+            del selected[extension_id]
+    bridge_extension_id = (
+        "foampilot.bridge.solver."
+        + proposal.solver_family.value.strip().lower()
     )
+    if bridge_extension_id in registry.extension_ids():
+        selected[bridge_extension_id] = _extension_decision(
+            registry,
+            bridge_extension_id,
+        )
+    if (
+        FOUNDATION10_POROUS_EXTENSION_ID in registry.extension_ids()
+        and FOUNDATION10_POROUS_EXTENSION_ID not in selected
+    ):
+        selected[FOUNDATION10_POROUS_EXTENSION_ID] = _extension_decision(
+            registry,
+            FOUNDATION10_POROUS_EXTENSION_ID,
+        )
+    completed = proposal.model_copy(
+        update={
+            section: tuple(
+                fact
+                for fact in getattr(proposal, section)
+                if fact.field_path != "execution.run_solver"
+            )
+            for section in (
+                "physical_models",
+                "materials",
+                "boundary_designs",
+                "initial_conditions",
+                "time_design",
+                "numerical_design",
+                "region_models",
+            )
+        }
+        | {
+            "extension_decisions": tuple(
+                selected[key] for key in sorted(selected)
+            )
+        }
+    )
+    porous_roles = (
+        tuple(
+            item.name
+            for item in task.geometry.region_roles
+            if item.role == "porous"
+        )
+        if task.geometry is not None
+        else ()
+    )
+    inlet_roles = (
+        tuple(
+            item.name
+            for item in task.geometry.patch_roles
+            if item.role == "inlet"
+        )
+        if task.geometry is not None
+        else ()
+    )
+    if (
+        FOUNDATION10_POROUS_EXTENSION_ID in selected
+        and len(porous_roles) == 1
+        and len(inlet_roles) == 1
+    ):
+        completed = canonicalize_foundation10_porous_proposal(
+            completed,
+            cell_zone=porous_roles[0],
+            inlet_patch=inlet_roles[0],
+        )
+        completed = completed.model_copy(
+            update={
+                "boundary_designs": tuple(
+                    item
+                    for item in completed.boundary_designs
+                    if item.field_path
+                    != f"boundaries.{inlet_roles[0]}.startup_profile"
+                )
+            }
+        )
+    return completed
 
 
 def _default_numerical_repair_envelope(proposal) -> NumericalRepairEnvelope:
@@ -699,6 +854,7 @@ def _author_target_facts(
     task: TaskSpec,
     design: CaseDesign,
     capability: CapabilityProfile,
+    extensions: CapabilityRegistry,
 ) -> AuthorTargetFacts:
     mesh_value = next(
         (
@@ -713,6 +869,14 @@ def _author_target_facts(
         "system/fvSchemes",
         "system/fvSolution",
     ]
+    contract = family_contract(str(design.proposal.solver_family.value))
+    if contract is not None:
+        required.extend(contract.required_files)
+    if any(
+        item.field_path.startswith("materials.")
+        for item in design.proposal.iter_values()
+    ):
+        required.append("constant/physicalProperties")
     if str(mesh_value) == "blockMesh":
         required.append("system/blockMeshDict")
     ranks = next(
@@ -725,12 +889,18 @@ def _author_target_facts(
     )
     if int(ranks) > 1:
         required.append("system/decomposeParDict")
+    authoring_rules: list[str] = []
+    for extension_id in sorted(design.extension_identities):
+        descriptor = extensions.descriptor(extension_id)
+        required.extend(descriptor.required_authored_paths)
+        authoring_rules.extend(descriptor.authoring_rules)
     return AuthorTargetFacts(
         distribution=task.openfoam_target.distribution,
         version=task.openfoam_target.version,
         solver_executable=str(design.proposal.solver_family.value),
         required_outputs=tuple(task.required_outputs),
-        required_authored_paths=tuple(required),
+        required_authored_paths=tuple(dict.fromkeys(required)),
+        extension_authoring_rules=tuple(dict.fromkeys(authoring_rules)),
         public_asset_install_paths=tuple(
             item.install_path if item.kind == "directory" else item.path
             for item in task.public_assets
@@ -1349,9 +1519,28 @@ class NativeAgent:
             raise ValueError("strict resume requires a model gateway")
 
         parent = Path(parent_run).resolve()
-        task = load_parent_task(parent)
+        confirmation_resume: ConfirmationResumeInput | None = None
+        lineage_path = parent / "lineage.json"
+        if lineage_path.is_file():
+            try:
+                lineage = LineageRecord.model_validate_json(
+                    lineage_path.read_text(encoding="utf-8")
+                )
+            except (OSError, ValueError):
+                lineage = None
+            if lineage is not None and lineage.relation == "design_confirmation":
+                confirmation_resume = load_confirmation_resume(parent)
+        task = (
+            confirmation_resume.task
+            if confirmation_resume is not None
+            else load_parent_task(parent)
+        )
         environment = self._environment(self.artifact_store.root)
-        capability = self._parent_capability(parent)
+        capability = (
+            None
+            if confirmation_resume is not None
+            else self._parent_capability(parent)
+        )
         effective_asset_root = public_asset_root
         parent_assets = parent / "public-assets"
         if effective_asset_root is None and parent_assets.is_dir():
@@ -1365,11 +1554,14 @@ class NativeAgent:
                 Path(effective_asset_root or parent),
             )
         )
-        context = self._context(
-            task,
-            capability,
-            geometry_facts=geometry_facts,
-        )
+        if confirmation_resume is not None:
+            return self.solve(
+                task,
+                public_asset_root=effective_asset_root,
+                _confirmation_resume=confirmation_resume,
+            )
+        assert capability is not None
+        context = self._context(task, capability, geometry_facts=geometry_facts)
         acceptance_path = parent / "acceptance-plan.json"
         observation_path = parent / "observation-plan.json"
         current = build_resume_fingerprint(
@@ -1456,18 +1648,25 @@ class NativeAgent:
         reuse_verified_plan: str | Path | None = None,
         derived_cache: str | Path | None = None,
         _continuation: ContinuationInput | None = None,
+        _confirmation_resume: ConfirmationResumeInput | None = None,
         _rerun: RerunInput | None = None,
         _plan_only: bool = False,
     ) -> NativeAgentOutcome:
         if _plan_only and (
             _continuation is not None
+            or _confirmation_resume is not None
             or _rerun is not None
             or reuse_verified_plan is not None
         ):
             raise ValueError("plan-only mode does not accept lineage inputs")
         selected_lineage_inputs = sum(
             item is not None
-            for item in (_continuation, _rerun, reuse_verified_plan)
+            for item in (
+                _continuation,
+                _confirmation_resume,
+                _rerun,
+                reuse_verified_plan,
+            )
         )
         if selected_lineage_inputs > 1:
             raise ValueError(
@@ -1549,12 +1748,16 @@ class NativeAgent:
         )
         model_calls = 0
         model_ledger = ModelBudgetLedger.start(
-            total_model_deadline_seconds=600,
-            lineage_transport_attempt_limit=7,
+            total_model_deadline_seconds=NATIVE_MODEL_TOTAL_DEADLINE_SECONDS,
+            lineage_transport_attempt_limit=NATIVE_MODEL_LINEAGE_ATTEMPT_LIMIT,
             transport_attempts_used=(
                 _continuation.transport_attempts_used
                 if _continuation is not None
-                else 0
+                else (
+                    _confirmation_resume.transport_attempts_used
+                    if _confirmation_resume is not None
+                    else 0
+                )
             ),
         )
         lineage_logical_requests_before_run = (
@@ -1563,7 +1766,11 @@ class NativeAgent:
                 self.artifact_store.root.resolve(),
             )
             if _continuation is not None
-            else 0
+            else (
+                _confirmation_resume.logical_requests_used_before_child
+                if _confirmation_resume is not None
+                else 0
+            )
         )
         execution_seconds_used = (
             _continuation.execution_seconds_used_before_child
@@ -1652,6 +1859,53 @@ class NativeAgent:
                     input_hash_after=_continuation.input_sha256,
                     change_categories=[],
                     reused_evidence_paths=reused_evidence_paths,
+                ),
+            )
+        elif _confirmation_resume is not None:
+            _write_json(
+                run_dir / "continuation.json",
+                {
+                    "schema_version": 1,
+                    "parent_run": {
+                        "run_id": _confirmation_resume.checkpoint_run.name,
+                        "manifest_sha256": (
+                            _confirmation_resume.checkpoint_manifest_sha256
+                        ),
+                    },
+                    "from_stage": WorkflowStage.AUTHORING_CASE.value,
+                    "transport_attempts_used_before_child": (
+                        _confirmation_resume.transport_attempts_used
+                    ),
+                    "logical_requests_used_before_child": (
+                        _confirmation_resume.logical_requests_used_before_child
+                    ),
+                    "execution_seconds_used_before_child": 0.0,
+                },
+            )
+            _write_json(
+                run_dir / "lineage.json",
+                LineageRecord(
+                    relation="strict_resume",
+                    parent_run_id=_confirmation_resume.checkpoint_run.name,
+                    parent_manifest_sha256=(
+                        _confirmation_resume.checkpoint_manifest_sha256
+                    ),
+                    created_at=datetime.now(timezone.utc),
+                    input_hash_before=_confirmation_resume.design.design_sha256,
+                    input_hash_after=_confirmation_resume.design.design_sha256,
+                    change_categories=[],
+                    reused_evidence_paths=[
+                        "simulation-intent.json",
+                        "resolved-requirements.json",
+                        "case-design-proposal.json",
+                        "risk-decision.json",
+                        "case-design.json",
+                    ],
+                    confirmation_record_hashes=list(
+                        _read_json(
+                            _confirmation_resume.checkpoint_run / "lineage.json"
+                        ).get("confirmation_record_hashes", [])
+                    ),
                 ),
             )
         elif _rerun is not None:
@@ -2057,11 +2311,9 @@ class NativeAgent:
                     environment,
                     load_knowledge_corpus(knowledge_root),
                     gateway=self.gateway,
-                    budget=model_ledger.open_stage(
+                    budget=ROUTING_MODEL_POLICY.open(
+                        model_ledger,
                         ModelStage.ROUTING,
-                        request_timeout_seconds=60,
-                        stage_deadline_seconds=60,
-                        max_transport_attempts=1,
                     ),
                     trace=model_trace,
                 )
@@ -2177,7 +2429,21 @@ class NativeAgent:
         intent: SimulationIntent | None = None
         selected_registry: CapabilityRegistry | None = None
         if verified_source is None:
-            if _continuation is not None:
+            if _confirmation_resume is not None:
+                case_design = _confirmation_resume.design
+                intent = _confirmation_resume.intent
+                for name in (
+                    "simulation-intent.json",
+                    "resolved-requirements.json",
+                    "case-design-proposal.json",
+                    "risk-decision.json",
+                    "case-design.json",
+                    "confirmation-records.json",
+                ):
+                    source = _confirmation_resume.checkpoint_run / name
+                    if source.is_file():
+                        (run_dir / name).write_bytes(source.read_bytes())
+            elif _continuation is not None:
                 parent_design = (
                     _continuation.active_plan_path.parent / "case-design.json"
                     if _continuation.from_stage
@@ -2270,17 +2536,16 @@ class NativeAgent:
                         execution_task,
                         asset_facts=tuple(asset_bundles),
                         mesh_facts=input_mesh_facts,
+                        executed_mesh_facts=executed_mesh_facts,
                         capability_kinds=tuple(
                             kind
                             for descriptor in descriptors
                             for kind in descriptor.capability_kinds
                         ),
                         gateway=self.gateway,
-                        budget=model_ledger.open_stage(
+                        budget=INTENT_MODEL_POLICY.open(
+                            model_ledger,
                             ModelStage.INTENT_INTERPRETATION,
-                            request_timeout_seconds=120,
-                            stage_deadline_seconds=150,
-                            max_transport_attempts=2,
                         ),
                         trace=model_trace,
                     )
@@ -2407,11 +2672,9 @@ class NativeAgent:
                             environment.available_executable_names
                         ),
                         gateway=self.gateway,
-                        budget=model_ledger.open_stage(
+                        budget=DESIGN_MODEL_POLICY.open(
+                            model_ledger,
                             ModelStage.CASE_DESIGN,
-                            request_timeout_seconds=180,
-                            stage_deadline_seconds=240,
-                            max_transport_attempts=2,
                         ),
                         trace=model_trace,
                     )
@@ -2950,11 +3213,9 @@ class NativeAgent:
                     status_snapshot=repair_status,
                     status_artifact=repair_status_artifact,
                     gateway=self.gateway,
-                    budget=model_ledger.open_stage(
+                    budget=REPAIR_MODEL_POLICY.open(
+                        model_ledger,
                         ModelStage.REPAIR,
-                        request_timeout_seconds=300,
-                        stage_deadline_seconds=240,
-                        max_transport_attempts=3,
                     ),
                     trace=model_trace,
                 )
@@ -3052,7 +3313,7 @@ class NativeAgent:
                 can_resume = (
                     error.failure.retryable
                     and continuation_index < 2
-                    and model_ledger.transport_attempts_used < 7
+                    and model_ledger.transport_attempts_remaining > 0
                 )
                 status = (
                     _continuation.parent_summary.native_status
@@ -3183,6 +3444,7 @@ class NativeAgent:
                 )
                 model_calls += 1
                 assert case_design is not None
+                assert selected_registry is not None
                 bundle = author_case(
                     design=case_design,
                     mesh_facts=input_mesh_facts,
@@ -3191,21 +3453,15 @@ class NativeAgent:
                         task=execution_task,
                         design=case_design,
                         capability=capability,
+                        extensions=selected_registry,
                     ),
                     context=context,
                     gateway=self.gateway,
-                    budget=model_ledger.open_stage(
+                    budget=AUTHOR_MODEL_POLICY.open(
+                        model_ledger,
                         ModelStage.CASE_AUTHORING,
-                        request_timeout_seconds=(
-                            GENERATION_REQUEST_TIMEOUT_SECONDS
-                        ),
-                        stage_deadline_seconds=(
-                            GENERATION_STAGE_DEADLINE_SECONDS
-                        ),
-                        max_transport_attempts=3,
                     ),
                     trace=model_trace,
-                    observation_plan=observation_plan,
                 )
                 bundle, _observation_fragments = inject_observation_fragments(
                     bundle,
@@ -3310,7 +3566,7 @@ class NativeAgent:
                 can_resume = (
                     error.failure.retryable
                     and continuation_index < 2
-                    and model_ledger.transport_attempts_used < 7
+                    and model_ledger.transport_attempts_remaining > 0
                 )
                 return self._finish(
                     run_dir=run_dir,
@@ -4219,8 +4475,19 @@ class NativeAgent:
                     status=status,
                     attempts=attempts,
                     message=(
-                        "Native execution completed and explicit acceptance "
-                        "conditions passed."
+                        "Case authoring and deterministic checks completed; "
+                        "no solver was run."
+                        if "CASE_AUTHORING_CHECKS_PASSED"
+                        in report.reason_codes
+                        else (
+                            "Native execution completed and explicit "
+                            "acceptance conditions passed."
+                            if public_results.report.verdict == "PASS"
+                            else (
+                                "Native execution completed; no explicit "
+                                "acceptance conditions were requested."
+                            )
+                        )
                     ),
                     model_calls=model_calls,
                 )
@@ -4513,11 +4780,9 @@ class NativeAgent:
                     status_snapshot=repair_status,
                     status_artifact=repair_status_artifact,
                     gateway=self.gateway,
-                    budget=model_ledger.open_stage(
+                    budget=REPAIR_MODEL_POLICY.open(
+                        model_ledger,
                         ModelStage.REPAIR,
-                        request_timeout_seconds=300,
-                        stage_deadline_seconds=240,
-                        max_transport_attempts=3,
                     ),
                     trace=model_trace,
                 )
@@ -4599,6 +4864,11 @@ class NativeAgent:
                     primary_failure=_agent_status_failure(error),
                 )
             except GatewayRequestError as error:
+                can_resume = (
+                    error.failure.retryable
+                    and continuation_index < 2
+                    and model_ledger.transport_attempts_remaining > 0
+                )
                 return self._finish(
                     run_dir=run_dir,
                     task=task,
@@ -4610,16 +4880,16 @@ class NativeAgent:
                     primary_failure=classified_failure,
                     terminal_blocker=_backend_blocker(error),
                     resume=ResumeMetadata(
-                        allowed=error.failure.retryable,
+                        allowed=can_resume,
                         from_stage=(
                             WorkflowStage.MODEL_REPAIR_STARTED
-                            if error.failure.retryable
+                            if can_resume
                             else None
                         ),
                         reason=(
                             "retryable backend failure during repair"
-                            if error.failure.retryable
-                            else "backend failure is not retryable"
+                            if can_resume
+                            else "continuation or transport budget exhausted"
                         ),
                     ),
                 )

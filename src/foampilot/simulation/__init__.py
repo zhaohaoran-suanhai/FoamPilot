@@ -20,6 +20,7 @@ __all__ = [
     "EvidenceSource",
     "FactEvidence",
     "ImpactLevel",
+    "IntentUncertainty",
     "JsonValue",
     "ExtensionDecision",
     "RequirementConflict",
@@ -56,6 +57,7 @@ def __getattr__(name: str):
         "RiskGateError",
         "RiskState",
         "SimulationIntent",
+        "IntentUncertainty",
         "design_case",
         "evaluate_design_risk",
         "freeze_case_design",
@@ -63,7 +65,7 @@ def __getattr__(name: str):
         "resolve_requirements",
     }:
         from .design import CaseDesignProposal, ExtensionDecision, design_case
-        from .intent import SimulationIntent, interpret_intent
+        from .intent import IntentUncertainty, SimulationIntent, interpret_intent
         from .requirements import (
             RequirementConflict,
             RequirementGap,
@@ -90,6 +92,7 @@ def __getattr__(name: str):
             "RiskGateError": RiskGateError,
             "RiskState": RiskState,
             "SimulationIntent": SimulationIntent,
+            "IntentUncertainty": IntentUncertainty,
             "design_case": design_case,
             "evaluate_design_risk": evaluate_design_risk,
             "freeze_case_design": freeze_case_design,

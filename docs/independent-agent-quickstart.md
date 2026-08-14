@@ -51,9 +51,21 @@ Case Author 前的 RiskGate 不接受模型自报 confidence，也没有 accept-
 git clone git@github.com:zhaohaoran-suanhai/FoamPilot.git
 cd FoamPilot
 python -m pip install -e ".[test]"
+mkdir -p /path/to/writable/codex-home
+CODEX_HOME=/path/to/writable/codex-home codex login
+export CODEX_HOME=/path/to/writable/codex-home
 foampilot preflight --json
 foampilot model doctor --json
 ```
+
+内置 `codex-cli` profile 要求 `CODEX_HOME` 是已经存在的绝对可写目录；未设置时使用
+`$HOME/.codex`。应在一次性安装配置中对同一个状态根完成登录，此后每个 FoamPilot 任务不再
+需要额外认证输入。FoamPilot 不读取、复制或链接 Codex 认证文件。`model doctor` 只证明本地
+状态根、executable 和登录状态，不发起计费模型请求，也不证明稍后的网络仍然可用。
+
+`--ephemeral` 只禁止保存 Codex session rollout，状态根仍需可写。状态根问题返回不可重试的
+`BACKEND_MISCONFIGURED`，登录问题返回 `AUTH_FAILED`，真实传输受阻返回可重试的
+`NETWORK_UNAVAILABLE`；三者不得都归入 `PROCESS_INTERRUPTED`。
 
 先写入可复制的 Runtime 配置；不要依赖开发机路径：
 
@@ -185,9 +197,21 @@ foampilot confirm /tmp/foampilot-native-runs/PARENT_RUN \
   --json
 ```
 
-系统逐字段验证 candidate ID/value、parent manifest 和 proposal hash，随后创建不可变 child；
-确认命令本身不启动 OpenFOAM。live solve 将冻结 CaseDesign 交给 Case Author，随后由
-CaseVerifier 与 PlanCompiler 形成带设计 hash 和 compiler identities 的 ExecutionPlan v4。
+系统逐字段验证 candidate ID/value、parent manifest 和 proposal hash，随后创建含任务、公开
+资产快照、冻结设计、确认记录、summary 和 lineage 的不可变 child；确认命令本身不启动
+OpenFOAM。使用该 child 继续 authoring：
+
+```bash
+foampilot resume /tmp/foampilot-native-runs/CONFIRMATION_CHILD \
+  --run-root /tmp/foampilot-native-runs \
+  --backend auto \
+  --model-name gpt-5.6-sol \
+  --json
+```
+
+该续跑会重新检查环境、资产和扩展身份，但复用冻结 CaseDesign，不重新调用 Intent Interpreter
+或 CaseDesigner。随后由 CaseVerifier 与 PlanCompiler 形成带设计 hash 和 compiler identities
+的 ExecutionPlan v4。
 
 TaskSpec 生成后进入与手写任务完全相同的规范路径：
 
@@ -311,8 +335,8 @@ foampilot resume /tmp/foampilot-native-runs/PARENT_RUN \
   --json
 ```
 
-创建 child run 前，`resume` 会校验 parent manifest、兼容性指纹、可重试 blocker、
-continuation 数量、传输尝试预算以及当前 OpenFOAM 能力。strict compatibility 或
+创建 child run 前，`resume` 会按 checkpoint 类型校验 parent manifest、冻结设计或兼容性指纹、
+可重试 blocker、continuation 数量、传输尝试预算以及当前 OpenFOAM 能力。strict compatibility 或
 输入被拒绝时返回 2；再次发生 backend/environment 暂缓时返回 3；native 执行
 失败时返回 4。
 

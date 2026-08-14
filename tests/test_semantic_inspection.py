@@ -12,7 +12,7 @@ from foampilot.manifests import (
 )
 from foampilot.plans import ExecutionPlan, GeneratedFile, NativeCommand
 from foampilot.tasks import TaskSpec
-from tests.support.tasks import canonical_task_payload
+from tests.support.tasks import canonical_task_payload, resolved_fact
 
 
 def _header(name: str, klass: str = "dictionary") -> str:
@@ -25,7 +25,7 @@ def _header(name: str, klass: str = "dictionary") -> str:
     )
 
 
-def _task(*, reconstruct: bool = False) -> TaskSpec:
+def _task(*, reconstruct: bool = False, run_solver: bool = True) -> TaskSpec:
     requirements = ["normal solver completion"]
     if reconstruct:
         requirements.append("reconstruct parallel results")
@@ -58,6 +58,9 @@ def _task(*, reconstruct: bool = False) -> TaskSpec:
                 }
             ],
             "protected_paths": ["/private/semantic-target"],
+            "explicit_facts": [
+                resolved_fact("execution.run_solver", run_solver)
+            ],
         })
     )
 
@@ -216,6 +219,34 @@ def _materialize(root: Path, plan: ExecutionPlan) -> None:
 
 def _codes(report) -> set[str]:
     return {issue.code for issue in report.issues}
+
+
+def test_case_only_plan_requires_no_solve_stage(tmp_path: Path) -> None:
+    plan = _plan()
+    plan.commands = [item for item in plan.commands if item.stage != "solve"]
+    _materialize(tmp_path, plan)
+
+    report = inspect_semantics(
+        tmp_path,
+        _task(run_solver=False),
+        plan,
+    )
+
+    assert "SEMANTIC_SOLVER_COMMAND_MISMATCH" not in _codes(report)
+    assert "SEMANTIC_FAMILY_REQUIRED_STAGE_MISSING" not in _codes(report)
+
+
+def test_case_only_plan_rejects_a_solve_stage(tmp_path: Path) -> None:
+    plan = _plan()
+    _materialize(tmp_path, plan)
+
+    report = inspect_semantics(
+        tmp_path,
+        _task(run_solver=False),
+        plan,
+    )
+
+    assert "SEMANTIC_SOLVER_EXECUTION_FORBIDDEN" in _codes(report)
 
 
 def test_semantic_errors_capture_solver_application_and_field_mismatches(

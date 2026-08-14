@@ -8,7 +8,10 @@ from .models import (
     AcceptanceRequest,
     UncompiledRequirement,
 )
-from foampilot.observations import ObservationRequest
+from foampilot.observations import (
+    ObservationRequest,
+    merge_compatible_observation_requests,
+)
 
 
 class AcceptanceCompiler:
@@ -29,12 +32,19 @@ class AcceptanceCompiler:
                 )
             seen_conditions.add(request.condition_id)
             previous = observations.get(request.observation.observation_id)
-            if previous is not None and previous != request.observation:
-                raise ValueError(
-                    "ACCEPTANCE_OBSERVATION_CONFLICT: "
-                    + request.observation.observation_id
+            observation = request.observation
+            if previous is not None:
+                merged = merge_compatible_observation_requests(
+                    previous,
+                    observation,
                 )
-            observations[request.observation.observation_id] = request.observation
+                if merged is None:
+                    raise ValueError(
+                        "ACCEPTANCE_OBSERVATION_CONFLICT: "
+                        + observation.observation_id
+                    )
+                observation = merged
+            observations[observation.observation_id] = observation
             if request.source == "model_inference" and not request.confirmed:
                 uncompiled.append(
                     UncompiledRequirement(

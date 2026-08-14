@@ -84,6 +84,94 @@ def test_unconfirmed_inferred_threshold_is_not_a_gate() -> None:
     assert compiled.uncompiled[0].code == "ACCEPTANCE_CONFIRMATION_REQUIRED"
 
 
+def test_equivalent_observations_with_distinct_provenance_are_merged() -> None:
+    observation = _observation()
+    acceptance_observation = observation.model_copy(
+        update={
+            "provenance": (
+                FactEvidence(
+                    kind="user_quote",
+                    detail="continuity must remain finite",
+                ),
+            )
+        }
+    )
+    request = AcceptanceRequest(
+        condition_id="continuity-finite",
+        observation=acceptance_observation,
+        operator="finite",
+        unit="1",
+        scope=AcceptanceScope(time="latest"),
+        source="user_text",
+        confirmed=True,
+        provenance=acceptance_observation.provenance,
+    )
+
+    compiled = AcceptanceCompiler().compile(
+        observation_requests=(observation,),
+        condition_requests=(request,),
+    )
+
+    assert len(compiled.conditions) == 1
+    assert compiled.observation_requests[0].provenance == (
+        *observation.provenance,
+        *acceptance_observation.provenance,
+    )
+
+
+def test_history_observation_safely_covers_final_acceptance_observation() -> None:
+    observation = _observation().model_copy(
+        update={"time_selection": TimeSelection(kind="history")}
+    )
+    acceptance_observation = _observation().model_copy(
+        update={"time_selection": TimeSelection(kind="final")}
+    )
+    request = AcceptanceRequest(
+        condition_id="continuity-finite",
+        observation=acceptance_observation,
+        operator="finite",
+        unit="1",
+        scope=AcceptanceScope(time="final"),
+        source="user_text",
+        confirmed=True,
+        provenance=acceptance_observation.provenance,
+    )
+
+    compiled = AcceptanceCompiler().compile(
+        observation_requests=(observation,),
+        condition_requests=(request,),
+    )
+
+    assert len(compiled.conditions) == 1
+    assert compiled.observation_requests[0].time_selection.kind == "history"
+
+
+def test_observations_with_same_id_and_distinct_scope_still_conflict() -> None:
+    observation = _observation()
+    conflicting = observation.model_copy(
+        update={"scope": ObservationScope(kind="patch", names=("outlet",))}
+    )
+    request = AcceptanceRequest(
+        condition_id="continuity-finite",
+        observation=conflicting,
+        operator="finite",
+        unit="1",
+        scope=AcceptanceScope(time="latest"),
+        source="user_text",
+        confirmed=True,
+        provenance=conflicting.provenance,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="ACCEPTANCE_OBSERVATION_CONFLICT: continuity",
+    ):
+        AcceptanceCompiler().compile(
+            observation_requests=(observation,),
+            condition_requests=(request,),
+        )
+
+
 def test_all_scope_requires_a_history_observation() -> None:
     request = AcceptanceRequest(
         condition_id="all-time-limit",
