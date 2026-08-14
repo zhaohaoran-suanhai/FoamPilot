@@ -28,6 +28,10 @@ FoamPilot 的重要变更记录在此文件中。版本号遵循 Semantic Versio
 
 ### Changed
 
+- 统一产品介绍和架构定义：FoamPilot 当前是面向 Foundation OpenFOAM 10 的大模型增强 CFD
+  Workflow，而不是开放自主的 AI Agent；同时记录其最初的 Agent 目标及开发过程中向预定义
+  状态机、确定性门禁和部分机械场景逻辑偏移的现状。`NativeAgent` 继续作为稳定公开类型名称，
+  本次文档校准不改变运行行为或接口。
 - Intent 观测请求现在从关闭的第一方注册表获得模型可见的 canonical
   `kind + quantity + dimension` 词表；quantity Schema 描述和 system prompt 明确要求机器标识符，
   仅对注册且语义唯一的 `Q`/`U`/`p` 与符号量纲别名做可审计归一化。未知值继续 fail closed，

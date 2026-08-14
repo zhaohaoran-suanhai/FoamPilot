@@ -1,9 +1,13 @@
-# Agent 集成
+# 外部 Agent 集成 FoamPilot Workflow
 
 ## 稳定边界
 
-FoamPilot 是与框架无关的执行边界。外部 Agent 可以调用 CLI 或 Python API，但本工具包
-不依赖外部 agent framework。
+FoamPilot 是与框架无关的大模型增强 CFD Workflow。外部 Agent 可以通过 CLI 或 Python API
+把它作为一个有界执行能力调用，但外部框架不能接管或绕过 FoamPilot 内部的状态机、门禁、
+执行权威与证据链。本工具包不依赖 LangGraph 或其他外部 agent framework。
+
+`NativeAgent.solve()` 是这条 Workflow 的稳定 Python 入口；`NativeAgent` 这个历史公开名称不
+表示其内部是由模型自主规划阶段、选择工具或驱动开放式行动循环。
 
 外部 Agent 不得直接运行 OpenFOAM、修改不可变 attempt、读取官方目标 tutorial、检查私有
 golden data，或自行判定正式 benchmark PASS。
@@ -34,8 +38,8 @@ renderer 或模型拥有的执行命令。三个模型阶段是串行且职责�
 v10 不兼容的 dictionary construct。如果 include、substitution 或其他动态语法使结果不确定，
 inspection 只记录 advisory，并让 OpenFOAM 自己判定。
 
-阻断性静态缺陷与 runtime failure 消耗同一份由证据限定的 repair 预算，不会在 Agent 有机会
-修正文件前终止整个任务。执行期间，即使 `checkMesh` 返回零，只要明确出现
+阻断性静态缺陷与 runtime failure 消耗同一份由证据限定的 repair 预算，不会在模型修复阶段
+有机会修正文件前终止整个任务。执行期间，即使 `checkMesh` 返回零，只要明确出现
 `Failed N mesh checks`，后续 solver command 也会停止。含糊或未知日志文本只作为证据保留，
 不会被自动固化为新的 hard-coded failure。
 

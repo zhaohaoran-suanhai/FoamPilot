@@ -1,11 +1,17 @@
 # FoamPilot
 
-FoamPilot 将公开 CFD 需求转换为原生 Foundation OpenFOAM v10 算例，优先在无网络沙箱中
-执行求解，评估写出结果，并允许一次由证据限定范围的 repair。它是可独立安装的 Python
-工具包和 CLI，不依赖 Foam-Agent、LangGraph、FAISS、MCP 或预先存在的 tutorial case。
+FoamPilot 是面向 Foundation OpenFOAM 10 的大模型增强 CFD Workflow。它将公开 CFD 需求转换为
+原生 OpenFOAM 算例，优先在无网络沙箱中执行求解，评估写出结果，并允许一次由证据限定范围的
+repair。它是可独立安装的 Python 工具包和 CLI，不依赖 Foam-Agent、LangGraph、FAISS、MCP
+或预先存在的 tutorial case。
 
-FoamPilot 是围绕 OpenFOAM 构建的 Agent 工作流，不是 CFD 求解器。OpenFOAM 提供网格
-utility 与数值求解器；FoamPilot 负责编写、编排、检查并记录算例。
+FoamPilot 最初希望发展为一个 AI Agent；但在开发过程中，控制权逐步集中到预定义状态机、
+确定性门禁和部分机械场景逻辑。截至当前版本，它仍属于 Workflow，而不是能够自主规划阶段、
+自由选择工具或进行开放式行动循环的 AI Agent。
+
+OpenFOAM 提供网格 utility 与数值求解器；FoamPilot 的确定性 Workflow 固定阶段顺序、编译命令、
+控制执行、恢复与证据验收，大模型只在预定义的 Intent、CaseDesign、CaseAuthor 和有限 Repair
+阶段内进行受约束推理。FoamPilot 不是 CFD 求解器。
 
 ## 能力边界
 
@@ -36,8 +42,8 @@ Foundation 版本尚未完成 qualification。模型编写算例具有非确定�
 -> 不可变 artifact 与 SHA256 manifest
 ```
 
-Agent 从空 case 目录开始工作。它可以使用公开 OpenFOAM 文档与通用知识，但不能读取
-当前目标 tutorial、evaluator rule 或派生 reference value。
+FoamPilot Workflow 从空 case 目录开始工作。模型可以使用公开 OpenFOAM 文档与通用知识，
+但不能读取当前目标 tutorial、evaluator rule 或派生 reference value。
 
 ## 运行要求
 

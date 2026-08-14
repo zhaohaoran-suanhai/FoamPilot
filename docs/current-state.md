@@ -38,9 +38,9 @@
 
 ## 3. 当前产品边界
 
-FoamPilot 当前是面向**本机 Foundation OpenFOAM 10**的自然语言 CFD Agent。它已有一条规范
-求解链：公开任务/资产进入 TaskBuilder 或直接 TaskSpec，经过确定性前处理、分阶段模型推理、
-设计风险门禁、完整 case 编写、typed plan、受控执行、单一证据提取、后处理和显式验收。
+FoamPilot 当前是面向**本机 Foundation OpenFOAM 10**的大模型增强 CFD Workflow。它已有一条
+规范求解链：公开任务/资产进入 TaskBuilder 或直接 TaskSpec，经过确定性前处理、分阶段模型
+推理、设计风险门禁、完整 case 编写、typed plan、受控执行、单一证据提取、后处理和显式验收。
 
 当前不把以下事项描述为已有能力：
 
@@ -469,3 +469,20 @@ Qt-offscreen 回归为 `1379 passed, 14 skipped in 52.02s`；`compileall src tes
 `foampilot-0.2.0-py3-none-any.whl`，大小 738914 bytes，SHA256
 `c48a69d47c1228be4b32206bd3fee848132d507b59ecf90c812258fe4d95c879`；从临时安装目录导入后，
 多孔 physics 扩展、证据评估、系统观测、设计 normalizer、lineage 和共享预算模块均来自该 wheel。
+
+## 12. 2026-08-14 Workflow 一级定位校准
+
+FoamPilot 的当前一级定义统一为：**面向 Foundation OpenFOAM 10 的大模型增强 CFD Workflow**。
+程序预定义阶段顺序，持有命令编译、执行授权、恢复、证据和验收权威；大模型只在 Intent、
+CaseDesign、CaseAuthor 和有限 Repair 等有界阶段内返回结构化结果。当前实现没有让模型自主
+增加阶段、自由选择任意工具、直接执行命令或建立开放式行动循环，因此仍不属于开放自主的
+AI Agent。
+
+FoamPilot 最初希望发展为一个 AI Agent；但开发过程中，控制权逐步集中到状态机、确定性门禁
+和部分机械场景逻辑，产品实现与最初目标发生了偏移。截至本状态记录，它仍是 Workflow。
+`NativeAgent` 保留为稳定的公开类型名称，但这个名称不改变上述控制范式判断；外部 Agent 仍可
+通过 CLI 或 Python API 把 FoamPilot 作为有界 Workflow 调用。
+
+本次校准只修正文档定义，不改变源码、API、CLI、Schema、artifact、运行阶段或既有能力边界。
+把物理场景知识从机械代码迁移为可供模型推理的知识库，属于后续架构设计议题，当前尚未据此
+宣称已经实现知识驱动或自主 Agent 架构。

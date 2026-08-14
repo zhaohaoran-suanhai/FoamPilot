@@ -2,7 +2,7 @@
 
 状态：**现行架构基线；TaskBuilder 等价减重已按本基线落地**
 
-日期：2026-08-13
+日期：2026-08-14
 
 冻结依据：项目所有者明确要求先以本文规范程序职责、能力边界和输入输出，再在新对话中执行
 代码与测试减重。减重期间不得借“清理”改变本文定义的产品能力；确需改变职责或契约时，必须
@@ -26,8 +26,24 @@
 
 ## 2. 产品和能力边界
 
-FoamPilot 是面向本机 Foundation OpenFOAM 10 的自然语言 CFD Agent。它可以从公开自然语言和
-公开资产建立 TaskSpec，也可以直接消费手写 TaskSpec；两种入口最终进入同一条求解状态机。
+FoamPilot 是面向本机 Foundation OpenFOAM 10 的大模型增强 CFD Workflow。它可以从公开自然
+语言和公开资产建立 TaskSpec，也可以直接消费手写 TaskSpec；两种入口最终进入同一条预定义的
+求解状态机。
+
+FoamPilot 最初希望发展为一个 AI Agent；但在开发过程中，产品控制权逐步集中到预定义状态机、
+确定性门禁和部分机械场景逻辑，偏离了开放自主 Agent 的目标。截至当前版本，FoamPilot 仍属于
+Workflow，而不是能够自主规划阶段、自由选择工具或进行开放式行动循环的 AI Agent。
+
+### 2.1 当前控制范式
+
+当前控制范式由程序而非模型持有：程序固定阶段顺序，编译并授权 OpenFOAM 命令，管理执行、
+恢复、证据和验收；大模型只在 Intent、CaseDesign、CaseAuthor 和有限 Repair 等预定义语义阶段
+内返回结构化结果。模型不能自行增加阶段、直接执行命令、自由选择任意工具或建立无界自主循环。
+
+该实现不依赖 LangGraph 或其他外部 agent framework。`NativeAgent` 是已经公开的稳定 Python
+类型名称，用来承载同一条状态机；这个名称不表示当前系统采用自主 Agent 控制范式。
+
+### 2.2 职责与能力边界
 
 FoamPilot 负责：
 
@@ -52,6 +68,9 @@ FoamPilot 当前不宣称：
 - Desktop 单元测试等同于真实 GUI 端到端门禁。
 
 ## 3. 不可破坏的架构不变量
+
+下列不变量共同定义当前确定性 Workflow；它们不是一个由模型动态规划工具和阶段的自主 Agent
+循环。
 
 1. **一条执行路径**：TaskBuilder 只产生 TaskSpec，不运行 OpenFOAM，也不建立第二套 Runner。
 2. **一条状态机**：`NativeAgent` 使用 `workflow` 契约推进规范阶段；CLI、Desktop 和 job worker

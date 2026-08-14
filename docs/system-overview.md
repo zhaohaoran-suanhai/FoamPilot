@@ -13,19 +13,27 @@
 
 ## 2. 系统定位
 
-FoamPilot 是围绕 OpenFOAM 构建的单 Agent CFD 工作流，不是新的 CFD
-求解器。两者的职责边界如下：
+FoamPilot 是面向 Foundation OpenFOAM 10 的大模型增强 CFD Workflow，不是新的 CFD 求解器。
+当前控制范式属于 Workflow：程序固定阶段顺序、编译与授权命令、管理执行和恢复、提取证据并
+完成验收；大模型只在预定义的 Intent、CaseDesign、CaseAuthor 和有限 Repair 阶段内推理。
+
+FoamPilot 最初希望发展为一个 AI Agent；但开发过程中，控制权逐步集中到预定义状态机、
+确定性门禁和部分机械场景逻辑。截至当前版本，它仍不是能够自主规划阶段、自由选择工具或进行
+开放式行动循环的 AI Agent。
+
+OpenFOAM 与 FoamPilot 的职责边界如下：
 
 - OpenFOAM 负责网格工具、初始化工具、数值求解器和原生后处理程序；
 - FoamPilot 负责把完整自然语言请求编译为结构化任务、选择求解器族、组织公开知识、分阶段调用
   模型编写 OpenFOAM case、确定性编译执行计划、约束执行、检查结果、有限修复和保存证据。
 
-FoamPilot 从空 case 目录开始工作。Agent 编写的是 OpenFOAM case 文件和执行
-计划，而不是 OpenFOAM 求解器的 C++ 源码。运行时直接调用本机已经安装的
+FoamPilot 从空 case 目录开始工作。模型编写阶段生成 OpenFOAM case 文件，但不生成执行计划
+或 OpenFOAM 求解器的 C++ 源码；执行计划由程序确定性编译。运行时直接调用本机已经安装的
 OpenFOAM 工具和求解器。
 
 FoamPilot 是独立可安装的 Python 工具包，不依赖原始 Foam-Agent、LangGraph、
 FAISS、MCP、预先存在的目标 tutorial、Case renderer 或 `Allrun` 脚本。
+`NativeAgent` 是稳定的公开类型名称，不代表当前实现属于自主 Agent 控制范式。
 
 ## 3. 输入和输出
 
